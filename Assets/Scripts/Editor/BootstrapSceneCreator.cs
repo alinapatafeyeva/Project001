@@ -29,6 +29,7 @@ public static class BootstrapSceneCreator
 
         CreateCamera();
         CreatePixelGrid();
+        CreateWaitingLine();
         CreateCollectorQueueBoard();
 
         string directory = Path.GetDirectoryName(ScenePath);
@@ -56,6 +57,14 @@ public static class BootstrapSceneCreator
     {
         var pixelGridObject = new GameObject("PixelGrid", typeof(PixelGrid));
         pixelGridObject.transform.position = Vector3.zero;
+    }
+
+    private static void CreateWaitingLine()
+    {
+        var waitingLineObject = new GameObject(
+            "WaitingLine",
+            typeof(Project001.Gameplay.WaitingLine.WaitingLine));
+        waitingLineObject.transform.position = new Vector3(0f, -4.6f, 0f);
     }
 
     private static void CreateCollectorQueueBoard()
