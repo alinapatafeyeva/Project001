@@ -1,5 +1,6 @@
 using System.IO;
 using Project001.Gameplay.Collectors;
+using Project001.Gameplay.Conveyor;
 using Project001.Gameplay.Pixels;
 using UnityEditor;
 using UnityEditor.SceneManagement;
@@ -29,6 +30,7 @@ public static class BootstrapSceneCreator
 
         CreateCamera();
         CreatePixelGrid();
+        CreateConveyor();
         CreateWaitingLine();
         CreateCollectorQueueBoard();
 
@@ -57,6 +59,22 @@ public static class BootstrapSceneCreator
     {
         var pixelGridObject = new GameObject("PixelGrid", typeof(PixelGrid));
         pixelGridObject.transform.position = Vector3.zero;
+    }
+
+    private static void CreateConveyor()
+    {
+        var conveyorObject = new GameObject(
+            "Conveyor",
+            typeof(ConveyorPath),
+            typeof(ConveyorPathRenderer));
+        conveyorObject.transform.position = Vector3.zero;
+
+        var conveyorPath = conveyorObject.GetComponent<ConveyorPath>();
+        var serializedPath = new SerializedObject(conveyorPath);
+        serializedPath.FindProperty("width").floatValue = 8f;
+        serializedPath.FindProperty("height").floatValue = 8f;
+        serializedPath.FindProperty("cornerRadius").floatValue = 1f;
+        serializedPath.ApplyModifiedPropertiesWithoutUndo();
     }
 
     private static void CreateWaitingLine()
