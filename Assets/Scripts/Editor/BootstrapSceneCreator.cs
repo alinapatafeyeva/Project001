@@ -66,7 +66,8 @@ public static class BootstrapSceneCreator
         var conveyorObject = new GameObject(
             "Conveyor",
             typeof(ConveyorPath),
-            typeof(ConveyorPathRenderer));
+            typeof(ConveyorPathRenderer),
+            typeof(ConveyorSystem));
         conveyorObject.transform.position = Vector3.zero;
 
         var conveyorPath = conveyorObject.GetComponent<ConveyorPath>();
@@ -75,6 +76,11 @@ public static class BootstrapSceneCreator
         serializedPath.FindProperty("height").floatValue = 8f;
         serializedPath.FindProperty("cornerRadius").floatValue = 1f;
         serializedPath.ApplyModifiedPropertiesWithoutUndo();
+
+        var conveyorSystem = conveyorObject.GetComponent<ConveyorSystem>();
+        var serializedSystem = new SerializedObject(conveyorSystem);
+        serializedSystem.FindProperty("conveyorPath").objectReferenceValue = conveyorPath;
+        serializedSystem.ApplyModifiedPropertiesWithoutUndo();
     }
 
     private static void CreateWaitingLine()
@@ -82,12 +88,12 @@ public static class BootstrapSceneCreator
         var waitingLineObject = new GameObject(
             "WaitingLine",
             typeof(Project001.Gameplay.WaitingLine.WaitingLine));
-        waitingLineObject.transform.position = new Vector3(0f, -4.6f, 0f);
+        waitingLineObject.transform.position = new Vector3(0f, -5.0f, 0f);
     }
 
     private static void CreateCollectorQueueBoard()
     {
         var boardObject = new GameObject("CollectorQueueBoard", typeof(CollectorQueueBoard));
-        boardObject.transform.position = new Vector3(0f, -6.2f, 0f);
+        boardObject.transform.position = new Vector3(0f, -6.6f, 0f);
     }
 }
