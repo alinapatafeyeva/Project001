@@ -1,4 +1,5 @@
 using System.IO;
+using Project001.Gameplay.Collectors;
 using Project001.Gameplay.Pixels;
 using UnityEditor;
 using UnityEditor.SceneManagement;
@@ -28,6 +29,7 @@ public static class BootstrapSceneCreator
 
         CreateCamera();
         CreatePixelGrid();
+        CreateCollectorQueueBoard();
 
         string directory = Path.GetDirectoryName(ScenePath);
         if (!Directory.Exists(directory))
@@ -45,7 +47,7 @@ public static class BootstrapSceneCreator
 
         var camera = cameraObject.GetComponent<Camera>();
         camera.orthographic = true;
-        camera.orthographicSize = 7f;
+        camera.orthographicSize = 10f;
         camera.clearFlags = CameraClearFlags.SolidColor;
         camera.backgroundColor = new Color(0.192f, 0.302f, 0.475f, 0f);
     }
@@ -54,5 +56,11 @@ public static class BootstrapSceneCreator
     {
         var pixelGridObject = new GameObject("PixelGrid", typeof(PixelGrid));
         pixelGridObject.transform.position = Vector3.zero;
+    }
+
+    private static void CreateCollectorQueueBoard()
+    {
+        var boardObject = new GameObject("CollectorQueueBoard", typeof(CollectorQueueBoard));
+        boardObject.transform.position = new Vector3(0f, -6.2f, 0f);
     }
 }
