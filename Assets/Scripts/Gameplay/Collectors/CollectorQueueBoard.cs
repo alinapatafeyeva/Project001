@@ -88,7 +88,6 @@ namespace Project001.Gameplay.Collectors
             float stepX = collectorSize + horizontalSpacing;
             float stepY = collectorSize + verticalSpacing;
             float offsetX = (queueCount - 1) * stepX * 0.5f;
-            float offsetY = (collectorsPerQueue - 1) * stepY * 0.5f;
 
             for (int queueIndex = 0; queueIndex < queueCount; queueIndex++)
             {
@@ -105,7 +104,7 @@ namespace Project001.Gameplay.Collectors
                 {
                     var collectorObject = new GameObject($"Collector_{queueIndex}_{rowIndex}", typeof(CollectorView));
                     collectorObject.transform.SetParent(queueObject.transform, false);
-                    collectorObject.transform.localPosition = new Vector3(0f, offsetY - rowIndex * stepY, 0f);
+                    collectorObject.transform.localPosition = new Vector3(0f, -rowIndex * stepY, 0f);
                     collectorObject.transform.localScale = new Vector3(collectorSize, collectorSize, 1f);
 
                     var spriteRenderer = collectorObject.GetComponent<SpriteRenderer>();

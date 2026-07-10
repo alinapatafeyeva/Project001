@@ -1,0 +1,112 @@
+using UnityEngine;
+
+namespace Project001.Gameplay.WaitingLine
+{
+    /// <summary>
+    /// Generates five horizontal WaitingSlot objects on Awake, using a single
+    /// shared runtime-generated square-outline sprite reused by every slot.
+    /// </summary>
+    public class WaitingLine : MonoBehaviour
+    {
+        private const int SpriteSizePixels = 32;
+        private const int OutlineThicknessPixels = 3;
+
+        [SerializeField, Tooltip("Number of waiting slots to generate.")]
+        [Min(1)]
+        private int slotCount = 5;
+
+        [SerializeField, Tooltip("World-space size of a single waiting slot, in world units.")]
+        [Min(0.01f)]
+        private float slotSize = 1f;
+
+        [SerializeField, Tooltip("Gap between neighbouring slots, in world units.")]
+        [Min(0f)]
+        private float horizontalSpacing = 0.3f;
+
+        private Texture2D _sharedTexture;
+        private Sprite _sharedSprite;
+        private WaitingSlot[] _slots;
+
+        private void Awake()
+        {
+            CreateSharedSprite();
+            GenerateSlots();
+        }
+
+        private void CreateSharedSprite()
+        {
+            _sharedTexture = new Texture2D(SpriteSizePixels, SpriteSizePixels, TextureFormat.RGBA32, false)
+            {
+                filterMode = FilterMode.Point,
+                wrapMode = TextureWrapMode.Clamp
+            };
+
+            var pixels = new Color32[SpriteSizePixels * SpriteSizePixels];
+
+            for (int y = 0; y < SpriteSizePixels; y++)
+            {
+                for (int x = 0; x < SpriteSizePixels; x++)
+                {
+                    bool isBorder = x < OutlineThicknessPixels
+                        || y < OutlineThicknessPixels
+                        || x >= SpriteSizePixels - OutlineThicknessPixels
+                        || y >= SpriteSizePixels - OutlineThicknessPixels;
+
+                    pixels[y * SpriteSizePixels + x] = isBorder
+                        ? new Color32(255, 255, 255, 255)
+                        : new Color32(255, 255, 255, 0);
+                }
+            }
+
+            _sharedTexture.SetPixels32(pixels);
+            _sharedTexture.Apply();
+
+            _sharedSprite = Sprite.Create(
+                _sharedTexture,
+                new Rect(0f, 0f, SpriteSizePixels, SpriteSizePixels),
+                new Vector2(0.5f, 0.5f),
+                SpriteSizePixels);
+        }
+
+        private void GenerateSlots()
+        {
+            _slots = new WaitingSlot[slotCount];
+
+            float stepX = slotSize + horizontalSpacing;
+            float offsetX = (slotCount - 1) * stepX * 0.5f;
+
+            for (int index = 0; index < slotCount; index++)
+            {
+                var slotObject = new GameObject($"WaitingSlot_{index}", typeof(WaitingSlot));
+                slotObject.transform.SetParent(transform, false);
+                slotObject.transform.localPosition = new Vector3(index * stepX - offsetX, 0f, 0f);
+                slotObject.transform.localScale = new Vector3(slotSize, slotSize, 1f);
+
+                var spriteRenderer = slotObject.GetComponent<SpriteRenderer>();
+                spriteRenderer.sprite = _sharedSprite;
+
+                _slots[index] = slotObject.GetComponent<WaitingSlot>();
+            }
+        }
+
+        public WaitingSlot GetFirstEmptySlot()
+        {
+            foreach (WaitingSlot slot in _slots)
+            {
+                if (!slot.IsOccupied)
+                    return slot;
+            }
+
+            return null;
+        }
+
+        private void OnDestroy()
+        {
+            if (_sharedSprite != null)
+                Destroy(_sharedSprite);
+
+            if (_sharedTexture != null)
+                Destroy(_sharedTexture);
+        }
+    }
+}
