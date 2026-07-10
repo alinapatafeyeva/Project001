@@ -1,3 +1,5 @@
+using System.Collections.Generic;
+using Project001.Gameplay.Conveyor;
 using UnityEngine;
 
 namespace Project001.Gameplay.Collectors
@@ -41,6 +43,7 @@ namespace Project001.Gameplay.Collectors
         private Texture2D _sharedTexture;
         private Sprite _sharedSprite;
         private CollectorQueue[] _queues;
+        private float _rowStepY;
 
         private void Awake()
         {
@@ -86,7 +89,7 @@ namespace Project001.Gameplay.Collectors
             _queues = new CollectorQueue[queueCount];
 
             float stepX = collectorSize + horizontalSpacing;
-            float stepY = collectorSize + verticalSpacing;
+            _rowStepY = collectorSize + verticalSpacing;
             float offsetX = (queueCount - 1) * stepX * 0.5f;
 
             for (int queueIndex = 0; queueIndex < queueCount; queueIndex++)
@@ -98,17 +101,22 @@ namespace Project001.Gameplay.Collectors
                 var queue = new CollectorQueue();
                 _queues[queueIndex] = queue;
 
-                Color color = Palette[queueIndex % Palette.Length];
-
                 for (int rowIndex = 0; rowIndex < collectorsPerQueue; rowIndex++)
                 {
-                    var collectorObject = new GameObject($"Collector_{queueIndex}_{rowIndex}", typeof(CollectorView));
+                    var collectorObject = new GameObject(
+                        $"Collector_{queueIndex}_{rowIndex}",
+                        typeof(CollectorView),
+                        typeof(ConveyorRider));
                     collectorObject.transform.SetParent(queueObject.transform, false);
-                    collectorObject.transform.localPosition = new Vector3(0f, -rowIndex * stepY, 0f);
+                    collectorObject.transform.localPosition = new Vector3(0f, -rowIndex * _rowStepY, 0f);
                     collectorObject.transform.localScale = new Vector3(collectorSize, collectorSize, 1f);
 
                     var spriteRenderer = collectorObject.GetComponent<SpriteRenderer>();
                     spriteRenderer.sprite = _sharedSprite;
+
+                    // Mix queueIndex and rowIndex so colour varies per collector,
+                    // not per queue, making individual movement easy to track.
+                    Color color = Palette[(queueIndex + rowIndex) % Palette.Length];
 
                     var collectorView = collectorObject.GetComponent<CollectorView>();
                     collectorView.Initialize(color);
@@ -116,6 +124,56 @@ namespace Project001.Gameplay.Collectors
                     queue.Add(collectorView);
                 }
             }
+        }
+
+        /// <summary>
+        /// True when the given view is currently the first available collector
+        /// of one of the board's queues.
+        /// </summary>
+        public bool CanSelect(CollectorView view)
+        {
+            if (view == null || _queues == null)
+                return false;
+
+            foreach (CollectorQueue queue in _queues)
+            {
+                if (queue.IsFirstAvailable(view))
+                    return true;
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// Finalizes removal of a successfully selected collector: removes it
+        /// from its logical queue and instantly shifts the remaining collectors
+        /// upward to fill the gap. Rejects collectors that are not first in
+        /// their queue. Does not touch ConveyorSystem.
+        /// </summary>
+        public bool TryRemoveSelected(CollectorView view)
+        {
+            if (view == null || _queues == null)
+                return false;
+
+            for (int queueIndex = 0; queueIndex < _queues.Length; queueIndex++)
+            {
+                CollectorQueue queue = _queues[queueIndex];
+                if (!queue.TryRemoveFirstAvailable(view))
+                    continue;
+
+                ShiftQueueUp(queue);
+                return true;
+            }
+
+            return false;
+        }
+
+        private void ShiftQueueUp(CollectorQueue queue)
+        {
+            IReadOnlyList<CollectorView> views = queue.Views;
+
+            for (int rowIndex = 0; rowIndex < views.Count; rowIndex++)
+                views[rowIndex].transform.localPosition = new Vector3(0f, -rowIndex * _rowStepY, 0f);
         }
 
         private void OnDestroy()

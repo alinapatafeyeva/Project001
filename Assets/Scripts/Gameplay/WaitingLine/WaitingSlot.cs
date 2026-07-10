@@ -14,6 +14,8 @@ namespace Project001.Gameplay.WaitingLine
 
         public bool IsOccupied => _occupant != null;
 
+        public CollectorView Occupant => _occupant;
+
         public bool Assign(CollectorView collectorView)
         {
             if (collectorView == null || IsOccupied)
@@ -26,6 +28,18 @@ namespace Project001.Gameplay.WaitingLine
         public void Clear()
         {
             _occupant = null;
+        }
+
+        /// <summary>
+        /// Clears the slot only if it currently holds the given collector.
+        /// </summary>
+        public bool ClearIfOccupant(CollectorView collectorView)
+        {
+            if (collectorView == null || _occupant != collectorView)
+                return false;
+
+            _occupant = null;
+            return true;
         }
     }
 }
