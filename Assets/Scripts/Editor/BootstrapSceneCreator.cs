@@ -1,4 +1,5 @@
 using System.IO;
+using Project001.Gameplay.Pixels;
 using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
@@ -7,7 +8,6 @@ using UnityEngine.SceneManagement;
 public static class BootstrapSceneCreator
 {
     private const string ScenePath = "Assets/Scenes/Bootstrap.unity";
-    private const string SquareShaderName = "Universal Render Pipeline/Unlit";
 
     [MenuItem("Tools/Bootstrap/Create Bootstrap Scene")]
     public static void CreateBootstrapScene()
@@ -27,7 +27,7 @@ public static class BootstrapSceneCreator
         Scene scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
 
         CreateCamera();
-        CreateWhiteSquare();
+        CreatePixelGrid();
 
         string directory = Path.GetDirectoryName(ScenePath);
         if (!Directory.Exists(directory))
@@ -45,30 +45,14 @@ public static class BootstrapSceneCreator
 
         var camera = cameraObject.GetComponent<Camera>();
         camera.orthographic = true;
-        camera.orthographicSize = 5f;
+        camera.orthographicSize = 7f;
         camera.clearFlags = CameraClearFlags.SolidColor;
         camera.backgroundColor = new Color(0.192f, 0.302f, 0.475f, 0f);
     }
 
-    private static void CreateWhiteSquare()
+    private static void CreatePixelGrid()
     {
-        GameObject square = GameObject.CreatePrimitive(PrimitiveType.Quad);
-        square.name = "White Square";
-        square.transform.position = Vector3.zero;
-        square.transform.localScale = new Vector3(2f, 2f, 1f);
-
-        Object.DestroyImmediate(square.GetComponent<MeshCollider>());
-
-        Shader shader = Shader.Find(SquareShaderName);
-        if (shader == null)
-        {
-            Debug.LogError($"BootstrapSceneCreator: shader '{SquareShaderName}' not found.");
-            return;
-        }
-
-        var material = new Material(shader) { name = "BootstrapWhite" };
-        material.SetColor("_BaseColor", Color.white);
-
-        square.GetComponent<MeshRenderer>().sharedMaterial = material;
+        var pixelGridObject = new GameObject("PixelGrid", typeof(PixelGrid));
+        pixelGridObject.transform.position = Vector3.zero;
     }
 }
