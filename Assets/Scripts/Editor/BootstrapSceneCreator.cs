@@ -28,11 +28,12 @@ public static class BootstrapSceneCreator
 
         Scene scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
 
-        CreateCamera();
+        Camera mainCamera = CreateCamera();
         CreatePixelGrid();
-        CreateConveyor();
-        CreateWaitingLine();
-        CreateCollectorQueueBoard();
+        ConveyorSystem conveyorSystem = CreateConveyor();
+        Project001.Gameplay.WaitingLine.WaitingLine waitingLine = CreateWaitingLine();
+        CollectorQueueBoard collectorQueueBoard = CreateCollectorQueueBoard();
+        CreateCollectorSelectionController(mainCamera, collectorQueueBoard, waitingLine, conveyorSystem);
 
         string directory = Path.GetDirectoryName(ScenePath);
         if (!Directory.Exists(directory))
@@ -42,7 +43,7 @@ public static class BootstrapSceneCreator
         AssetDatabase.Refresh();
     }
 
-    private static void CreateCamera()
+    private static Camera CreateCamera()
     {
         var cameraObject = new GameObject("Main Camera", typeof(Camera), typeof(AudioListener));
         cameraObject.tag = "MainCamera";
@@ -53,6 +54,8 @@ public static class BootstrapSceneCreator
         camera.orthographicSize = 10f;
         camera.clearFlags = CameraClearFlags.SolidColor;
         camera.backgroundColor = new Color(0.192f, 0.302f, 0.475f, 0f);
+
+        return camera;
     }
 
     private static void CreatePixelGrid()
@@ -61,7 +64,7 @@ public static class BootstrapSceneCreator
         pixelGridObject.transform.position = Vector3.zero;
     }
 
-    private static void CreateConveyor()
+    private static ConveyorSystem CreateConveyor()
     {
         var conveyorObject = new GameObject(
             "Conveyor",
@@ -80,20 +83,47 @@ public static class BootstrapSceneCreator
         var conveyorSystem = conveyorObject.GetComponent<ConveyorSystem>();
         var serializedSystem = new SerializedObject(conveyorSystem);
         serializedSystem.FindProperty("conveyorPath").objectReferenceValue = conveyorPath;
+        serializedSystem.FindProperty("boardingProgress").floatValue = 0.55f;
+        serializedSystem.FindProperty("boardingClearance").floatValue = 1f;
         serializedSystem.ApplyModifiedPropertiesWithoutUndo();
+
+        return conveyorSystem;
     }
 
-    private static void CreateWaitingLine()
+    private static Project001.Gameplay.WaitingLine.WaitingLine CreateWaitingLine()
     {
         var waitingLineObject = new GameObject(
             "WaitingLine",
             typeof(Project001.Gameplay.WaitingLine.WaitingLine));
         waitingLineObject.transform.position = new Vector3(0f, -5.0f, 0f);
+
+        return waitingLineObject.GetComponent<Project001.Gameplay.WaitingLine.WaitingLine>();
     }
 
-    private static void CreateCollectorQueueBoard()
+    private static CollectorQueueBoard CreateCollectorQueueBoard()
     {
         var boardObject = new GameObject("CollectorQueueBoard", typeof(CollectorQueueBoard));
         boardObject.transform.position = new Vector3(0f, -6.6f, 0f);
+
+        return boardObject.GetComponent<CollectorQueueBoard>();
+    }
+
+    private static void CreateCollectorSelectionController(
+        Camera selectionCamera,
+        CollectorQueueBoard collectorQueueBoard,
+        Project001.Gameplay.WaitingLine.WaitingLine waitingLine,
+        ConveyorSystem conveyorSystem)
+    {
+        var controllerObject = new GameObject(
+            "CollectorSelectionController",
+            typeof(CollectorSelectionController));
+
+        var controller = controllerObject.GetComponent<CollectorSelectionController>();
+        var serializedController = new SerializedObject(controller);
+        serializedController.FindProperty("selectionCamera").objectReferenceValue = selectionCamera;
+        serializedController.FindProperty("collectorQueueBoard").objectReferenceValue = collectorQueueBoard;
+        serializedController.FindProperty("waitingLine").objectReferenceValue = waitingLine;
+        serializedController.FindProperty("conveyorSystem").objectReferenceValue = conveyorSystem;
+        serializedController.ApplyModifiedPropertiesWithoutUndo();
     }
 }

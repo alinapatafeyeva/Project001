@@ -1,3 +1,4 @@
+using Project001.Gameplay.Collectors;
 using UnityEngine;
 
 namespace Project001.Gameplay.WaitingLine
@@ -98,6 +99,41 @@ namespace Project001.Gameplay.WaitingLine
             }
 
             return null;
+        }
+
+        /// <summary>
+        /// True when the given collector currently occupies any slot in this line.
+        /// </summary>
+        public bool Contains(CollectorView collectorView)
+        {
+            if (collectorView == null || _slots == null)
+                return false;
+
+            foreach (WaitingSlot slot in _slots)
+            {
+                if (slot.Occupant == collectorView)
+                    return true;
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// Clears the slot occupied by the given collector, if any. Does not
+        /// move or animate any collector.
+        /// </summary>
+        public bool ClearSlotContaining(CollectorView collectorView)
+        {
+            if (collectorView == null || _slots == null)
+                return false;
+
+            foreach (WaitingSlot slot in _slots)
+            {
+                if (slot.ClearIfOccupant(collectorView))
+                    return true;
+            }
+
+            return false;
         }
 
         private void OnDestroy()

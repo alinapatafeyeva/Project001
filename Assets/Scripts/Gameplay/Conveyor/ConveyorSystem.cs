@@ -1,11 +1,14 @@
+using System.Collections.Generic;
 using UnityEngine;
 
 namespace Project001.Gameplay.Conveyor
 {
     /// <summary>
-    /// Drives a fixed set of evenly spaced logical slots along a ConveyorPath and
-    /// moves any riders occupying them. Only handles riding and capacity — no
-    /// boarding animation, selection, input, or pixel consumption.
+    /// Moves riders counter-clockwise around a ConveyorPath. All riders board at
+    /// a single fixed progress point and move at the same speed afterwards, so
+    /// their launch order is preserved for as long as they stay on the
+    /// conveyor. Only handles riding and capacity — no boarding animation,
+    /// selection, input, or pixel consumption.
     /// </summary>
     public class ConveyorSystem : MonoBehaviour
     {
@@ -20,25 +23,27 @@ namespace Project001.Gameplay.Conveyor
         [Min(0f)]
         private float moveSpeed = 2f;
 
-        private ConveyorRider[] _slotOccupants;
-        private float[] _slotProgress;
-        private int _occupiedCount;
+        [SerializeField, Tooltip("Normalized [0,1] path progress where new riders board. Default sits in the lower-left area of a typical rectangular path.")]
+        [Range(0f, 1f)]
+        private float boardingProgress = 0.55f;
+
+        [SerializeField, Tooltip("Minimum world-space distance a rider must be from the boarding point before another rider can board.")]
+        [Min(0f)]
+        private float boardingClearance = 1f;
+
+        // Both lists are index-aligned and ordered by launch (add) order.
+        private readonly List<ConveyorRider> _riders = new List<ConveyorRider>();
+        private readonly List<float> _riderProgress = new List<float>();
 
         public int Capacity => capacity;
 
-        public int OccupiedCount => _occupiedCount;
+        public int OccupiedCount => _riders.Count;
 
-        public bool HasSpace => _occupiedCount < capacity;
+        public bool HasSpace => _riders.Count < capacity;
 
         private void Awake()
         {
             capacity = Mathf.Max(1, capacity);
-
-            _slotOccupants = new ConveyorRider[capacity];
-            _slotProgress = new float[capacity];
-
-            for (int i = 0; i < capacity; i++)
-                _slotProgress[i] = (float)i / capacity;
         }
 
         private void Update()
@@ -50,43 +55,43 @@ namespace Project001.Gameplay.Conveyor
             if (pathLength <= 0f)
                 return;
 
-            float deltaProgress = moveSpeed * Time.deltaTime / pathLength;
+            // Positive delta progress walks the path's point order, which is
+            // counter-clockwise, so movement direction is never flipped here.
+            float deltaProgress = Mathf.Abs(moveSpeed) * Time.deltaTime / pathLength;
 
-            for (int i = 0; i < capacity; i++)
+            for (int i = 0; i < _riders.Count; i++)
             {
-                float progress = _slotProgress[i] + deltaProgress;
-                _slotProgress[i] = progress - Mathf.Floor(progress);
-
-                ConveyorRider rider = _slotOccupants[i];
+                ConveyorRider rider = _riders[i];
                 if (rider == null)
                 {
-                    // Unity's null check also catches riders destroyed externally
-                    // (without going through TryRemoveRider). Clear a stale slot
-                    // reference so the occupied count stays accurate.
-                    if (!ReferenceEquals(rider, null))
-                    {
-                        _slotOccupants[i] = null;
-                        _occupiedCount--;
-                    }
-
+                    // Every entry is non-null at insertion time, so a null here
+                    // only means the rider was destroyed externally. Drop it.
+                    _riders.RemoveAt(i);
+                    _riderProgress.RemoveAt(i);
+                    i--;
                     continue;
                 }
 
-                rider.SetPosition(GetWorldPosition(i));
+                float progress = _riderProgress[i] + deltaProgress;
+                progress -= Mathf.Floor(progress);
+                _riderProgress[i] = progress;
+
+                rider.SetPosition(GetWorldPosition(progress));
             }
         }
 
         /// <summary>
-        /// Adds a rider to the first free logical slot. Returns false and makes
-        /// no changes if the rider is null, already riding, the conveyor is
-        /// full, or the path reference is missing.
+        /// Boards a rider at the fixed boarding progress. Returns false and
+        /// makes no changes if the rider is null, already riding, the conveyor
+        /// is full, the path reference is missing or invalid, or the boarding
+        /// point is not yet clear of other riders.
         /// </summary>
         public bool TryAddRider(ConveyorRider rider)
         {
             if (rider == null)
                 return false;
 
-            if (IsRiding(rider))
+            if (_riders.Contains(rider))
                 return false;
 
             if (!HasSpace)
@@ -98,70 +103,59 @@ namespace Project001.Gameplay.Conveyor
             if (conveyorPath.PathLength <= 0f)
                 return false;
 
-            int slotIndex = FindFreeSlot();
-            if (slotIndex < 0)
+            if (!IsBoardingAreaClear())
                 return false;
 
-            _slotOccupants[slotIndex] = rider;
-            _occupiedCount++;
+            _riders.Add(rider);
+            _riderProgress.Add(boardingProgress);
 
             rider.transform.SetParent(transform, true);
-            rider.SetPosition(GetWorldPosition(slotIndex));
+            rider.SetPosition(GetWorldPosition(boardingProgress));
 
             return true;
         }
 
         /// <summary>
-        /// Frees the slot occupied by the given rider, if any. Does not reorder
-        /// or reposition the remaining slots.
+        /// Removes the given rider, if present, preserving the order of the
+        /// remaining riders.
         /// </summary>
         public bool TryRemoveRider(ConveyorRider rider)
         {
             if (rider == null)
                 return false;
 
-            for (int i = 0; i < capacity; i++)
-            {
-                if (_slotOccupants[i] != rider)
-                    continue;
+            int index = _riders.IndexOf(rider);
+            if (index < 0)
+                return false;
 
-                _slotOccupants[i] = null;
-                _occupiedCount--;
-                return true;
-            }
-
-            return false;
+            _riders.RemoveAt(index);
+            _riderProgress.RemoveAt(index);
+            return true;
         }
 
-        private bool IsRiding(ConveyorRider rider)
+        private bool IsBoardingAreaClear()
         {
-            for (int i = 0; i < capacity; i++)
+            float pathLength = conveyorPath.PathLength;
+
+            for (int i = 0; i < _riderProgress.Count; i++)
             {
-                if (_slotOccupants[i] == rider)
-                    return true;
+                float difference = Mathf.Abs(_riderProgress[i] - boardingProgress);
+                difference = Mathf.Min(difference, 1f - difference);
+
+                if (difference * pathLength < boardingClearance)
+                    return false;
             }
 
-            return false;
+            return true;
         }
 
-        private int FindFreeSlot()
-        {
-            for (int i = 0; i < capacity; i++)
-            {
-                if (_slotOccupants[i] == null)
-                    return i;
-            }
-
-            return -1;
-        }
-
-        private Vector3 GetWorldPosition(int slotIndex)
+        private Vector3 GetWorldPosition(float progress)
         {
             // Developer safety net: every call site already guards against a
             // missing path, so this should never fail at runtime.
             Debug.Assert(conveyorPath != null, "ConveyorSystem: ConveyorPath must exist before computing world positions.");
 
-            Vector3 localPosition = conveyorPath.GetPositionAtProgress(_slotProgress[slotIndex]);
+            Vector3 localPosition = conveyorPath.GetPositionAtProgress(progress);
             return conveyorPath.transform.TransformPoint(localPosition);
         }
     }
