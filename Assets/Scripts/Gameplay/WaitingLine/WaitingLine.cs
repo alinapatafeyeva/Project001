@@ -7,7 +7,7 @@ namespace Project001.Gameplay.WaitingLine
     /// Generates five horizontal WaitingSlot objects on Awake, using a single
     /// shared runtime-generated square-outline sprite reused by every slot.
     /// </summary>
-    public class WaitingLine : MonoBehaviour
+    public class WaitingLine : MonoBehaviour, ICollectorSource
     {
         private const int SpriteSizePixels = 32;
         private const int OutlineThicknessPixels = 3;
@@ -135,6 +135,16 @@ namespace Project001.Gameplay.WaitingLine
 
             return false;
         }
+
+        /// <summary>
+        /// Explicit ICollectorSource implementation — forwards to Contains and
+        /// ClearSlotContaining without duplicating their logic. Kept explicit
+        /// so the line's own public API keeps its existing, more descriptive
+        /// names.
+        /// </summary>
+        bool ICollectorSource.CanSelect(CollectorView collectorView) => Contains(collectorView);
+
+        bool ICollectorSource.ReleaseCollector(CollectorView collectorView) => ClearSlotContaining(collectorView);
 
         private void OnDestroy()
         {

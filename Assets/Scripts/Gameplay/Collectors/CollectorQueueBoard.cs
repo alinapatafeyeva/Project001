@@ -9,7 +9,7 @@ namespace Project001.Gameplay.Collectors
     /// Generates four vertical queues of five CollectorView objects on Awake, using a
     /// single shared runtime-generated circular sprite and a deterministic 4-colour palette.
     /// </summary>
-    public class CollectorQueueBoard : MonoBehaviour
+    public class CollectorQueueBoard : MonoBehaviour, ICollectorSource
     {
         private const int SpriteDiameterPixels = 32;
 
@@ -154,7 +154,8 @@ namespace Project001.Gameplay.Collectors
 
         /// <summary>
         /// True when the given view is currently the first available collector
-        /// of one of the board's queues.
+        /// of one of the board's queues. Implicitly satisfies
+        /// ICollectorSource.CanSelect.
         /// </summary>
         public bool CanSelect(CollectorView view)
         {
@@ -193,6 +194,13 @@ namespace Project001.Gameplay.Collectors
 
             return false;
         }
+
+        /// <summary>
+        /// Explicit ICollectorSource.ReleaseCollector implementation — forwards
+        /// to TryRemoveSelected without duplicating its logic. Kept explicit so
+        /// the board's own public API keeps its existing, more descriptive name.
+        /// </summary>
+        bool ICollectorSource.ReleaseCollector(CollectorView collectorView) => TryRemoveSelected(collectorView);
 
         private void ShiftQueueUp(CollectorQueue queue)
         {
