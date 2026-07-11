@@ -2,6 +2,7 @@ using System.IO;
 using Project001.Gameplay.Collectors;
 using Project001.Gameplay.Conveyor;
 using Project001.Gameplay.Pixels;
+using Project001.Gameplay.Victory;
 using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
@@ -34,6 +35,7 @@ public static class BootstrapSceneCreator
         Project001.Gameplay.WaitingLine.WaitingLine waitingLine = CreateWaitingLine();
         CollectorQueueBoard collectorQueueBoard = CreateCollectorQueueBoard(pixelGrid, conveyorSystem, waitingLine);
         CreateCollectorSelectionController(mainCamera, collectorQueueBoard, waitingLine, conveyorSystem);
+        CreateVictoryController(pixelGrid);
 
         string directory = Path.GetDirectoryName(ScenePath);
         if (!Directory.Exists(directory))
@@ -137,5 +139,15 @@ public static class BootstrapSceneCreator
         serializedController.FindProperty("waitingLine").objectReferenceValue = waitingLine;
         serializedController.FindProperty("conveyorSystem").objectReferenceValue = conveyorSystem;
         serializedController.ApplyModifiedPropertiesWithoutUndo();
+    }
+
+    private static void CreateVictoryController(PixelGrid pixelGrid)
+    {
+        var victoryControllerObject = new GameObject("VictoryController", typeof(VictoryController));
+
+        var victoryController = victoryControllerObject.GetComponent<VictoryController>();
+        var serializedVictoryController = new SerializedObject(victoryController);
+        serializedVictoryController.FindProperty("pixelGrid").objectReferenceValue = pixelGrid;
+        serializedVictoryController.ApplyModifiedPropertiesWithoutUndo();
     }
 }
