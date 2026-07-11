@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using Project001.Gameplay.Conveyor;
+using Project001.Gameplay.Pixels;
 using UnityEngine;
 
 namespace Project001.Gameplay.Collectors
@@ -31,6 +32,9 @@ namespace Project001.Gameplay.Collectors
         [SerializeField, Tooltip("Gap between neighbouring collectors within a queue, in world units.")]
         [Min(0f)]
         private float verticalSpacing = 0.3f;
+
+        [SerializeField, Tooltip("Grid pixel consumption reads from. Optional — if missing, collectors still generate and consumption simply does nothing.")]
+        private PixelGrid pixelGrid;
 
         private static readonly Color[] Palette =
         {
@@ -106,7 +110,8 @@ namespace Project001.Gameplay.Collectors
                     var collectorObject = new GameObject(
                         $"Collector_{queueIndex}_{rowIndex}",
                         typeof(CollectorView),
-                        typeof(ConveyorRider));
+                        typeof(ConveyorRider),
+                        typeof(PixelConsumer));
                     collectorObject.transform.SetParent(queueObject.transform, false);
                     collectorObject.transform.localPosition = new Vector3(0f, -rowIndex * _rowStepY, 0f);
                     collectorObject.transform.localScale = new Vector3(collectorSize, collectorSize, 1f);
@@ -120,6 +125,14 @@ namespace Project001.Gameplay.Collectors
 
                     var collectorView = collectorObject.GetComponent<CollectorView>();
                     collectorView.Initialize(color);
+
+                    // Reuse the same colour for the rider's food type — never
+                    // recalculate it independently.
+                    var conveyorRider = collectorObject.GetComponent<ConveyorRider>();
+                    conveyorRider.Initialize(color);
+
+                    var pixelConsumer = collectorObject.GetComponent<PixelConsumer>();
+                    pixelConsumer.Initialize(pixelGrid, conveyorRider);
 
                     queue.Add(collectorView);
                 }
