@@ -91,6 +91,9 @@ namespace Project001.Gameplay.Conveyor
             if (rider == null)
                 return false;
 
+            if (rider.IsRiding)
+                return false;
+
             if (_riders.Contains(rider))
                 return false;
 
@@ -111,6 +114,7 @@ namespace Project001.Gameplay.Conveyor
 
             rider.transform.SetParent(transform, true);
             rider.SetPosition(GetWorldPosition(boardingProgress));
+            rider.EnterRiding();
 
             return true;
         }
@@ -130,6 +134,7 @@ namespace Project001.Gameplay.Conveyor
 
             _riders.RemoveAt(index);
             _riderProgress.RemoveAt(index);
+            rider.ExitRiding();
             return true;
         }
 

@@ -29,10 +29,10 @@ public static class BootstrapSceneCreator
         Scene scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
 
         Camera mainCamera = CreateCamera();
-        CreatePixelGrid();
+        PixelGrid pixelGrid = CreatePixelGrid();
         ConveyorSystem conveyorSystem = CreateConveyor();
         Project001.Gameplay.WaitingLine.WaitingLine waitingLine = CreateWaitingLine();
-        CollectorQueueBoard collectorQueueBoard = CreateCollectorQueueBoard();
+        CollectorQueueBoard collectorQueueBoard = CreateCollectorQueueBoard(pixelGrid);
         CreateCollectorSelectionController(mainCamera, collectorQueueBoard, waitingLine, conveyorSystem);
 
         string directory = Path.GetDirectoryName(ScenePath);
@@ -58,10 +58,12 @@ public static class BootstrapSceneCreator
         return camera;
     }
 
-    private static void CreatePixelGrid()
+    private static PixelGrid CreatePixelGrid()
     {
         var pixelGridObject = new GameObject("PixelGrid", typeof(PixelGrid));
         pixelGridObject.transform.position = Vector3.zero;
+
+        return pixelGridObject.GetComponent<PixelGrid>();
     }
 
     private static ConveyorSystem CreateConveyor()
@@ -100,12 +102,17 @@ public static class BootstrapSceneCreator
         return waitingLineObject.GetComponent<Project001.Gameplay.WaitingLine.WaitingLine>();
     }
 
-    private static CollectorQueueBoard CreateCollectorQueueBoard()
+    private static CollectorQueueBoard CreateCollectorQueueBoard(PixelGrid pixelGrid)
     {
         var boardObject = new GameObject("CollectorQueueBoard", typeof(CollectorQueueBoard));
         boardObject.transform.position = new Vector3(0f, -6.6f, 0f);
 
-        return boardObject.GetComponent<CollectorQueueBoard>();
+        var collectorQueueBoard = boardObject.GetComponent<CollectorQueueBoard>();
+        var serializedBoard = new SerializedObject(collectorQueueBoard);
+        serializedBoard.FindProperty("pixelGrid").objectReferenceValue = pixelGrid;
+        serializedBoard.ApplyModifiedPropertiesWithoutUndo();
+
+        return collectorQueueBoard;
     }
 
     private static void CreateCollectorSelectionController(

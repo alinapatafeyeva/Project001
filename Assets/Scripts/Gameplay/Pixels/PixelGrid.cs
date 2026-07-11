@@ -24,6 +24,11 @@ namespace Project001.Gameplay.Pixels
 
         private Texture2D _sharedTexture;
         private Sprite _sharedSprite;
+        private PixelCell[,] _cells;
+
+        public int Width => GridSize;
+
+        public int Height => GridSize;
 
         private void Awake()
         {
@@ -50,6 +55,8 @@ namespace Project001.Gameplay.Pixels
 
         private void GenerateGrid()
         {
+            _cells = new PixelCell[GridSize, GridSize];
+
             float spacing = CellSize + cellGap;
             float offset = (GridSize - 1) * spacing * 0.5f;
 
@@ -69,9 +76,151 @@ namespace Project001.Gameplay.Pixels
                     spriteRenderer.sprite = _sharedSprite;
 
                     var cell = cellObject.GetComponent<PixelCell>();
-                    cell.SetColor(Palette[(x + y) % Palette.Length]);
+                    cell.Initialize(x, y, Palette[(x + y) % Palette.Length]);
+
+                    _cells[x, y] = cell;
                 }
             }
+        }
+
+        private enum Side
+        {
+            Left,
+            Right,
+            Bottom,
+            Top
+        }
+
+        /// <summary>
+        /// Finds the active pixel of the given colour closest to the supplied
+        /// world-space position and consumes it. The candidate must be
+        /// reachable, in a straight line, from the grid side the position is
+        /// closest to (every cell between the candidate and that boundary must
+        /// already be consumed) and must be aligned with the position along
+        /// the perpendicular axis, within alignmentTolerance world units.
+        /// Returns false if no matching pixel currently satisfies both.
+        /// </summary>
+        public bool TryConsumeNearestExposed(Vector3 worldPosition, Color color, float alignmentTolerance)
+        {
+            Vector3 localPosition = transform.InverseTransformPoint(worldPosition);
+            Side side = DetermineSide(localPosition);
+
+            PixelCell best = null;
+            float bestSqrDistance = float.MaxValue;
+
+            for (int x = 0; x < Width; x++)
+            {
+                for (int y = 0; y < Height; y++)
+                {
+                    PixelCell cell = _cells[x, y];
+                    if (cell == null || !cell.IsActive)
+                        continue;
+
+                    if (cell.PixelColor != color)
+                        continue;
+
+                    if (!HasClearInwardPath(x, y, side))
+                        continue;
+
+                    if (!IsAligned(cell, side, localPosition, alignmentTolerance))
+                        continue;
+
+                    float sqrDistance = (cell.transform.position - worldPosition).sqrMagnitude;
+                    if (sqrDistance < bestSqrDistance)
+                    {
+                        bestSqrDistance = sqrDistance;
+                        best = cell;
+                    }
+                }
+            }
+
+            if (best == null)
+                return false;
+
+            best.Consume();
+            return true;
+        }
+
+        /// <summary>
+        /// Picks the grid side the local position is closest to, normalizing by
+        /// Width/Height so the comparison stays meaningful for non-square grids.
+        /// </summary>
+        private Side DetermineSide(Vector3 localPosition)
+        {
+            float normalizedX = Width > 0 ? localPosition.x / Width : localPosition.x;
+            float normalizedY = Height > 0 ? localPosition.y / Height : localPosition.y;
+
+            if (Mathf.Abs(normalizedX) >= Mathf.Abs(normalizedY))
+                return localPosition.x >= 0f ? Side.Right : Side.Left;
+
+            return localPosition.y >= 0f ? Side.Top : Side.Bottom;
+        }
+
+        /// <summary>
+        /// From Top/Bottom the candidate must share the position's local x
+        /// (horizontal alignment); from Left/Right it must share the local y
+        /// (vertical alignment). This restricts consumption to the row or
+        /// column currently facing the rider, so cells in other rows/columns —
+        /// ahead, behind, or already passed — are never eligible until the
+        /// rider aligns with them again.
+        /// </summary>
+        private bool IsAligned(PixelCell cell, Side side, Vector3 localPosition, float alignmentTolerance)
+        {
+            Vector3 localCellPosition = transform.InverseTransformPoint(cell.transform.position);
+
+            return side == Side.Top || side == Side.Bottom
+                ? Mathf.Abs(localCellPosition.x - localPosition.x) <= alignmentTolerance
+                : Mathf.Abs(localCellPosition.y - localPosition.y) <= alignmentTolerance;
+        }
+
+        /// <summary>
+        /// True when every cell between (x, y) and the grid boundary on the
+        /// given side is already consumed (or missing), so the straight path
+        /// from that side to this cell is clear. A cell already adjacent to
+        /// the boundary is always reachable.
+        /// </summary>
+        private bool HasClearInwardPath(int x, int y, Side side)
+        {
+            switch (side)
+            {
+                case Side.Left:
+                    for (int i = 0; i < x; i++)
+                    {
+                        if (IsBlocking(i, y))
+                            return false;
+                    }
+                    return true;
+
+                case Side.Right:
+                    for (int i = Width - 1; i > x; i--)
+                    {
+                        if (IsBlocking(i, y))
+                            return false;
+                    }
+                    return true;
+
+                case Side.Bottom:
+                    for (int j = 0; j < y; j++)
+                    {
+                        if (IsBlocking(x, j))
+                            return false;
+                    }
+                    return true;
+
+                default: // Side.Top
+                    for (int j = Height - 1; j > y; j--)
+                    {
+                        if (IsBlocking(x, j))
+                            return false;
+                    }
+                    return true;
+            }
+        }
+
+        private bool IsBlocking(int x, int y)
+        {
+            PixelCell cell = _cells[x, y];
+            return cell != null && cell.IsActive;
         }
 
         private void OnDestroy()
