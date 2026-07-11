@@ -1,4 +1,5 @@
 using Project001.Gameplay.Conveyor;
+using Project001.Gameplay.Failure;
 using UnityEngine;
 
 namespace Project001.Gameplay.Collectors
@@ -7,15 +8,16 @@ namespace Project001.Gameplay.Collectors
     /// Resolves a collector's fate: a satisfied rider is removed and destroyed
     /// immediately, without waiting for a lap. An unsatisfied rider is only
     /// moved into a free WaitingLine slot once it completes a full lap back to
-    /// the conveyor's boarding point, or left riding if no slot is free. Holds
-    /// no movement logic of its own — ConveyorSystem still owns positioning
-    /// while riding.
+    /// the conveyor's boarding point, or left riding — while notifying
+    /// FailureController — if no slot is free. Holds no movement logic of its
+    /// own — ConveyorSystem still owns positioning while riding.
     /// </summary>
     public class CollectorLifecycle : MonoBehaviour
     {
         private ConveyorRider _rider;
         private ConveyorSystem _conveyorSystem;
         private Project001.Gameplay.WaitingLine.WaitingLine _waitingLine;
+        private FailureController _failureController;
         private CollectorView _collectorView;
 
         private CollectorView CollectorViewComponent =>
@@ -23,17 +25,21 @@ namespace Project001.Gameplay.Collectors
 
         /// <summary>
         /// Assigns the rider this lifecycle tracks, the conveyor it currently
-        /// rides on, and the waiting line an unsatisfied collector is placed
-        /// into. Any may be null; missing references simply skip resolution.
+        /// rides on, the waiting line an unsatisfied collector is placed
+        /// into, and the controller notified when a completed lap finds no
+        /// free waiting slot. Any may be null; missing references simply skip
+        /// the corresponding step.
         /// </summary>
         public void Initialize(
             ConveyorRider rider,
             ConveyorSystem conveyorSystem,
-            Project001.Gameplay.WaitingLine.WaitingLine waitingLine)
+            Project001.Gameplay.WaitingLine.WaitingLine waitingLine,
+            FailureController failureController)
         {
             _rider = rider;
             _conveyorSystem = conveyorSystem;
             _waitingLine = waitingLine;
+            _failureController = failureController;
         }
 
         private void Update()
@@ -67,7 +73,15 @@ namespace Project001.Gameplay.Collectors
 
             var slot = _waitingLine.GetFirstEmptySlot();
             if (slot == null)
+            {
+                // Still hungry, lap complete, no slot free — report the
+                // situation; FailureController decides whether that actually
+                // constitutes failure (e.g. not once every pixel is already
+                // consumed). The collector stays riding for the prototype: no
+                // teleport, removal, or destruction here.
+                _failureController?.NotifyWaitingLineFull();
                 return;
+            }
 
             CollectorView collectorView = CollectorViewComponent;
             if (collectorView == null)
