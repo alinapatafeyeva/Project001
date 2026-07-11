@@ -31,9 +31,10 @@ namespace Project001.Gameplay.Conveyor
         [Min(0f)]
         private float boardingClearance = 1f;
 
-        // Both lists are index-aligned and ordered by launch (add) order.
+        // All lists are index-aligned and ordered by launch (add) order.
         private readonly List<ConveyorRider> _riders = new List<ConveyorRider>();
         private readonly List<float> _riderProgress = new List<float>();
+        private readonly List<int> _riderCompletedLaps = new List<int>();
 
         public int Capacity => capacity;
 
@@ -44,6 +45,7 @@ namespace Project001.Gameplay.Conveyor
         private void Awake()
         {
             capacity = Mathf.Max(1, capacity);
+            moveSpeed = Mathf.Max(0f, moveSpeed);
         }
 
         private void Update()
@@ -57,7 +59,8 @@ namespace Project001.Gameplay.Conveyor
 
             // Positive delta progress walks the path's point order, which is
             // counter-clockwise, so movement direction is never flipped here.
-            float deltaProgress = Mathf.Abs(moveSpeed) * Time.deltaTime / pathLength;
+            // moveSpeed is clamped non-negative in Awake, so no Abs is needed.
+            float deltaProgress = moveSpeed * Time.deltaTime / pathLength;
 
             for (int i = 0; i < _riders.Count; i++)
             {
@@ -68,15 +71,27 @@ namespace Project001.Gameplay.Conveyor
                     // only means the rider was destroyed externally. Drop it.
                     _riders.RemoveAt(i);
                     _riderProgress.RemoveAt(i);
+                    _riderCompletedLaps.RemoveAt(i);
                     i--;
                     continue;
                 }
 
-                float progress = _riderProgress[i] + deltaProgress;
-                progress -= Mathf.Floor(progress);
-                _riderProgress[i] = progress;
+                // A completed lap means returning to boardingProgress, not
+                // wrapping at the path's raw 0/1 seam — that seam sits near
+                // the upper-right corner, while boarding happens lower-left,
+                // so working in progress relative to boardingProgress is what
+                // makes "one lap" mean one full trip back to the boarding
+                // point. FloorToInt handles an unusually large deltaProgress
+                // that completes more than one lap in a single frame in one step.
+                float relativeProgress = Mathf.Repeat(_riderProgress[i] - boardingProgress, 1f);
+                float rawRelativeProgress = relativeProgress + deltaProgress;
+                int lapsCompletedThisFrame = Mathf.FloorToInt(rawRelativeProgress);
+                float wrappedRelativeProgress = Mathf.Repeat(rawRelativeProgress, 1f);
 
-                rider.SetPosition(GetWorldPosition(progress));
+                _riderProgress[i] = Mathf.Repeat(boardingProgress + wrappedRelativeProgress, 1f);
+                _riderCompletedLaps[i] += lapsCompletedThisFrame;
+
+                rider.SetPosition(GetWorldPosition(_riderProgress[i]));
             }
         }
 
@@ -111,6 +126,7 @@ namespace Project001.Gameplay.Conveyor
 
             _riders.Add(rider);
             _riderProgress.Add(boardingProgress);
+            _riderCompletedLaps.Add(0);
 
             rider.transform.SetParent(transform, true);
             rider.SetPosition(GetWorldPosition(boardingProgress));
@@ -134,7 +150,28 @@ namespace Project001.Gameplay.Conveyor
 
             _riders.RemoveAt(index);
             _riderProgress.RemoveAt(index);
+            _riderCompletedLaps.RemoveAt(index);
             rider.ExitRiding();
+            return true;
+        }
+
+        /// <summary>
+        /// Consumes one pending completed lap for the given rider, if any.
+        /// Returns true at most once per completed lap; false if the rider is
+        /// not currently on this conveyor or has no unconsumed lap yet. Does
+        /// not remove, destroy, or otherwise decide the rider's fate — that is
+        /// left entirely to whoever calls this.
+        /// </summary>
+        public bool TryConsumeCompletedLap(ConveyorRider rider)
+        {
+            if (rider == null)
+                return false;
+
+            int index = _riders.IndexOf(rider);
+            if (index < 0 || _riderCompletedLaps[index] <= 0)
+                return false;
+
+            _riderCompletedLaps[index]--;
             return true;
         }
 
