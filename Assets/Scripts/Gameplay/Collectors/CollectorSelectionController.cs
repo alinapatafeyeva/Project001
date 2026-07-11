@@ -42,24 +42,63 @@ namespace Project001.Gameplay.Collectors
             if (view == null)
                 return;
 
-            bool fromQueue = collectorQueueBoard != null && collectorQueueBoard.CanSelect(view);
-            bool fromWaitingLine = !fromQueue && waitingLine != null && waitingLine.Contains(view);
-
-            if (!fromQueue && !fromWaitingLine)
+            ICollectorSource source = FindSource(view);
+            if (source == null)
                 return;
 
             var rider = view.GetComponent<ConveyorRider>();
             if (rider == null)
                 return;
 
+            // Captured before boarding so a failed release can be rolled back
+            // to exactly where the collector visually was.
+            Transform collectorTransform = view.transform;
+            Transform originalParent = collectorTransform.parent;
+            Vector3 originalLocalPosition = collectorTransform.localPosition;
+
             if (!conveyorSystem.TryAddRider(rider))
                 return;
 
-            // ConveyorSystem now owns the rider's position; only finalize the source side.
-            if (fromQueue)
-                collectorQueueBoard.TryRemoveSelected(view);
-            else
-                waitingLine.ClearSlotContaining(view);
+            // ConveyorSystem now owns the rider's position; only release the
+            // source side. If release fails, the source still logically holds
+            // the collector while it is now also riding the conveyor — that
+            // double state is not allowed, so boarding is rolled back instead.
+            if (source.ReleaseCollector(view))
+                return;
+
+            bool rolledBack = conveyorSystem.TryRemoveRider(rider);
+            if (rolledBack)
+            {
+                collectorTransform.SetParent(originalParent, true);
+                collectorTransform.localPosition = originalLocalPosition;
+            }
+
+            Debug.LogError(
+                $"CollectorSelectionController: '{view.name}' boarded the conveyor but its source failed to release it. "
+                    + $"Conveyor rollback {(rolledBack ? "succeeded" : "FAILED — collector may be lost or duplicated")}.",
+                view);
+        }
+
+        /// <summary>
+        /// Finds whichever configured ICollectorSource currently considers the
+        /// given view selectable — the queue board's first-available
+        /// collector, or an occupied waiting slot — without either source
+        /// needing removal logic specific to the other. The interface-typed
+        /// locals below are only ever truly null when a serialized field was
+        /// left unassigned, never a destroyed Unity Object, so the plain null
+        /// check is safe here.
+        /// </summary>
+        private ICollectorSource FindSource(CollectorView view)
+        {
+            ICollectorSource queueSource = collectorQueueBoard;
+            if (queueSource != null && queueSource.CanSelect(view))
+                return queueSource;
+
+            ICollectorSource waitingLineSource = waitingLine;
+            if (waitingLineSource != null && waitingLineSource.CanSelect(view))
+                return waitingLineSource;
+
+            return null;
         }
 
         private CollectorView FindCollectorAt(Vector2 screenPosition)
