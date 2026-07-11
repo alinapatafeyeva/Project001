@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using Project001.Gameplay.Conveyor;
+using Project001.Gameplay.Failure;
 using Project001.Gameplay.Pixels;
 using UnityEngine;
 
@@ -41,6 +42,9 @@ namespace Project001.Gameplay.Collectors
 
         [SerializeField, Tooltip("Waiting line an unsatisfied collector is placed into after a completed lap. Optional — if missing, an unsatisfied collector stays on the conveyor.")]
         private Project001.Gameplay.WaitingLine.WaitingLine waitingLine;
+
+        [SerializeField, Tooltip("Controller notified when an unsatisfied collector completes a lap and finds no free Waiting Line slot. Optional — if missing, that situation is simply never reported.")]
+        private FailureController failureController;
 
         private const int HungerCapacity = 3;
 
@@ -145,7 +149,7 @@ namespace Project001.Gameplay.Collectors
                     pixelConsumer.Initialize(pixelGrid, conveyorRider);
 
                     var collectorLifecycle = collectorObject.GetComponent<CollectorLifecycle>();
-                    collectorLifecycle.Initialize(conveyorRider, conveyorSystem, waitingLine);
+                    collectorLifecycle.Initialize(conveyorRider, conveyorSystem, waitingLine, failureController);
 
                     queue.Add(collectorView);
                 }

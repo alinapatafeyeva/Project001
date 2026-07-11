@@ -1,6 +1,7 @@
 using System.IO;
 using Project001.Gameplay.Collectors;
 using Project001.Gameplay.Conveyor;
+using Project001.Gameplay.Failure;
 using Project001.Gameplay.Pixels;
 using Project001.Gameplay.Victory;
 using UnityEditor;
@@ -33,7 +34,8 @@ public static class BootstrapSceneCreator
         PixelGrid pixelGrid = CreatePixelGrid();
         ConveyorSystem conveyorSystem = CreateConveyor();
         Project001.Gameplay.WaitingLine.WaitingLine waitingLine = CreateWaitingLine();
-        CollectorQueueBoard collectorQueueBoard = CreateCollectorQueueBoard(pixelGrid, conveyorSystem, waitingLine);
+        FailureController failureController = CreateFailureController(pixelGrid);
+        CollectorQueueBoard collectorQueueBoard = CreateCollectorQueueBoard(pixelGrid, conveyorSystem, waitingLine, failureController);
         CreateCollectorSelectionController(mainCamera, collectorQueueBoard, waitingLine, conveyorSystem);
         CreateVictoryController(pixelGrid);
 
@@ -107,7 +109,8 @@ public static class BootstrapSceneCreator
     private static CollectorQueueBoard CreateCollectorQueueBoard(
         PixelGrid pixelGrid,
         ConveyorSystem conveyorSystem,
-        Project001.Gameplay.WaitingLine.WaitingLine waitingLine)
+        Project001.Gameplay.WaitingLine.WaitingLine waitingLine,
+        FailureController failureController)
     {
         var boardObject = new GameObject("CollectorQueueBoard", typeof(CollectorQueueBoard));
         boardObject.transform.position = new Vector3(0f, -6.6f, 0f);
@@ -117,6 +120,7 @@ public static class BootstrapSceneCreator
         serializedBoard.FindProperty("pixelGrid").objectReferenceValue = pixelGrid;
         serializedBoard.FindProperty("conveyorSystem").objectReferenceValue = conveyorSystem;
         serializedBoard.FindProperty("waitingLine").objectReferenceValue = waitingLine;
+        serializedBoard.FindProperty("failureController").objectReferenceValue = failureController;
         serializedBoard.ApplyModifiedPropertiesWithoutUndo();
 
         return collectorQueueBoard;
@@ -139,6 +143,18 @@ public static class BootstrapSceneCreator
         serializedController.FindProperty("waitingLine").objectReferenceValue = waitingLine;
         serializedController.FindProperty("conveyorSystem").objectReferenceValue = conveyorSystem;
         serializedController.ApplyModifiedPropertiesWithoutUndo();
+    }
+
+    private static FailureController CreateFailureController(PixelGrid pixelGrid)
+    {
+        var failureControllerObject = new GameObject("FailureController", typeof(FailureController));
+
+        var failureController = failureControllerObject.GetComponent<FailureController>();
+        var serializedFailureController = new SerializedObject(failureController);
+        serializedFailureController.FindProperty("pixelGrid").objectReferenceValue = pixelGrid;
+        serializedFailureController.ApplyModifiedPropertiesWithoutUndo();
+
+        return failureController;
     }
 
     private static void CreateVictoryController(PixelGrid pixelGrid)
