@@ -36,6 +36,14 @@ namespace Project001.Gameplay.Collectors
         [SerializeField, Tooltip("Grid pixel consumption reads from. Optional — if missing, collectors still generate and consumption simply does nothing.")]
         private PixelGrid pixelGrid;
 
+        [SerializeField, Tooltip("Conveyor system whose completed laps drive each collector's lifecycle resolution. Optional — if missing, lap resolution never triggers.")]
+        private ConveyorSystem conveyorSystem;
+
+        [SerializeField, Tooltip("Waiting line an unsatisfied collector is placed into after a completed lap. Optional — if missing, an unsatisfied collector stays on the conveyor.")]
+        private Project001.Gameplay.WaitingLine.WaitingLine waitingLine;
+
+        private const int HungerCapacity = 3;
+
         private static readonly Color[] Palette =
         {
             Color.red,
@@ -111,7 +119,8 @@ namespace Project001.Gameplay.Collectors
                         $"Collector_{queueIndex}_{rowIndex}",
                         typeof(CollectorView),
                         typeof(ConveyorRider),
-                        typeof(PixelConsumer));
+                        typeof(PixelConsumer),
+                        typeof(CollectorLifecycle));
                     collectorObject.transform.SetParent(queueObject.transform, false);
                     collectorObject.transform.localPosition = new Vector3(0f, -rowIndex * _rowStepY, 0f);
                     collectorObject.transform.localScale = new Vector3(collectorSize, collectorSize, 1f);
@@ -127,12 +136,16 @@ namespace Project001.Gameplay.Collectors
                     collectorView.Initialize(color);
 
                     // Reuse the same colour for the rider's food type — never
-                    // recalculate it independently.
+                    // recalculate it independently. Every collector starts with
+                    // the same temporary prototype hunger capacity.
                     var conveyorRider = collectorObject.GetComponent<ConveyorRider>();
-                    conveyorRider.Initialize(color);
+                    conveyorRider.Initialize(color, HungerCapacity);
 
                     var pixelConsumer = collectorObject.GetComponent<PixelConsumer>();
                     pixelConsumer.Initialize(pixelGrid, conveyorRider);
+
+                    var collectorLifecycle = collectorObject.GetComponent<CollectorLifecycle>();
+                    collectorLifecycle.Initialize(conveyorRider, conveyorSystem, waitingLine);
 
                     queue.Add(collectorView);
                 }

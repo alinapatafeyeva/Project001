@@ -51,9 +51,15 @@ namespace Project001.Gameplay.Pixels
             if (!rider.IsRiding)
                 return;
 
+            if (rider.IsSatisfied)
+                return;
+
             // Reset after every attempt, successful or not, so a failed search
             // does not re-scan the whole grid on the very next frame.
-            pixelGrid.TryConsumeNearestExposed(rider.transform.position, rider.FoodColor, alignmentTolerance);
+            bool consumed = pixelGrid.TryConsumeNearestExposed(rider.transform.position, rider.FoodColor, alignmentTolerance);
+            if (consumed)
+                rider.RegisterConsumedPixel();
+
             _cooldownRemaining = consumptionCooldown;
         }
     }

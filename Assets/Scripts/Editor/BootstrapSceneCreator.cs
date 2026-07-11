@@ -32,7 +32,7 @@ public static class BootstrapSceneCreator
         PixelGrid pixelGrid = CreatePixelGrid();
         ConveyorSystem conveyorSystem = CreateConveyor();
         Project001.Gameplay.WaitingLine.WaitingLine waitingLine = CreateWaitingLine();
-        CollectorQueueBoard collectorQueueBoard = CreateCollectorQueueBoard(pixelGrid);
+        CollectorQueueBoard collectorQueueBoard = CreateCollectorQueueBoard(pixelGrid, conveyorSystem, waitingLine);
         CreateCollectorSelectionController(mainCamera, collectorQueueBoard, waitingLine, conveyorSystem);
 
         string directory = Path.GetDirectoryName(ScenePath);
@@ -102,7 +102,10 @@ public static class BootstrapSceneCreator
         return waitingLineObject.GetComponent<Project001.Gameplay.WaitingLine.WaitingLine>();
     }
 
-    private static CollectorQueueBoard CreateCollectorQueueBoard(PixelGrid pixelGrid)
+    private static CollectorQueueBoard CreateCollectorQueueBoard(
+        PixelGrid pixelGrid,
+        ConveyorSystem conveyorSystem,
+        Project001.Gameplay.WaitingLine.WaitingLine waitingLine)
     {
         var boardObject = new GameObject("CollectorQueueBoard", typeof(CollectorQueueBoard));
         boardObject.transform.position = new Vector3(0f, -6.6f, 0f);
@@ -110,6 +113,8 @@ public static class BootstrapSceneCreator
         var collectorQueueBoard = boardObject.GetComponent<CollectorQueueBoard>();
         var serializedBoard = new SerializedObject(collectorQueueBoard);
         serializedBoard.FindProperty("pixelGrid").objectReferenceValue = pixelGrid;
+        serializedBoard.FindProperty("conveyorSystem").objectReferenceValue = conveyorSystem;
+        serializedBoard.FindProperty("waitingLine").objectReferenceValue = waitingLine;
         serializedBoard.ApplyModifiedPropertiesWithoutUndo();
 
         return collectorQueueBoard;
