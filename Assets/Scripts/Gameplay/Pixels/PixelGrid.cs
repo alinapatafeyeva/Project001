@@ -64,19 +64,18 @@ namespace Project001.Gameplay.Pixels
             {
                 for (int y = 0; y < GridSize; y++)
                 {
+                    var localPosition = new Vector2(x * spacing - offset, y * spacing - offset);
+
                     var cellObject = new GameObject($"Pixel_{x}_{y}", typeof(PixelCell));
                     cellObject.transform.SetParent(transform, false);
-                    cellObject.transform.localPosition = new Vector3(
-                        x * spacing - offset,
-                        y * spacing - offset,
-                        0f);
+                    cellObject.transform.localPosition = new Vector3(localPosition.x, localPosition.y, 0f);
                     cellObject.transform.localScale = new Vector3(CellSize, CellSize, 1f);
 
                     var spriteRenderer = cellObject.GetComponent<SpriteRenderer>();
                     spriteRenderer.sprite = _sharedSprite;
 
                     var cell = cellObject.GetComponent<PixelCell>();
-                    cell.Initialize(x, y, Palette[(x + y) % Palette.Length]);
+                    cell.Initialize(x, y, localPosition, Palette[(x + y) % Palette.Length]);
 
                     _cells[x, y] = cell;
                 }
@@ -166,7 +165,7 @@ namespace Project001.Gameplay.Pixels
         /// </summary>
         private bool IsAligned(PixelCell cell, Side side, Vector3 localPosition, float alignmentTolerance)
         {
-            Vector3 localCellPosition = transform.InverseTransformPoint(cell.transform.position);
+            Vector2 localCellPosition = cell.LocalPosition;
 
             return side == Side.Top || side == Side.Bottom
                 ? Mathf.Abs(localCellPosition.x - localPosition.x) <= alignmentTolerance

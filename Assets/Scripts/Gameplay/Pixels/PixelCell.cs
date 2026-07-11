@@ -20,14 +20,17 @@ namespace Project001.Gameplay.Pixels
 
         public int GridY { get; private set; }
 
+        public Vector2 LocalPosition { get; private set; }
+
         public Color PixelColor { get; private set; }
 
         public bool IsActive { get; private set; } = true;
 
-        public void Initialize(int gridX, int gridY, Color color)
+        public void Initialize(int gridX, int gridY, Vector2 localPosition, Color color)
         {
             GridX = gridX;
             GridY = gridY;
+            LocalPosition = localPosition;
             PixelColor = color;
             SpriteRenderer.color = color;
         }
