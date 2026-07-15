@@ -6,7 +6,10 @@ namespace Project001.Gameplay.WaitingLine
     /// <summary>
     /// Generates horizontal WaitingSlot objects on Initialize, using a single
     /// shared runtime-generated square-outline sprite reused by every slot.
-    /// Slot count comes from the level-provided capacity.
+    /// Slot count comes from the capacity passed to Initialize — a fixed
+    /// global gameplay setting (see LevelBootstrapper.FixedWaitingLineCapacity),
+    /// not level data, since Waiting Line capacity must stay constant across
+    /// every level.
     /// </summary>
     public class WaitingLine : MonoBehaviour, ICollectorSource
     {
@@ -31,12 +34,12 @@ namespace Project001.Gameplay.WaitingLine
         private bool _isInitialized;
 
         /// <summary>
-        /// Builds this line's slots using the given level-provided capacity,
-        /// which is normalized to at least 1. Must be called exactly once,
-        /// before any selection or boarding is attempted. A second call, or
-        /// a first call on an object that already has stale baked children,
-        /// is refused (logged) rather than generating duplicate slots.
-        /// Existing children are never deleted.
+        /// Builds this line's slots using the given capacity, which is
+        /// normalized to at least 1. Must be called exactly once, before any
+        /// selection or boarding is attempted. A second call, or a first
+        /// call on an object that already has stale baked children, is
+        /// refused (logged) rather than generating duplicate slots. Existing
+        /// children are never deleted.
         /// </summary>
         public void Initialize(int capacity)
         {

@@ -54,7 +54,8 @@ namespace Project001.Gameplay.Levels
         /// exactly covered: hunger capacity 3, 4 collectors of each of
         /// m001/m002/m003 (4 x 3 = 12, matching the pixel count exactly, no
         /// surplus and no non-matching filler). Conveyor capacity 5, move
-        /// speed 2, and a 5-slot Waiting Line.
+        /// speed 2. Waiting Line capacity is not level data — every level
+        /// gets the same fixed capacity from LevelBootstrapper.
         /// </summary>
         private static LevelDefinition BuildPrototypeLevel()
         {
@@ -63,8 +64,7 @@ namespace Project001.Gameplay.Levels
                 BuildPrototypePixelLayout(),
                 BuildPrototypeCollectorQueues(),
                 conveyorCapacity: 5,
-                conveyorMoveSpeed: 2f,
-                waitingLineCapacity: 5);
+                conveyorMoveSpeed: 2f);
         }
 
         private static PixelLayoutDefinition BuildPrototypePixelLayout()
@@ -117,10 +117,10 @@ namespace Project001.Gameplay.Levels
         /// queues of 4 collectors each dedicated to a single MatchTypeId per
         /// queue — alternating m002/m004/m002/m004, a structurally different
         /// arrangement than the prototype's mixed per-queue cycling —
-        /// hunger capacity 2 (lower — more bites needed per collector),
+        /// hunger capacity 2 (lower — more bites needed per collector), and
         /// conveyor capacity 8 at move speed 3.5 (higher throughput,
-        /// faster), and a 3-slot Waiting Line (tighter — failure triggers
-        /// sooner).
+        /// faster). Waiting Line capacity is not level data — every level
+        /// gets the same fixed capacity from LevelBootstrapper.
         ///
         /// Only m002 and m004 collectors exist here, matching the grid's
         /// only two MatchTypeIds exactly: 2 queues of m002 (2 x 4 x 2 = 16)
@@ -134,8 +134,7 @@ namespace Project001.Gameplay.Levels
                 BuildSecondTestPixelLayout(),
                 BuildSecondTestCollectorQueues(),
                 conveyorCapacity: 8,
-                conveyorMoveSpeed: 3.5f,
-                waitingLineCapacity: 3);
+                conveyorMoveSpeed: 3.5f);
         }
 
         private static PixelLayoutDefinition BuildSecondTestPixelLayout()

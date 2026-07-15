@@ -131,15 +131,12 @@ namespace Project001.Gameplay.Levels
 
         public float ConveyorMoveSpeed { get; }
 
-        public int WaitingLineCapacity { get; }
-
         public LevelDefinition(
             LevelId id,
             PixelLayoutDefinition pixelLayout,
             IReadOnlyList<CollectorQueueDefinition> collectorQueues,
             int conveyorCapacity,
-            float conveyorMoveSpeed,
-            int waitingLineCapacity)
+            float conveyorMoveSpeed)
         {
             if (pixelLayout == null)
                 throw new ArgumentNullException(nameof(pixelLayout));
@@ -156,9 +153,6 @@ namespace Project001.Gameplay.Levels
             if (conveyorMoveSpeed < 0f)
                 throw new ArgumentOutOfRangeException(nameof(conveyorMoveSpeed), "Conveyor move speed must not be negative.");
 
-            if (waitingLineCapacity <= 0)
-                throw new ArgumentOutOfRangeException(nameof(waitingLineCapacity), "Waiting Line capacity must be positive.");
-
             var copy = new List<CollectorQueueDefinition>(collectorQueues.Count);
             foreach (CollectorQueueDefinition queue in collectorQueues)
             {
@@ -173,7 +167,6 @@ namespace Project001.Gameplay.Levels
             _collectorQueues = new ReadOnlyCollection<CollectorQueueDefinition>(copy);
             ConveyorCapacity = conveyorCapacity;
             ConveyorMoveSpeed = conveyorMoveSpeed;
-            WaitingLineCapacity = waitingLineCapacity;
         }
     }
 }

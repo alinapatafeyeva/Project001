@@ -14,12 +14,23 @@ namespace Project001.Gameplay.Levels
     /// </summary>
     public sealed class MatchTypePresentation
     {
+        /// <summary>
+        /// Dedicated MatchTypeId for Bootstrap-only Failure test debug
+        /// collectors (see LevelBootstrapper.enableFailureTestSetup). Never
+        /// appears in any approved pixel layout, so a collector built from
+        /// it can never be satisfied by real gameplay. Mapped here, like
+        /// every other MatchTypeId, purely so no missing-colour diagnostic
+        /// is logged for it.
+        /// </summary>
+        public static readonly MatchTypeId DebugUnmatchedMatchTypeId = new MatchTypeId("debug_unmatched");
+
         private static readonly Dictionary<MatchTypeId, Color> Colors = new Dictionary<MatchTypeId, Color>
         {
             { new MatchTypeId("m001"), Color.red },
             { new MatchTypeId("m002"), Color.green },
             { new MatchTypeId("m003"), Color.blue },
             { new MatchTypeId("m004"), Color.yellow },
+            { DebugUnmatchedMatchTypeId, Color.black },
         };
 
         public Color GetColor(MatchTypeId matchTypeId)
