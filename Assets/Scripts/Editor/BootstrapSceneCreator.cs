@@ -2,6 +2,7 @@ using System.IO;
 using Project001.Gameplay.Collectors;
 using Project001.Gameplay.Conveyor;
 using Project001.Gameplay.Failure;
+using Project001.Gameplay.Levels;
 using Project001.Gameplay.Pixels;
 using Project001.Gameplay.Victory;
 using UnityEditor;
@@ -9,6 +10,14 @@ using UnityEditor.SceneManagement;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 
+/// <summary>
+/// Creates the empty scene skeleton and wires cross-references between its
+/// gameplay systems. Does not generate any level content itself — PixelGrid,
+/// WaitingLine, CollectorQueueBoard, and ConveyorSystem stay empty/unconfigured
+/// until LevelBootstrapper builds them from a LevelDefinition at runtime
+/// (Awake), so the saved scene works correctly after entering Play Mode or
+/// being loaded fresh, not just immediately after this menu command runs.
+/// </summary>
 public static class BootstrapSceneCreator
 {
     private const string ScenePath = "Assets/Scenes/Bootstrap.unity";
@@ -38,6 +47,7 @@ public static class BootstrapSceneCreator
         CollectorQueueBoard collectorQueueBoard = CreateCollectorQueueBoard(pixelGrid, conveyorSystem, waitingLine, failureController);
         CreateCollectorSelectionController(mainCamera, collectorQueueBoard, waitingLine, conveyorSystem);
         CreateVictoryController(pixelGrid);
+        CreateLevelBootstrapper(pixelGrid, conveyorSystem, waitingLine, collectorQueueBoard);
 
         string directory = Path.GetDirectoryName(ScenePath);
         if (!Directory.Exists(directory))
@@ -165,5 +175,22 @@ public static class BootstrapSceneCreator
         var serializedVictoryController = new SerializedObject(victoryController);
         serializedVictoryController.FindProperty("pixelGrid").objectReferenceValue = pixelGrid;
         serializedVictoryController.ApplyModifiedPropertiesWithoutUndo();
+    }
+
+    private static void CreateLevelBootstrapper(
+        PixelGrid pixelGrid,
+        ConveyorSystem conveyorSystem,
+        Project001.Gameplay.WaitingLine.WaitingLine waitingLine,
+        CollectorQueueBoard collectorQueueBoard)
+    {
+        var bootstrapperObject = new GameObject("LevelBootstrapper", typeof(LevelBootstrapper));
+
+        var bootstrapper = bootstrapperObject.GetComponent<LevelBootstrapper>();
+        var serializedBootstrapper = new SerializedObject(bootstrapper);
+        serializedBootstrapper.FindProperty("pixelGrid").objectReferenceValue = pixelGrid;
+        serializedBootstrapper.FindProperty("conveyorSystem").objectReferenceValue = conveyorSystem;
+        serializedBootstrapper.FindProperty("waitingLine").objectReferenceValue = waitingLine;
+        serializedBootstrapper.FindProperty("collectorQueueBoard").objectReferenceValue = collectorQueueBoard;
+        serializedBootstrapper.ApplyModifiedPropertiesWithoutUndo();
     }
 }

@@ -13,7 +13,7 @@ namespace Project001.Gameplay.Pixels
         [SerializeField, Tooltip("Grid pixels are consumed from.")]
         private PixelGrid pixelGrid;
 
-        [SerializeField, Tooltip("Rider whose position and food colour drive consumption.")]
+        [SerializeField, Tooltip("Rider whose position and MatchTypeId drive consumption.")]
         private ConveyorRider rider;
 
         [SerializeField, Tooltip("Minimum time, in seconds, between consumption attempts.")]
@@ -56,7 +56,7 @@ namespace Project001.Gameplay.Pixels
 
             // Reset after every attempt, successful or not, so a failed search
             // does not re-scan the whole grid on the very next frame.
-            bool consumed = pixelGrid.TryConsumeNearestExposed(rider.transform.position, rider.FoodColor, alignmentTolerance);
+            bool consumed = pixelGrid.TryConsumeNearestExposed(rider.transform.position, rider.MatchTypeId, alignmentTolerance);
             if (consumed)
                 rider.RegisterConsumedPixel();
 

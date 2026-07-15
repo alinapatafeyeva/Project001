@@ -4,8 +4,9 @@ using UnityEngine;
 namespace Project001.Gameplay.WaitingLine
 {
     /// <summary>
-    /// Generates five horizontal WaitingSlot objects on Awake, using a single
+    /// Generates horizontal WaitingSlot objects on Initialize, using a single
     /// shared runtime-generated square-outline sprite reused by every slot.
+    /// Slot count comes from the level-provided capacity.
     /// </summary>
     public class WaitingLine : MonoBehaviour, ICollectorSource
     {
@@ -27,11 +28,34 @@ namespace Project001.Gameplay.WaitingLine
         private Texture2D _sharedTexture;
         private Sprite _sharedSprite;
         private WaitingSlot[] _slots;
+        private bool _isInitialized;
 
-        private void Awake()
+        /// <summary>
+        /// Builds this line's slots using the given level-provided capacity,
+        /// which is normalized to at least 1. Must be called exactly once,
+        /// before any selection or boarding is attempted. A second call, or
+        /// a first call on an object that already has stale baked children,
+        /// is refused (logged) rather than generating duplicate slots.
+        /// Existing children are never deleted.
+        /// </summary>
+        public void Initialize(int capacity)
         {
+            if (_isInitialized)
+            {
+                Debug.LogError($"WaitingLine: Initialize called more than once on '{name}'; ignoring to avoid duplicate slots.", this);
+                return;
+            }
+
+            if (transform.childCount > 0)
+            {
+                Debug.LogError($"WaitingLine: '{name}' already has {transform.childCount} child object(s) before Initialize; aborting to avoid duplicate slots. Scene may contain stale baked children.", this);
+                return;
+            }
+
+            slotCount = Mathf.Max(1, capacity);
             CreateSharedSprite();
             GenerateSlots();
+            _isInitialized = true;
         }
 
         private void CreateSharedSprite()
@@ -92,6 +116,9 @@ namespace Project001.Gameplay.WaitingLine
 
         public WaitingSlot GetFirstEmptySlot()
         {
+            if (_slots == null)
+                return null;
+
             foreach (WaitingSlot slot in _slots)
             {
                 if (!slot.IsOccupied)

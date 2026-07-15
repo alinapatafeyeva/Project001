@@ -1,12 +1,14 @@
+using Project001.Gameplay.Levels;
 using UnityEngine;
 
 namespace Project001.Gameplay.Pixels
 {
     /// <summary>
     /// A single visual cell of a pixel grid. Owns a SpriteRenderer plus its
-    /// grid coordinates and colour/type, and exposes whether it can still be
-    /// consumed. Holds no rider, conveyor, or consumption-search logic —
-    /// PixelGrid decides what and when to consume.
+    /// grid coordinates, gameplay MatchTypeId, and a separate visual colour,
+    /// and exposes whether it can still be consumed. Holds no rider,
+    /// conveyor, or consumption-search logic — PixelGrid decides what and
+    /// when to consume.
     /// </summary>
     [RequireComponent(typeof(SpriteRenderer))]
     public class PixelCell : MonoBehaviour
@@ -22,15 +24,18 @@ namespace Project001.Gameplay.Pixels
 
         public Vector2 LocalPosition { get; private set; }
 
+        public MatchTypeId MatchTypeId { get; private set; }
+
         public Color PixelColor { get; private set; }
 
         public bool IsActive { get; private set; } = true;
 
-        public void Initialize(int gridX, int gridY, Vector2 localPosition, Color color)
+        public void Initialize(int gridX, int gridY, Vector2 localPosition, MatchTypeId matchTypeId, Color color)
         {
             GridX = gridX;
             GridY = gridY;
             LocalPosition = localPosition;
+            MatchTypeId = matchTypeId;
             PixelColor = color;
             SpriteRenderer.color = color;
         }
