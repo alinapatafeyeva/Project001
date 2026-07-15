@@ -1,3 +1,4 @@
+using Project001.Gameplay.Levels;
 using UnityEngine;
 
 namespace Project001.Gameplay.Conveyor
@@ -6,12 +7,12 @@ namespace Project001.Gameplay.Conveyor
     /// A single object currently occupying the conveyor. Holds no progress,
     /// input, queue, or capacity logic of its own — ConveyorSystem owns its
     /// path progress and drives its position via SetPosition. Also carries the
-    /// minimal food colour/type state a consumer needs to match pixels; it
+    /// minimal MatchTypeId/hunger state a consumer needs to match pixels; it
     /// never searches for pixels itself.
     /// </summary>
     public class ConveyorRider : MonoBehaviour
     {
-        public Color FoodColor { get; private set; }
+        public MatchTypeId MatchTypeId { get; private set; }
 
         public int HungerCapacity { get; private set; }
 
@@ -25,9 +26,9 @@ namespace Project001.Gameplay.Conveyor
         /// </summary>
         public bool IsRiding { get; private set; }
 
-        public void Initialize(Color foodColor, int hungerCapacity)
+        public void Initialize(MatchTypeId matchTypeId, int hungerCapacity)
         {
-            FoodColor = foodColor;
+            MatchTypeId = matchTypeId;
             HungerCapacity = Mathf.Max(0, hungerCapacity);
             RemainingHunger = HungerCapacity;
         }

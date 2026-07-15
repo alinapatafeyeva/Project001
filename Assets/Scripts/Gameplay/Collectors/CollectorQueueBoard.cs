@@ -1,26 +1,22 @@
+using System;
 using System.Collections.Generic;
 using Project001.Gameplay.Conveyor;
 using Project001.Gameplay.Failure;
+using Project001.Gameplay.Levels;
 using Project001.Gameplay.Pixels;
 using UnityEngine;
 
 namespace Project001.Gameplay.Collectors
 {
     /// <summary>
-    /// Generates four vertical queues of five CollectorView objects on Awake, using a
-    /// single shared runtime-generated circular sprite and a deterministic 4-colour palette.
+    /// Generates vertical queues of CollectorView objects on Initialize, using a
+    /// single shared runtime-generated circular sprite. Queue count, per-queue
+    /// collector order, each collector's MatchTypeId, and hunger capacity all
+    /// come from the injected level collector-queue data.
     /// </summary>
     public class CollectorQueueBoard : MonoBehaviour, ICollectorSource
     {
         private const int SpriteDiameterPixels = 32;
-
-        [SerializeField, Tooltip("Number of vertical queues to generate.")]
-        [Min(1)]
-        private int queueCount = 4;
-
-        [SerializeField, Tooltip("Number of collectors within each queue.")]
-        [Min(1)]
-        private int collectorsPerQueue = 5;
 
         [SerializeField, Tooltip("World-space size of a single collector, in world units.")]
         [Min(0.01f)]
@@ -46,25 +42,43 @@ namespace Project001.Gameplay.Collectors
         [SerializeField, Tooltip("Controller notified when an unsatisfied collector completes a lap and finds no free Waiting Line slot. Optional — if missing, that situation is simply never reported.")]
         private FailureController failureController;
 
-        private const int HungerCapacity = 3;
-
-        private static readonly Color[] Palette =
-        {
-            Color.red,
-            Color.green,
-            Color.blue,
-            Color.yellow
-        };
-
         private Texture2D _sharedTexture;
         private Sprite _sharedSprite;
         private CollectorQueue[] _queues;
         private float _rowStepY;
+        private bool _isInitialized;
 
-        private void Awake()
+        /// <summary>
+        /// Builds this board's queues from the given level collector-queue
+        /// data, using matchTypeToColor for each collector's visual colour.
+        /// Must be called exactly once, before any selection is attempted. A
+        /// second call, or a first call on an object that already has stale
+        /// baked children, is refused (logged) rather than generating
+        /// duplicate queues. Existing children are never deleted.
+        /// </summary>
+        public void Initialize(IReadOnlyList<CollectorQueueDefinition> collectorQueues, Func<MatchTypeId, Color> matchTypeToColor)
         {
+            if (collectorQueues == null)
+                throw new ArgumentNullException(nameof(collectorQueues));
+
+            if (matchTypeToColor == null)
+                throw new ArgumentNullException(nameof(matchTypeToColor));
+
+            if (_isInitialized)
+            {
+                Debug.LogError($"CollectorQueueBoard: Initialize called more than once on '{name}'; ignoring to avoid duplicate queues.", this);
+                return;
+            }
+
+            if (transform.childCount > 0)
+            {
+                Debug.LogError($"CollectorQueueBoard: '{name}' already has {transform.childCount} child object(s) before Initialize; aborting to avoid duplicate queues. Scene may contain stale baked children.", this);
+                return;
+            }
+
             CreateSharedSprite();
-            GenerateBoard();
+            GenerateBoard(collectorQueues, matchTypeToColor);
+            _isInitialized = true;
         }
 
         private void CreateSharedSprite()
@@ -100,15 +114,15 @@ namespace Project001.Gameplay.Collectors
                 SpriteDiameterPixels);
         }
 
-        private void GenerateBoard()
+        private void GenerateBoard(IReadOnlyList<CollectorQueueDefinition> collectorQueues, Func<MatchTypeId, Color> matchTypeToColor)
         {
-            _queues = new CollectorQueue[queueCount];
+            _queues = new CollectorQueue[collectorQueues.Count];
 
             float stepX = collectorSize + horizontalSpacing;
             _rowStepY = collectorSize + verticalSpacing;
-            float offsetX = (queueCount - 1) * stepX * 0.5f;
+            float offsetX = (collectorQueues.Count - 1) * stepX * 0.5f;
 
-            for (int queueIndex = 0; queueIndex < queueCount; queueIndex++)
+            for (int queueIndex = 0; queueIndex < collectorQueues.Count; queueIndex++)
             {
                 var queueObject = new GameObject($"Queue_{queueIndex}");
                 queueObject.transform.SetParent(transform, false);
@@ -117,8 +131,12 @@ namespace Project001.Gameplay.Collectors
                 var queue = new CollectorQueue();
                 _queues[queueIndex] = queue;
 
-                for (int rowIndex = 0; rowIndex < collectorsPerQueue; rowIndex++)
+                IReadOnlyList<CollectorDefinition> collectorDefinitions = collectorQueues[queueIndex].Collectors;
+
+                for (int rowIndex = 0; rowIndex < collectorDefinitions.Count; rowIndex++)
                 {
+                    CollectorDefinition collectorDefinition = collectorDefinitions[rowIndex];
+
                     var collectorObject = new GameObject(
                         $"Collector_{queueIndex}_{rowIndex}",
                         typeof(CollectorView),
@@ -132,18 +150,13 @@ namespace Project001.Gameplay.Collectors
                     var spriteRenderer = collectorObject.GetComponent<SpriteRenderer>();
                     spriteRenderer.sprite = _sharedSprite;
 
-                    // Mix queueIndex and rowIndex so colour varies per collector,
-                    // not per queue, making individual movement easy to track.
-                    Color color = Palette[(queueIndex + rowIndex) % Palette.Length];
+                    Color color = matchTypeToColor(collectorDefinition.MatchTypeId);
 
                     var collectorView = collectorObject.GetComponent<CollectorView>();
                     collectorView.Initialize(color);
 
-                    // Reuse the same colour for the rider's food type — never
-                    // recalculate it independently. Every collector starts with
-                    // the same temporary prototype hunger capacity.
                     var conveyorRider = collectorObject.GetComponent<ConveyorRider>();
-                    conveyorRider.Initialize(color, HungerCapacity);
+                    conveyorRider.Initialize(collectorDefinition.MatchTypeId, collectorDefinition.HungerCapacity);
 
                     var pixelConsumer = collectorObject.GetComponent<PixelConsumer>();
                     pixelConsumer.Initialize(pixelGrid, conveyorRider);

@@ -1,35 +1,32 @@
+using System;
+using Project001.Gameplay.Levels;
 using UnityEngine;
 
 namespace Project001.Gameplay.Pixels
 {
     /// <summary>
-    /// Generates a centred 6x6 grid of PixelCell objects on Awake, using a single
-    /// shared runtime-generated 1x1 sprite and a deterministic 3-colour pattern.
+    /// Generates a centred grid of PixelCell objects from a PixelLayoutDefinition,
+    /// using a single shared runtime-generated 1x1 sprite. Dimensions and per-cell
+    /// MatchTypeId come entirely from the injected layout; visual colour comes
+    /// from the caller-supplied MatchTypeId-to-Color mapping, never inferred here.
     /// </summary>
     public class PixelGrid : MonoBehaviour
     {
-        private const int GridSize = 6;
         private const float CellSize = 1f;
 
         [SerializeField, Tooltip("Extra spacing added between neighbouring cells, in world units.")]
         [Min(0f)]
         private float cellGap = 0.05f;
 
-        private static readonly Color[] Palette =
-        {
-            Color.red,
-            Color.green,
-            Color.blue
-        };
-
         private Texture2D _sharedTexture;
         private Sprite _sharedSprite;
         private PixelCell[,] _cells;
         private int _remainingPixelCount;
+        private bool _isInitialized;
 
-        public int Width => GridSize;
+        public int Width { get; private set; }
 
-        public int Height => GridSize;
+        public int Height { get; private set; }
 
         /// <summary>
         /// Number of pixels not yet consumed. Maintained incrementally —
@@ -45,10 +42,36 @@ namespace Project001.Gameplay.Pixels
         /// </summary>
         public bool IsComplete => _remainingPixelCount <= 0;
 
-        private void Awake()
+        /// <summary>
+        /// Builds this grid's cells from the given layout. Must be called
+        /// exactly once, before any consumption is attempted. A second call,
+        /// or a first call on an object that already has stale baked
+        /// children, is refused (logged) rather than generating duplicate
+        /// cells. Existing children are never deleted.
+        /// </summary>
+        public void Initialize(PixelLayoutDefinition layout, Func<MatchTypeId, Color> matchTypeToColor)
         {
+            if (layout == null)
+                throw new ArgumentNullException(nameof(layout));
+
+            if (matchTypeToColor == null)
+                throw new ArgumentNullException(nameof(matchTypeToColor));
+
+            if (_isInitialized)
+            {
+                Debug.LogError($"PixelGrid: Initialize called more than once on '{name}'; ignoring to avoid duplicate cells.", this);
+                return;
+            }
+
+            if (transform.childCount > 0)
+            {
+                Debug.LogError($"PixelGrid: '{name}' already has {transform.childCount} child object(s) before Initialize; aborting to avoid duplicate cells. Scene may contain stale baked children.", this);
+                return;
+            }
+
             CreateSharedSprite();
-            GenerateGrid();
+            GenerateGrid(layout, matchTypeToColor);
+            _isInitialized = true;
         }
 
         private void CreateSharedSprite()
@@ -68,19 +91,23 @@ namespace Project001.Gameplay.Pixels
                 pixelsPerUnit: 1f);
         }
 
-        private void GenerateGrid()
+        private void GenerateGrid(PixelLayoutDefinition layout, Func<MatchTypeId, Color> matchTypeToColor)
         {
-            _cells = new PixelCell[GridSize, GridSize];
+            Width = layout.Width;
+            Height = layout.Height;
+
+            _cells = new PixelCell[Width, Height];
             _remainingPixelCount = 0;
 
             float spacing = CellSize + cellGap;
-            float offset = (GridSize - 1) * spacing * 0.5f;
+            float offsetX = (Width - 1) * spacing * 0.5f;
+            float offsetY = (Height - 1) * spacing * 0.5f;
 
-            for (int x = 0; x < GridSize; x++)
+            for (int x = 0; x < Width; x++)
             {
-                for (int y = 0; y < GridSize; y++)
+                for (int y = 0; y < Height; y++)
                 {
-                    var localPosition = new Vector2(x * spacing - offset, y * spacing - offset);
+                    var localPosition = new Vector2(x * spacing - offsetX, y * spacing - offsetY);
 
                     var cellObject = new GameObject($"Pixel_{x}_{y}", typeof(PixelCell));
                     cellObject.transform.SetParent(transform, false);
@@ -90,8 +117,11 @@ namespace Project001.Gameplay.Pixels
                     var spriteRenderer = cellObject.GetComponent<SpriteRenderer>();
                     spriteRenderer.sprite = _sharedSprite;
 
+                    MatchTypeId matchTypeId = layout.GetMatchTypeId(x, y);
+                    Color color = matchTypeToColor(matchTypeId);
+
                     var cell = cellObject.GetComponent<PixelCell>();
-                    cell.Initialize(x, y, localPosition, Palette[(x + y) % Palette.Length]);
+                    cell.Initialize(x, y, localPosition, matchTypeId, color);
 
                     _cells[x, y] = cell;
                     _remainingPixelCount++;
@@ -108,15 +138,15 @@ namespace Project001.Gameplay.Pixels
         }
 
         /// <summary>
-        /// Finds the active pixel of the given colour closest to the supplied
-        /// world-space position and consumes it. The candidate must be
+        /// Finds the active pixel of the given MatchTypeId closest to the
+        /// supplied world-space position and consumes it. The candidate must be
         /// reachable, in a straight line, from the grid side the position is
         /// closest to (every cell between the candidate and that boundary must
         /// already be consumed) and must be aligned with the position along
         /// the perpendicular axis, within alignmentTolerance world units.
         /// Returns false if no matching pixel currently satisfies both.
         /// </summary>
-        public bool TryConsumeNearestExposed(Vector3 worldPosition, Color color, float alignmentTolerance)
+        public bool TryConsumeNearestExposed(Vector3 worldPosition, MatchTypeId matchTypeId, float alignmentTolerance)
         {
             Vector3 localPosition = transform.InverseTransformPoint(worldPosition);
             Side side = DetermineSide(localPosition);
@@ -132,7 +162,7 @@ namespace Project001.Gameplay.Pixels
                     if (cell == null || !cell.IsActive)
                         continue;
 
-                    if (cell.PixelColor != color)
+                    if (cell.MatchTypeId != matchTypeId)
                         continue;
 
                     if (!HasClearInwardPath(x, y, side))

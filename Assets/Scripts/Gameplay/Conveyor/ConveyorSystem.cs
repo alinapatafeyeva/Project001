@@ -48,6 +48,21 @@ namespace Project001.Gameplay.Conveyor
             moveSpeed = Mathf.Max(0f, moveSpeed);
         }
 
+        /// <summary>
+        /// Applies level-provided capacity and move speed. Intended for
+        /// one-time startup configuration, before any riders board — unlike
+        /// PixelGrid/WaitingLine/CollectorQueueBoard this does not generate
+        /// any children, so there is nothing to duplicate and no single-call
+        /// guard is needed, but it is not safe to call arbitrarily during
+        /// gameplay: lowering capacity while riders are already boarded
+        /// could leave OccupiedCount greater than Capacity.
+        /// </summary>
+        public void Configure(int levelCapacity, float levelMoveSpeed)
+        {
+            capacity = Mathf.Max(1, levelCapacity);
+            moveSpeed = Mathf.Max(0f, levelMoveSpeed);
+        }
+
         private void Update()
         {
             if (conveyorPath == null)
