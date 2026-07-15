@@ -19,17 +19,32 @@ namespace Project001.Gameplay.Levels
     /// only where the LevelId passed to the catalog comes from, without
     /// changing the catalog itself or how the systems below are built from
     /// its result.
+    ///
+    /// Optionally derives a Bootstrap-only, deterministic Failure test level
+    /// from the resolved approved level via FailureTestLevelFactory — see
+    /// enableFailureTestSetup. The approved LevelDefinition and LevelCatalog
+    /// are never mutated by this.
     /// </summary>
     [DisallowMultipleComponent]
     public class LevelBootstrapper : MonoBehaviour
     {
+        /// <summary>
+        /// Waiting Line capacity for every level, fixed rather than
+        /// level-provided: the player must always be able to plan around the
+        /// same number of slots, so a puzzle can only get harder through its
+        /// own content, never through a UI change. The single authoritative
+        /// source of this value — LevelDefinition carries no capacity of its
+        /// own.
+        /// </summary>
+        private const int FixedWaitingLineCapacity = 5;
+
         [SerializeField, Tooltip("Grid built from the level's pixel layout.")]
         private PixelGrid pixelGrid;
 
         [SerializeField, Tooltip("Conveyor configured with the level's capacity and move speed.")]
         private ConveyorSystem conveyorSystem;
 
-        [SerializeField, Tooltip("Waiting line built with the level's capacity.")]
+        [SerializeField, Tooltip("Waiting line built with the fixed FixedWaitingLineCapacity — same for every level.")]
         private Project001.Gameplay.WaitingLine.WaitingLine waitingLine;
 
         [SerializeField, Tooltip("Board built from the level's collector queues.")]
@@ -37,6 +52,9 @@ namespace Project001.Gameplay.Levels
 
         [SerializeField, Tooltip("Test-only LevelId this scene loads from the LevelCatalog. A future CurrentProgressLevelId source replaces this field without changing anything below it. Known test ids: level_001, level_002.")]
         private string testLevelId = "level_001";
+
+        [SerializeField, Tooltip("Bootstrap-only deterministic Failure test setup. When enabled, prepends FixedWaitingLineCapacity + 1 debug collectors (a dedicated MatchTypeId that never appears on any approved pixel layout) to the resolved level's queues, so the first FixedWaitingLineCapacity fill the Waiting Line and the next one triggers Failure on demand. Never mutates LevelCatalog or approved level data; the derived level is never validated by LevelDefinitionValidator, since it is intentionally invalid test data.")]
+        private bool enableFailureTestSetup = false;
 
         private readonly LevelCatalog _levelCatalog = new LevelCatalog();
         private readonly MatchTypePresentation _presentation = new MatchTypePresentation();
@@ -56,14 +74,23 @@ namespace Project001.Gameplay.Levels
                 return;
             }
 
-            if (!_levelCatalog.TryGetLevel(new LevelId(testLevelId), out LevelDefinition levelDefinition))
+            if (!_levelCatalog.TryGetLevel(new LevelId(testLevelId), out LevelDefinition approvedLevel))
             {
                 Debug.LogError($"LevelBootstrapper: '{name}' has no approved level for LevelId '{testLevelId}'; aborting bootstrap.", this);
                 enabled = false;
                 return;
             }
 
-            BuildLevel(levelDefinition);
+            LevelDefinition levelToBuild = approvedLevel;
+
+            if (enableFailureTestSetup)
+            {
+                int debugCollectorCount = FixedWaitingLineCapacity + 1;
+                levelToBuild = FailureTestLevelFactory.BuildFailureTestLevel(approvedLevel, debugCollectorCount);
+                Debug.Log($"(DEBUG) LevelBootstrapper: '{name}' Enable Failure Test Setup is active — prepending {debugCollectorCount} debug collectors to trigger Failure on demand.", this);
+            }
+
+            BuildLevel(levelToBuild);
         }
 
         /// <summary>
@@ -107,7 +134,7 @@ namespace Project001.Gameplay.Levels
         {
             pixelGrid.Initialize(levelDefinition.PixelLayout, _presentation.GetColor);
             conveyorSystem.Configure(levelDefinition.ConveyorCapacity, levelDefinition.ConveyorMoveSpeed);
-            waitingLine.Initialize(levelDefinition.WaitingLineCapacity);
+            waitingLine.Initialize(FixedWaitingLineCapacity);
             collectorQueueBoard.Initialize(levelDefinition.CollectorQueues, _presentation.GetColor);
         }
     }
