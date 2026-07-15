@@ -12,11 +12,25 @@ namespace Project001.Gameplay.Pixels
     /// </summary>
     public class PixelGrid : MonoBehaviour
     {
-        private const float CellSize = 1f;
+        /// <summary>
+        /// Cell size used whenever the available area is generous enough not
+        /// to constrain it — the same fixed value this grid always used
+        /// before available bounds existed, so small layouts keep their
+        /// current appearance.
+        /// </summary>
+        private const float DefaultMaximumCellSize = 1f;
 
         [SerializeField, Tooltip("Extra spacing added between neighbouring cells, in world units.")]
         [Min(0f)]
         private float cellGap = 0.05f;
+
+        [SerializeField, Tooltip("Scene-owned maximum world-space width this grid may occupy. Set by scene layout (e.g. BootstrapSceneCreator), not by level data — never referenced by ConveyorSystem or any other gameplay system.")]
+        [Min(0f)]
+        private float availableWidth = 6.5f;
+
+        [SerializeField, Tooltip("Scene-owned maximum world-space height this grid may occupy. Set by scene layout (e.g. BootstrapSceneCreator), not by level data — never referenced by ConveyorSystem or any other gameplay system.")]
+        [Min(0f)]
+        private float availableHeight = 6.5f;
 
         private Texture2D _sharedTexture;
         private Sprite _sharedSprite;
@@ -69,9 +83,51 @@ namespace Project001.Gameplay.Pixels
                 return;
             }
 
+            if (!TryComputeCellSize(layout, out float cellSize))
+                return;
+
             CreateSharedSprite();
-            GenerateGrid(layout, matchTypeToColor);
+            GenerateGrid(layout, matchTypeToColor, cellSize);
             _isInitialized = true;
+        }
+
+        /// <summary>
+        /// Computes the uniform square cell size that fits layout's
+        /// dimensions inside availableWidth x availableHeight (accounting for
+        /// cellGap between cells), capped at DefaultMaximumCellSize so a
+        /// generous area does not enlarge cells beyond their normal size.
+        /// Fails cleanly — logging one specific diagnostic and generating
+        /// nothing — if the bounds or the resulting cell size are not
+        /// positive, rather than building a partially-sized grid.
+        /// </summary>
+        private bool TryComputeCellSize(PixelLayoutDefinition layout, out float cellSize)
+        {
+            cellSize = 0f;
+
+            if (availableWidth <= 0f)
+            {
+                Debug.LogError($"PixelGrid: '{name}' has a non-positive availableWidth ({availableWidth}); aborting to avoid generating an invalid grid.", this);
+                return false;
+            }
+
+            if (availableHeight <= 0f)
+            {
+                Debug.LogError($"PixelGrid: '{name}' has a non-positive availableHeight ({availableHeight}); aborting to avoid generating an invalid grid.", this);
+                return false;
+            }
+
+            float cellSizeByWidth = (availableWidth - cellGap * (layout.Width - 1)) / layout.Width;
+            float cellSizeByHeight = (availableHeight - cellGap * (layout.Height - 1)) / layout.Height;
+            float computedCellSize = Mathf.Min(DefaultMaximumCellSize, Mathf.Min(cellSizeByWidth, cellSizeByHeight));
+
+            if (computedCellSize <= 0f)
+            {
+                Debug.LogError($"PixelGrid: '{name}' computed a non-positive cell size ({computedCellSize}) for a {layout.Width}x{layout.Height} layout within {availableWidth}x{availableHeight} world units (cellGap {cellGap}); aborting to avoid generating an invalid grid.", this);
+                return false;
+            }
+
+            cellSize = computedCellSize;
+            return true;
         }
 
         private void CreateSharedSprite()
@@ -91,7 +147,7 @@ namespace Project001.Gameplay.Pixels
                 pixelsPerUnit: 1f);
         }
 
-        private void GenerateGrid(PixelLayoutDefinition layout, Func<MatchTypeId, Color> matchTypeToColor)
+        private void GenerateGrid(PixelLayoutDefinition layout, Func<MatchTypeId, Color> matchTypeToColor, float cellSize)
         {
             Width = layout.Width;
             Height = layout.Height;
@@ -99,7 +155,7 @@ namespace Project001.Gameplay.Pixels
             _cells = new PixelCell[Width, Height];
             _remainingPixelCount = 0;
 
-            float spacing = CellSize + cellGap;
+            float spacing = cellSize + cellGap;
             float offsetX = (Width - 1) * spacing * 0.5f;
             float offsetY = (Height - 1) * spacing * 0.5f;
 
@@ -112,7 +168,7 @@ namespace Project001.Gameplay.Pixels
                     var cellObject = new GameObject($"Pixel_{x}_{y}", typeof(PixelCell));
                     cellObject.transform.SetParent(transform, false);
                     cellObject.transform.localPosition = new Vector3(localPosition.x, localPosition.y, 0f);
-                    cellObject.transform.localScale = new Vector3(CellSize, CellSize, 1f);
+                    cellObject.transform.localScale = new Vector3(cellSize, cellSize, 1f);
 
                     var spriteRenderer = cellObject.GetComponent<SpriteRenderer>();
                     spriteRenderer.sprite = _sharedSprite;
