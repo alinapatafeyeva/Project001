@@ -13,10 +13,12 @@ namespace Project001.Gameplay.Levels
     /// expected to survive Unity scene serialization, only this component's
     /// own object references do.
     ///
-    /// Sources its LevelDefinition and MatchTypeId-to-Color presentation
-    /// mapping from a PrototypeLevelProvider. A future LevelCatalog-backed
-    /// provider (looked up by CurrentProgressLevelId) replaces that source
-    /// without changing how the systems below are built from it.
+    /// Resolves its LevelDefinition from a LevelCatalog by LevelId, and its
+    /// MatchTypeId-to-Color presentation mapping from a separate
+    /// MatchTypePresentation. A future CurrentProgressLevelId source replaces
+    /// only where the LevelId passed to the catalog comes from, without
+    /// changing the catalog itself or how the systems below are built from
+    /// its result.
     /// </summary>
     [DisallowMultipleComponent]
     public class LevelBootstrapper : MonoBehaviour
@@ -33,7 +35,11 @@ namespace Project001.Gameplay.Levels
         [SerializeField, Tooltip("Board built from the level's collector queues.")]
         private CollectorQueueBoard collectorQueueBoard;
 
-        private readonly PrototypeLevelProvider _levelProvider = new PrototypeLevelProvider();
+        [SerializeField, Tooltip("Test-only LevelId this scene loads from the LevelCatalog. A future CurrentProgressLevelId source replaces this field without changing anything below it. Known test ids: level_001, level_002.")]
+        private string testLevelId = "level_001";
+
+        private readonly LevelCatalog _levelCatalog = new LevelCatalog();
+        private readonly MatchTypePresentation _presentation = new MatchTypePresentation();
 
         private void Awake()
         {
@@ -43,7 +49,21 @@ namespace Project001.Gameplay.Levels
                 return;
             }
 
-            BuildLevel(_levelProvider.CreateLevel());
+            if (string.IsNullOrWhiteSpace(testLevelId))
+            {
+                Debug.LogError($"LevelBootstrapper: '{name}' has no LevelId configured; aborting bootstrap.", this);
+                enabled = false;
+                return;
+            }
+
+            if (!_levelCatalog.TryGetLevel(new LevelId(testLevelId), out LevelDefinition levelDefinition))
+            {
+                Debug.LogError($"LevelBootstrapper: '{name}' has no approved level for LevelId '{testLevelId}'; aborting bootstrap.", this);
+                enabled = false;
+                return;
+            }
+
+            BuildLevel(levelDefinition);
         }
 
         /// <summary>
@@ -85,10 +105,10 @@ namespace Project001.Gameplay.Levels
 
         private void BuildLevel(LevelDefinition levelDefinition)
         {
-            pixelGrid.Initialize(levelDefinition.PixelLayout, _levelProvider.GetPresentationColor);
+            pixelGrid.Initialize(levelDefinition.PixelLayout, _presentation.GetColor);
             conveyorSystem.Configure(levelDefinition.ConveyorCapacity, levelDefinition.ConveyorMoveSpeed);
             waitingLine.Initialize(levelDefinition.WaitingLineCapacity);
-            collectorQueueBoard.Initialize(levelDefinition.CollectorQueues, _levelProvider.GetPresentationColor);
+            collectorQueueBoard.Initialize(levelDefinition.CollectorQueues, _presentation.GetColor);
         }
     }
 }
