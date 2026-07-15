@@ -77,7 +77,13 @@ public static class BootstrapSceneCreator
         var pixelGridObject = new GameObject("PixelGrid", typeof(PixelGrid));
         pixelGridObject.transform.position = Vector3.zero;
 
-        return pixelGridObject.GetComponent<PixelGrid>();
+        var pixelGrid = pixelGridObject.GetComponent<PixelGrid>();
+        var serializedPixelGrid = new SerializedObject(pixelGrid);
+        serializedPixelGrid.FindProperty("availableWidth").floatValue = 6.5f;
+        serializedPixelGrid.FindProperty("availableHeight").floatValue = 6.5f;
+        serializedPixelGrid.ApplyModifiedPropertiesWithoutUndo();
+
+        return pixelGrid;
     }
 
     private static ConveyorSystem CreateConveyor()
