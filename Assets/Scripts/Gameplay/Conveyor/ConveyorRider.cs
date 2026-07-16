@@ -1,3 +1,4 @@
+using System;
 using Project001.Gameplay.Levels;
 using UnityEngine;
 
@@ -26,11 +27,20 @@ namespace Project001.Gameplay.Conveyor
         /// </summary>
         public bool IsRiding { get; private set; }
 
+        /// <summary>
+        /// Raised whenever RemainingHunger is set — once with the starting
+        /// value from Initialize, and once per RegisterConsumedPixel call
+        /// afterwards. The sole notification channel presentation (e.g.
+        /// CollectorView) should use instead of polling RemainingHunger.
+        /// </summary>
+        public event Action<int> RemainingHungerChanged;
+
         public void Initialize(MatchTypeId matchTypeId, int hungerCapacity)
         {
             MatchTypeId = matchTypeId;
             HungerCapacity = Mathf.Max(0, hungerCapacity);
             RemainingHunger = HungerCapacity;
+            RemainingHungerChanged?.Invoke(RemainingHunger);
         }
 
         public void SetPosition(Vector3 worldPosition)
@@ -45,6 +55,7 @@ namespace Project001.Gameplay.Conveyor
         public void RegisterConsumedPixel()
         {
             RemainingHunger = Mathf.Max(0, RemainingHunger - 1);
+            RemainingHungerChanged?.Invoke(RemainingHunger);
         }
 
         internal void EnterRiding()
