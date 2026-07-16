@@ -51,11 +51,14 @@ namespace Project001.Gameplay.Levels
         /// m001/m002/m003, 0 of m004), and 4 queues of 3 collectors each
         /// cycling through only those 3 match types so every collector
         /// MatchTypeId appears on the grid and every grid MatchTypeId is
-        /// exactly covered: hunger capacity 3, 4 collectors of each of
-        /// m001/m002/m003 (4 x 3 = 12, matching the pixel count exactly, no
-        /// surplus and no non-matching filler). Conveyor capacity 5, move
-        /// speed 2. Waiting Line capacity is not level data — every level
-        /// gets the same fixed capacity from LevelBootstrapper.
+        /// exactly covered. Each MatchTypeId's 4 collectors deliberately carry
+        /// non-uniform HungerCapacity values (never all equal) that still sum
+        /// to exactly 12 per type — m001: 5+3+2+2, m002: 4+4+3+1,
+        /// m003: 6+2+3+1 — proving HungerCapacity is a per-collector value,
+        /// not a per-MatchTypeId constant. Conveyor capacity 5, move speed
+        /// 3.5 (matches SecondTestLevel's pace). Waiting Line capacity is
+        /// not level data — every level gets the same fixed capacity from
+        /// LevelBootstrapper.
         /// </summary>
         private static LevelDefinition BuildPrototypeLevel()
         {
@@ -64,7 +67,7 @@ namespace Project001.Gameplay.Levels
                 BuildPrototypePixelLayout(),
                 BuildPrototypeCollectorQueues(),
                 conveyorCapacity: 5,
-                conveyorMoveSpeed: 2f);
+                conveyorMoveSpeed: 3.5f);
         }
 
         private static PixelLayoutDefinition BuildPrototypePixelLayout()
@@ -84,24 +87,31 @@ namespace Project001.Gameplay.Levels
             return new PixelLayoutDefinition(width, height, cells);
         }
 
+        /// <summary>
+        /// Explicit per-collector composition (not modulo-cycled capacity),
+        /// preserving the same per-queue MatchTypeId order the original
+        /// modulo cycling produced, so each MatchTypeId's total HungerCapacity
+        /// (12, matching its pixel count) is directly readable here while
+        /// deliberately varying across that type's four collectors.
+        /// </summary>
         private static IReadOnlyList<CollectorQueueDefinition> BuildPrototypeCollectorQueues()
         {
-            const int queueCount = 4;
-            const int collectorsPerQueue = 3;
-            const int hungerCapacity = 3;
-
-            var matchTypes = new[] { MatchType1, MatchType2, MatchType3 };
-            var queues = new List<CollectorQueueDefinition>(queueCount);
-
-            for (int queueIndex = 0; queueIndex < queueCount; queueIndex++)
+            var queueSpecs = new (MatchTypeId matchTypeId, int hungerCapacity)[][]
             {
-                var collectors = new List<CollectorDefinition>(collectorsPerQueue);
+                new[] { (MatchType1, 5), (MatchType2, 4), (MatchType3, 6) },
+                new[] { (MatchType2, 4), (MatchType3, 2), (MatchType1, 3) },
+                new[] { (MatchType3, 3), (MatchType1, 2), (MatchType2, 3) },
+                new[] { (MatchType1, 2), (MatchType2, 1), (MatchType3, 1) },
+            };
 
-                for (int rowIndex = 0; rowIndex < collectorsPerQueue; rowIndex++)
-                {
-                    MatchTypeId matchTypeId = matchTypes[(queueIndex + rowIndex) % matchTypes.Length];
+            var queues = new List<CollectorQueueDefinition>(queueSpecs.Length);
+
+            foreach ((MatchTypeId matchTypeId, int hungerCapacity)[] spec in queueSpecs)
+            {
+                var collectors = new List<CollectorDefinition>(spec.Length);
+
+                foreach ((MatchTypeId matchTypeId, int hungerCapacity) in spec)
                     collectors.Add(new CollectorDefinition(matchTypeId, hungerCapacity));
-                }
 
                 queues.Add(new CollectorQueueDefinition(collectors));
             }
@@ -116,16 +126,19 @@ namespace Project001.Gameplay.Levels
         /// 2-match-type checkerboard (16 m002 pixels, 16 m004 pixels), 4
         /// queues of 4 collectors each dedicated to a single MatchTypeId per
         /// queue — alternating m002/m004/m002/m004, a structurally different
-        /// arrangement than the prototype's mixed per-queue cycling —
-        /// hunger capacity 2 (lower — more bites needed per collector), and
+        /// arrangement than the prototype's mixed per-queue cycling — and
         /// conveyor capacity 8 at move speed 3.5 (higher throughput,
         /// faster). Waiting Line capacity is not level data — every level
         /// gets the same fixed capacity from LevelBootstrapper.
         ///
         /// Only m002 and m004 collectors exist here, matching the grid's
-        /// only two MatchTypeIds exactly: 2 queues of m002 (2 x 4 x 2 = 16)
-        /// and 2 queues of m004 (2 x 4 x 2 = 16), each equal to that type's
-        /// pixel count with no surplus and no non-matching filler.
+        /// only two MatchTypeIds exactly: 2 queues of m002 and 2 queues of
+        /// m004, each type's 8 collectors carrying deliberately non-uniform
+        /// HungerCapacity values that still total exactly 16 — m002:
+        /// 3+2+2+1 / 1+2+3+2, m004: 3+2+1+2 / 2+3+2+1 — a balanced spread
+        /// (values 1-3 only, no large outlier) rather than a single large
+        /// value next to many small ones, and no surplus or non-matching
+        /// filler.
         /// </summary>
         private static LevelDefinition BuildSecondTestLevel()
         {
@@ -158,22 +171,27 @@ namespace Project001.Gameplay.Levels
         /// Explicit per-queue composition (not modulo-cycled) so the
         /// capacity dedicated to each MatchTypeId is directly readable and
         /// verifiable here: each queue is dedicated entirely to one of the
-        /// grid's two MatchTypeIds, alternating by queue index.
+        /// grid's two MatchTypeIds, alternating by queue index, with each
+        /// queue's own 4 HungerCapacity values deliberately non-uniform.
         /// </summary>
         private static IReadOnlyList<CollectorQueueDefinition> BuildSecondTestCollectorQueues()
         {
-            const int collectorsPerQueue = 4;
-            const int hungerCapacity = 2;
-
-            var queueMatchTypes = new[] { MatchType2, MatchType4, MatchType2, MatchType4 };
-            var queues = new List<CollectorQueueDefinition>(queueMatchTypes.Length);
-
-            foreach (MatchTypeId queueMatchType in queueMatchTypes)
+            var queueSpecs = new (MatchTypeId matchTypeId, int[] hungerCapacities)[]
             {
-                var collectors = new List<CollectorDefinition>(collectorsPerQueue);
+                (MatchType2, new[] { 3, 2, 2, 1 }),
+                (MatchType4, new[] { 3, 2, 1, 2 }),
+                (MatchType2, new[] { 1, 2, 3, 2 }),
+                (MatchType4, new[] { 2, 3, 2, 1 }),
+            };
 
-                for (int rowIndex = 0; rowIndex < collectorsPerQueue; rowIndex++)
-                    collectors.Add(new CollectorDefinition(queueMatchType, hungerCapacity));
+            var queues = new List<CollectorQueueDefinition>(queueSpecs.Length);
+
+            foreach ((MatchTypeId matchTypeId, int[] hungerCapacities) in queueSpecs)
+            {
+                var collectors = new List<CollectorDefinition>(hungerCapacities.Length);
+
+                foreach (int hungerCapacity in hungerCapacities)
+                    collectors.Add(new CollectorDefinition(matchTypeId, hungerCapacity));
 
                 queues.Add(new CollectorQueueDefinition(collectors));
             }

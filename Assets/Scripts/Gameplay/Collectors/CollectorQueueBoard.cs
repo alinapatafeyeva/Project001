@@ -137,10 +137,14 @@ namespace Project001.Gameplay.Collectors
                 {
                     CollectorDefinition collectorDefinition = collectorDefinitions[rowIndex];
 
+                    // ConveyorRider is not listed explicitly: CollectorView's
+                    // [RequireComponent(typeof(ConveyorRider))] adds it first,
+                    // before CollectorView's own Awake subscribes to it —
+                    // listing it again here would add a second, duplicate
+                    // ConveyorRider instead of reusing that one.
                     var collectorObject = new GameObject(
                         $"Collector_{queueIndex}_{rowIndex}",
                         typeof(CollectorView),
-                        typeof(ConveyorRider),
                         typeof(PixelConsumer),
                         typeof(CollectorLifecycle));
                     collectorObject.transform.SetParent(queueObject.transform, false);
