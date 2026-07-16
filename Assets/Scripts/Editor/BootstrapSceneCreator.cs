@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.IO;
 using Project001.Gameplay;
 using Project001.Gameplay.Collectors;
@@ -6,6 +7,7 @@ using Project001.Gameplay.Failure;
 using Project001.Gameplay.Levels;
 using Project001.Gameplay.Pixels;
 using Project001.Gameplay.Victory;
+using Project001.UI.Failure;
 using Project001.UI.Victory;
 using UnityEditor;
 using UnityEditor.SceneManagement;
@@ -52,10 +54,12 @@ public static class BootstrapSceneCreator
         CollectorQueueBoard collectorQueueBoard = CreateCollectorQueueBoard(pixelGrid, conveyorSystem, waitingLine, failureController);
         CollectorSelectionController collectorSelectionController = CreateCollectorSelectionController(mainCamera, collectorQueueBoard, waitingLine, conveyorSystem);
         VictoryController victoryController = CreateVictoryController(pixelGrid);
-        GameplayFlowController gameplayFlowController = CreateGameplayFlowController(victoryController, collectorSelectionController);
+        GameplayFlowController gameplayFlowController = CreateGameplayFlowController(victoryController, failureController, collectorSelectionController);
+        FailureRecoveryController failureRecoveryController = CreateFailureRecoveryController(failureController, gameplayFlowController);
         CreateLevelBootstrapper(pixelGrid, conveyorSystem, waitingLine, collectorQueueBoard);
         CreateEventSystem();
         CreateVictoryUI(victoryController, gameplayFlowController);
+        CreateFailureUI(failureController, failureRecoveryController);
 
         string directory = Path.GetDirectoryName(ScenePath);
         if (!Directory.Exists(directory))
@@ -63,6 +67,30 @@ public static class BootstrapSceneCreator
 
         EditorSceneManager.SaveScene(scene, ScenePath);
         AssetDatabase.Refresh();
+
+        EnsureSceneRegisteredInBuildSettings();
+    }
+
+    /// <summary>
+    /// Required for SceneManager.LoadScene (used by FailureRecoveryController's
+    /// Retry) to work at all — Unity refuses to load any scene not present in
+    /// Build Settings, even in Play Mode. Additive only: leaves every other
+    /// already-registered scene untouched, and does nothing if Bootstrap is
+    /// already present.
+    /// </summary>
+    private static void EnsureSceneRegisteredInBuildSettings()
+    {
+        foreach (EditorBuildSettingsScene existingScene in EditorBuildSettings.scenes)
+        {
+            if (existingScene.path == ScenePath)
+                return;
+        }
+
+        var updatedScenes = new List<EditorBuildSettingsScene>(EditorBuildSettings.scenes)
+        {
+            new EditorBuildSettingsScene(ScenePath, true)
+        };
+        EditorBuildSettings.scenes = updatedScenes.ToArray();
     }
 
     private static Camera CreateCamera()
@@ -197,12 +225,15 @@ public static class BootstrapSceneCreator
 
     /// <summary>
     /// Explicitly controls whether gameplay interaction is active, reacting
-    /// to victoryController.OnVictory by pausing. Presentation (VictoryUI)
-    /// only ever calls its ResumeGameplay/PauseGameplay API — it never
-    /// manipulates Time.timeScale or collectorSelectionController itself.
+    /// to both victoryController.OnVictory and failureController.OnFailure by
+    /// pausing — the same flow for either terminal outcome, one controller.
+    /// Presentation (VictoryUI, FailureUI) only ever calls its
+    /// ResumeGameplay/PauseGameplay API — it never manipulates
+    /// Time.timeScale or collectorSelectionController itself.
     /// </summary>
     private static GameplayFlowController CreateGameplayFlowController(
         VictoryController victoryController,
+        FailureController failureController,
         CollectorSelectionController collectorSelectionController)
     {
         var gameplayFlowControllerObject = new GameObject("GameplayFlowController", typeof(GameplayFlowController));
@@ -210,10 +241,33 @@ public static class BootstrapSceneCreator
         var gameplayFlowController = gameplayFlowControllerObject.GetComponent<GameplayFlowController>();
         var serializedGameplayFlowController = new SerializedObject(gameplayFlowController);
         serializedGameplayFlowController.FindProperty("victoryController").objectReferenceValue = victoryController;
+        serializedGameplayFlowController.FindProperty("failureController").objectReferenceValue = failureController;
         serializedGameplayFlowController.FindProperty("collectorSelectionController").objectReferenceValue = collectorSelectionController;
         serializedGameplayFlowController.ApplyModifiedPropertiesWithoutUndo();
 
         return gameplayFlowController;
+    }
+
+    /// <summary>
+    /// Owns what Retry/Continue actually do after a Failure (full level
+    /// restart vs. resuming the same level state). Presentation (FailureUI)
+    /// only ever calls its RetryCurrentLevel/ContinueCurrentLevel API — it
+    /// never resets failureController, reloads scenes, or touches
+    /// gameplayFlowController itself.
+    /// </summary>
+    private static FailureRecoveryController CreateFailureRecoveryController(
+        FailureController failureController,
+        GameplayFlowController gameplayFlowController)
+    {
+        var failureRecoveryControllerObject = new GameObject("FailureRecoveryController", typeof(FailureRecoveryController));
+
+        var failureRecoveryController = failureRecoveryControllerObject.GetComponent<FailureRecoveryController>();
+        var serializedFailureRecoveryController = new SerializedObject(failureRecoveryController);
+        serializedFailureRecoveryController.FindProperty("failureController").objectReferenceValue = failureController;
+        serializedFailureRecoveryController.FindProperty("gameplayFlowController").objectReferenceValue = gameplayFlowController;
+        serializedFailureRecoveryController.ApplyModifiedPropertiesWithoutUndo();
+
+        return failureRecoveryController;
     }
 
     /// <summary>
@@ -298,6 +352,85 @@ public static class BootstrapSceneCreator
         image.color = Color.white;
 
         CreateCenteredText(buttonObject.transform, "Continue", Vector2.zero, new Vector2(160f, 50f), 20, Color.black);
+
+        return buttonObject.GetComponent<Button>();
+    }
+
+    /// <summary>
+    /// Prototype Failure screen: a Canvas holding an initially-inactive
+    /// centered panel ("Level Failed" text, a Retry button, and a Continue
+    /// button), with the FailureUI component wired to failureController and
+    /// failureRecoveryController. Reuses the existing EventSystem created for
+    /// Victory — one EventSystem serves every Canvas in the scene, so no
+    /// second one is created here. No real restart animation, coins, ads,
+    /// stars, or visual polish — establishing the architecture only.
+    /// </summary>
+    private static void CreateFailureUI(FailureController failureController, FailureRecoveryController failureRecoveryController)
+    {
+        var canvasObject = new GameObject(
+            "FailureCanvas",
+            typeof(Canvas),
+            typeof(CanvasScaler),
+            typeof(GraphicRaycaster),
+            typeof(FailureUI));
+
+        var canvas = canvasObject.GetComponent<Canvas>();
+        canvas.renderMode = RenderMode.ScreenSpaceOverlay;
+
+        GameObject panel = CreateFailurePanel(canvasObject.transform);
+        Button retryButton = CreateFailureActionButton(panel.transform, "Retry", new Vector2(-90f, -60f));
+        Button continueButton = CreateFailureActionButton(panel.transform, "Continue", new Vector2(90f, -60f));
+        CreateCenteredText(panel.transform, "Level Failed", new Vector2(0f, 60f), new Vector2(360f, 60f), 28, Color.white);
+
+        var failureUI = canvasObject.GetComponent<FailureUI>();
+        var serializedFailureUI = new SerializedObject(failureUI);
+        serializedFailureUI.FindProperty("failureController").objectReferenceValue = failureController;
+        serializedFailureUI.FindProperty("failureRecoveryController").objectReferenceValue = failureRecoveryController;
+        serializedFailureUI.FindProperty("panel").objectReferenceValue = panel;
+        serializedFailureUI.FindProperty("retryButton").objectReferenceValue = retryButton;
+        serializedFailureUI.FindProperty("continueButton").objectReferenceValue = continueButton;
+        serializedFailureUI.ApplyModifiedPropertiesWithoutUndo();
+    }
+
+    private static GameObject CreateFailurePanel(Transform parent)
+    {
+        var panelObject = new GameObject("FailurePanel", typeof(Image));
+        panelObject.transform.SetParent(parent, false);
+
+        var rectTransform = panelObject.GetComponent<RectTransform>();
+        rectTransform.anchorMin = new Vector2(0.5f, 0.5f);
+        rectTransform.anchorMax = new Vector2(0.5f, 0.5f);
+        rectTransform.pivot = new Vector2(0.5f, 0.5f);
+        rectTransform.sizeDelta = new Vector2(400f, 250f);
+        rectTransform.anchoredPosition = Vector2.zero;
+
+        var image = panelObject.GetComponent<Image>();
+        image.color = new Color(0f, 0f, 0f, 0.85f);
+
+        // Also authored inactive in the saved scene, not just hidden by
+        // FailureUI.Awake() at runtime — keeps the Editor scene view honest
+        // about the panel's default (hidden) state.
+        panelObject.SetActive(false);
+
+        return panelObject;
+    }
+
+    private static Button CreateFailureActionButton(Transform parent, string label, Vector2 anchoredPosition)
+    {
+        var buttonObject = new GameObject($"{label}Button", typeof(Image), typeof(Button));
+        buttonObject.transform.SetParent(parent, false);
+
+        var rectTransform = buttonObject.GetComponent<RectTransform>();
+        rectTransform.anchorMin = new Vector2(0.5f, 0.5f);
+        rectTransform.anchorMax = new Vector2(0.5f, 0.5f);
+        rectTransform.pivot = new Vector2(0.5f, 0.5f);
+        rectTransform.sizeDelta = new Vector2(140f, 50f);
+        rectTransform.anchoredPosition = anchoredPosition;
+
+        var image = buttonObject.GetComponent<Image>();
+        image.color = Color.white;
+
+        CreateCenteredText(buttonObject.transform, label, Vector2.zero, new Vector2(140f, 50f), 20, Color.black);
 
         return buttonObject.GetComponent<Button>();
     }

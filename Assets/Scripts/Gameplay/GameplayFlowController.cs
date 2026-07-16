@@ -1,4 +1,5 @@
 using Project001.Gameplay.Collectors;
+using Project001.Gameplay.Failure;
 using Project001.Gameplay.Victory;
 using UnityEngine;
 
@@ -6,11 +7,13 @@ namespace Project001.Gameplay
 {
     /// <summary>
     /// Explicitly controls whether gameplay interaction is active. Reacts to
-    /// VictoryController.OnVictory by pausing; exposes PauseGameplay and
-    /// ResumeGameplay as a small reusable API a future Failure UI can call
-    /// too — neither method is Victory-specific. Holds no Canvas, Button,
-    /// Text, or other presentation reference of its own; the level always
-    /// stays visible, only time-based movement and selection stop.
+    /// both VictoryController.OnVictory and FailureController.OnFailure by
+    /// pausing — the same PauseGameplay flow for either terminal outcome, no
+    /// second pause controller. Exposes PauseGameplay and ResumeGameplay as a
+    /// small reusable API any presentation (VictoryUI, FailureUI) can call —
+    /// neither method is outcome-specific. Holds no Canvas, Button, Text, or
+    /// other presentation reference of its own; the level always stays
+    /// visible, only time-based movement and selection stop.
     ///
     /// Time.timeScale alone does not stop CollectorSelectionController — its
     /// Update() reads the New Input System's Pointer directly and keeps
@@ -23,6 +26,9 @@ namespace Project001.Gameplay
         [SerializeField, Tooltip("Victory detector this controller reacts to by pausing gameplay. Optional — if missing, only manual PauseGameplay/ResumeGameplay calls have any effect.")]
         private VictoryController victoryController;
 
+        [SerializeField, Tooltip("Failure detector this controller reacts to by pausing gameplay. Optional — if missing, only manual PauseGameplay/ResumeGameplay calls have any effect.")]
+        private FailureController failureController;
+
         [SerializeField, Tooltip("Disabled while gameplay is paused so neither selection nor conveyor launching can happen, regardless of Time.timeScale. Optional — if missing, selection is simply left as-is.")]
         private CollectorSelectionController collectorSelectionController;
 
@@ -34,12 +40,18 @@ namespace Project001.Gameplay
         {
             if (victoryController != null)
                 victoryController.OnVictory += PauseGameplay;
+
+            if (failureController != null)
+                failureController.OnFailure += PauseGameplay;
         }
 
         private void OnDestroy()
         {
             if (victoryController != null)
                 victoryController.OnVictory -= PauseGameplay;
+
+            if (failureController != null)
+                failureController.OnFailure -= PauseGameplay;
 
             // Never leave the game frozen because this controller went away
             // while gameplay was paused.
