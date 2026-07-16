@@ -208,7 +208,7 @@ Owns:
 
 - favourite food colour;
 - hunger capacity;
-- remaining hunger;
+- RemainingHungerChanged event;
 - satisfied state;
 - riding state;
 - world-position assignment.
@@ -271,9 +271,10 @@ Represents the temporary visual and selectable form of a monster.
 
 Owns:
 
-- `SpriteRenderer`;
-- selection collider;
-- visual colour.
+- SpriteRenderer
+- selection collider
+- visual colour
+- Remaining Hunger display
 
 It has no knowledge of conveyor behaviour or lifecycle rules.
 
@@ -460,3 +461,60 @@ Pixel grid size:            level-defined
 
 Future level configuration and bonuses must be able to change relevant values
 without rewriting core systems.
+
+---
+
+## Gameplay Architecture Layers
+
+The project intentionally separates gameplay into three independent layers.
+
+### 1. Level Data
+
+Defines what makes one level different from another.
+
+Examples:
+
+- LevelId
+- PixelLayout
+- CollectorQueues
+- ConveyorCapacity
+- Per-collector HungerCapacity
+
+These values belong inside `LevelDefinition`.
+
+---
+
+### 2. Gameplay Rules
+
+Defines rules that stay identical across every level.
+
+Examples:
+
+- Waiting Line capacity
+- Base conveyor speed
+- Future gameplay speed multiplier
+- Victory conditions
+- Failure conditions
+
+These values should not be duplicated inside every `LevelDefinition`.
+
+Changing a gameplay rule should affect every level without modifying level data.
+
+---
+
+### 3. Presentation
+
+Defines how gameplay is displayed.
+
+Examples:
+
+- colours
+- sprites
+- animations
+- sounds
+- particle effects
+- future themes
+
+Presentation must not affect gameplay behaviour.
+
+Changing presentation should never require changing `LevelDefinition`.

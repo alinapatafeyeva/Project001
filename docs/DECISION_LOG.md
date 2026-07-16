@@ -200,7 +200,7 @@ Decision:
 
 Gameplay configuration belongs inside `LevelDefinition`.
 
-Presentation configuration and debug behaviour must stay outside
+Presentation configuration and debug-only behaviour must stay outside
 `LevelDefinition`.
 
 Reason:
@@ -210,3 +210,33 @@ presentation systems, and debug configurations without modifying gameplay
 data.
 
 `MatchTypePresentation` and `FailureTestLevelFactory` follow this principle.
+
+---
+
+## 014 — Themes are chapter-based, not player-selectable
+
+Decision:
+
+Visual themes belong to fixed level chapters.
+
+A chapter currently targets approximately 30 levels and defines:
+
+- the level-map environment;
+- the visual content pool used by levels;
+- monster presentation;
+- level decorations and related presentation.
+
+Players do not manually select themes.
+
+Event-specific themes are not part of the core progression model.
+
+Reason:
+
+Chapter-based themes create a stronger sense of travel and progression than
+reusing one visual set indefinitely or allowing arbitrary theme selection.
+
+Keeping the theme fixed for a level range also makes level generation,
+balancing, testing, and art production more predictable.
+
+The current target of approximately 30 levels per chapter is provisional and
+may change during testing before production content is locked.

@@ -38,7 +38,7 @@ the current implementation.
 ## Monsters
 
 - Replace prototype circles with production monster visuals.
-- Display Remaining Hunger on each monster.
+- Replace prototype TextMesh hunger display with production UI.
 - Add food-themed monster identities:
   - Strawberry Monster
   - Chocolate Monster
@@ -128,7 +128,7 @@ the current implementation.
 
 ---
 
-##  Level Shape System
+## Level Shape System
 
 - support inactive/empty cells inside a rectangular grid
 - define levels by shape masks
@@ -136,3 +136,33 @@ the current implementation.
 - preserve exact per-MatchTypeId collector capacity
 - support controlled cluster/pattern generation
 - preview and validate generated levels
+
+---
+
+## Chapters and Themes
+
+- Define the first chapter theme and content pool.
+- Define the provisional chapter length (~30 levels).
+- Measure average completion time per level and per chapter.
+- Avoid chapters that are completed too quickly or feel repetitive.
+- Define criteria for when a theme has overstayed its welcome.
+- Create a repeatable process for adding a new chapter.
+- Keep chapter ranges editable until production content is locked.
+
+----
+
+## Monetisation
+
+- Add level-completion coin rewards.
+
+- Add optional rewarded ad to double level rewards.
+
+- Introduce IRewardedAdService with a fake development implementation.
+
+- Integrate a real mediation SDK before beta/release.
+
+- Handle ad unavailable, cancelled, failed, and rewarded outcomes.
+
+- Add privacy consent and app-ads.txt/store readiness setup.
+
+- Never block normal reward collection behind an ad.
