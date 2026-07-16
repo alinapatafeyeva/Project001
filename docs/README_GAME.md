@@ -26,3 +26,19 @@ it enters the first free Waiting Line slot
 The player may launch it again later
         ↓
 The level continues until every edible pixel has been consumed
+```
+
+# Current Prototype
+
+The prototype currently includes:
+
+- queue selection
+- conveyor movement
+- adaptive grid
+- per-collector hunger
+- Waiting Line
+- Victory
+- Failure
+
+All visuals are temporary placeholders and currently exist only to validate
+gameplay architecture.

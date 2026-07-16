@@ -449,12 +449,13 @@ Bootstrap
 These values exist for testing and are not final game-design constants:
 
 ```text
-Queue count:                4
-Collectors per queue:       5
-Waiting Line capacity:      5
-Conveyor capacity:          5
-Collector hunger capacity:  3
-Pixel grid size:            6 × 6
+Queue count:                level-defined
+Collectors per queue:       level-defined
+Waiting Line capacity:      fixed (5)
+Conveyor capacity:          level-defined
+Conveyor speed:             level-defined
+Collector hunger:           per collector
+Pixel grid size:            level-defined
 ```
 
 Future level configuration and bonuses must be able to change relevant values

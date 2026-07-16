@@ -190,4 +190,23 @@ Current examples:
 - throttled consumption attempts;
 - cached pixel positions;
 - minimal physics usage;
-- no allocations in frequent movement loops.
+- no allocations in frequent movement loops. 
+
+---
+
+## 013 — Separate gameplay data from presentation and debug behaviour
+
+Decision:
+
+Gameplay configuration belongs inside `LevelDefinition`.
+
+Presentation configuration and debug behaviour must stay outside
+`LevelDefinition`.
+
+Reason:
+
+The same approved level should be playable with different visual themes,
+presentation systems, and debug configurations without modifying gameplay
+data.
+
+`MatchTypePresentation` and `FailureTestLevelFactory` follow this principle.
