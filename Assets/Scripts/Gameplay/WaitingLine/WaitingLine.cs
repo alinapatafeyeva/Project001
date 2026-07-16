@@ -7,7 +7,7 @@ namespace Project001.Gameplay.WaitingLine
     /// Generates horizontal WaitingSlot objects on Initialize, using a single
     /// shared runtime-generated square-outline sprite reused by every slot.
     /// Slot count comes from the capacity passed to Initialize — a fixed
-    /// global gameplay setting (see LevelBootstrapper.FixedWaitingLineCapacity),
+    /// global gameplay setting (see GameplayConstants.WaitingLineCapacity),
     /// not level data, since Waiting Line capacity must stay constant across
     /// every level.
     /// </summary>
