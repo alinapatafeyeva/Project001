@@ -14,14 +14,14 @@ Project001 Roadmap
 
 ⸻
 
-## Documentation Update (Current)
+✅ Documentation Update (Current)
 
-* Update README_GAME
-* Update Architecture
-* Update Decision Log
-* Update TODO
-* Remove obsolete information
-* Document new gameplay rules
+✅ Update README_GAME
+✅ Update Architecture
+✅ Update Decision Log
+✅ Update TODO
+✅ Remove obsolete information
+✅ Document new gameplay rules
 
 ⸻
 
@@ -46,6 +46,18 @@ Failure UI
 * Next level
 * Load next LevelId
 * Remove manual level switching from testing flow
+
+⸻
+
+if need
+## Documentation Update (Current)
+
+* Update README_GAME
+* Update Architecture
+* Update Decision Log
+* Update TODO
+* Remove obsolete information
+* Document new gameplay rules
 
 ⸻
 
@@ -107,6 +119,26 @@ Levels
 
 ⸻
 
+## Advanced Level Mechanics
+
+• multi-cell pixels
+
+• pixels with internal food amount greater than 1
+
+• repeated-hit / multi-layer pixels
+
+• pixel restoration during gameplay
+
+• monsters that add pixels back
+
+• limited restore counts
+
+• dynamic-grid validation
+
+• solvability checks for mutable levels
+
+⸻
+
 ## Shape-based Levels
 
 Вместо рисования картинок цветами.
@@ -146,6 +178,25 @@ Validation
 
 ⸻
 
+## Chapter & Theme System
+
+- Define chapter boundaries.
+- Start with a provisional target of approximately 30 levels per chapter.
+- Assign one visual theme to each chapter.
+- Use the chapter theme for:
+  - level-map environment;
+  - monster presentation;
+  - collectible / food asset pool;
+  - decorations;
+  - effects and audio where appropriate.
+- Restrict level generation to the content pool allowed by the chapter.
+- Do not expose manual theme selection to the player.
+- Do not use event themes as the core progression structure.
+- Rebalance chapter length during testing before production level ranges are
+  locked.
+
+⸻
+
 ## Level Map
 
 * Path between levels
@@ -153,6 +204,8 @@ Validation
 * Completed levels
 * Locked levels
 * Current level marker
+* Support themed map segments per chapter.
+* Transition visually between chapter environments.
 
 ⸻
 
