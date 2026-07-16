@@ -109,9 +109,12 @@ namespace Project001.Gameplay.Levels
     }
 
     /// <summary>
-    /// One complete, normalized, deterministic level: pixel layout, collector
-    /// queues, and gameplay configuration. Immutable after construction, with
-    /// no runtime state (no consumed/remaining counts, no MonoBehaviour
+    /// One complete, normalized, deterministic level: pixel layout and
+    /// collector queues — only what actually varies between levels. Global
+    /// gameplay rules that apply identically to every level (conveyor
+    /// capacity, conveyor speed, Waiting Line capacity) live in
+    /// GameplayConstants instead. Immutable after construction, with no
+    /// runtime state (no consumed/remaining counts, no MonoBehaviour
     /// references) and no player-progress or catalog concerns (no map
     /// position, unlock/completed state, rewards, stars, display title, or
     /// replay rules — those belong to future level-catalog and
@@ -127,16 +130,10 @@ namespace Project001.Gameplay.Levels
 
         public IReadOnlyList<CollectorQueueDefinition> CollectorQueues => _collectorQueues;
 
-        public int ConveyorCapacity { get; }
-
-        public float ConveyorMoveSpeed { get; }
-
         public LevelDefinition(
             LevelId id,
             PixelLayoutDefinition pixelLayout,
-            IReadOnlyList<CollectorQueueDefinition> collectorQueues,
-            int conveyorCapacity,
-            float conveyorMoveSpeed)
+            IReadOnlyList<CollectorQueueDefinition> collectorQueues)
         {
             if (pixelLayout == null)
                 throw new ArgumentNullException(nameof(pixelLayout));
@@ -146,12 +143,6 @@ namespace Project001.Gameplay.Levels
 
             if (collectorQueues.Count == 0)
                 throw new ArgumentException("A level must contain at least one collector queue.", nameof(collectorQueues));
-
-            if (conveyorCapacity <= 0)
-                throw new ArgumentOutOfRangeException(nameof(conveyorCapacity), "Conveyor capacity must be positive.");
-
-            if (conveyorMoveSpeed < 0f)
-                throw new ArgumentOutOfRangeException(nameof(conveyorMoveSpeed), "Conveyor move speed must not be negative.");
 
             var copy = new List<CollectorQueueDefinition>(collectorQueues.Count);
             foreach (CollectorQueueDefinition queue in collectorQueues)
@@ -165,8 +156,6 @@ namespace Project001.Gameplay.Levels
             Id = id;
             PixelLayout = pixelLayout;
             _collectorQueues = new ReadOnlyCollection<CollectorQueueDefinition>(copy);
-            ConveyorCapacity = conveyorCapacity;
-            ConveyorMoveSpeed = conveyorMoveSpeed;
         }
     }
 }

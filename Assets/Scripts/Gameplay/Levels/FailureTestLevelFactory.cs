@@ -23,8 +23,8 @@ namespace Project001.Gameplay.Levels
         private const int DebugHungerCapacity = 50;
 
         /// <summary>
-        /// Returns a new LevelDefinition with the same Id, PixelLayout,
-        /// ConveyorCapacity, and ConveyorMoveSpeed as approvedLevel, but with
+        /// Returns a new LevelDefinition with the same Id and PixelLayout as
+        /// approvedLevel, but with
         /// debugCollectorCount debug collectors (MatchTypeId
         /// MatchTypePresentation.DebugUnmatchedMatchTypeId, HungerCapacity
         /// DebugHungerCapacity) distributed round-robin across
@@ -69,9 +69,7 @@ namespace Project001.Gameplay.Levels
             return new LevelDefinition(
                 approvedLevel.Id,
                 approvedLevel.PixelLayout,
-                mergedQueues,
-                approvedLevel.ConveyorCapacity,
-                approvedLevel.ConveyorMoveSpeed);
+                mergedQueues);
         }
     }
 }

@@ -1,14 +1,19 @@
 using System.IO;
+using Project001.Gameplay;
 using Project001.Gameplay.Collectors;
 using Project001.Gameplay.Conveyor;
 using Project001.Gameplay.Failure;
 using Project001.Gameplay.Levels;
 using Project001.Gameplay.Pixels;
 using Project001.Gameplay.Victory;
+using Project001.UI.Victory;
 using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
+using UnityEngine.EventSystems;
+using UnityEngine.InputSystem.UI;
 using UnityEngine.SceneManagement;
+using UnityEngine.UI;
 
 /// <summary>
 /// Creates the empty scene skeleton and wires cross-references between its
@@ -45,9 +50,12 @@ public static class BootstrapSceneCreator
         Project001.Gameplay.WaitingLine.WaitingLine waitingLine = CreateWaitingLine();
         FailureController failureController = CreateFailureController(pixelGrid);
         CollectorQueueBoard collectorQueueBoard = CreateCollectorQueueBoard(pixelGrid, conveyorSystem, waitingLine, failureController);
-        CreateCollectorSelectionController(mainCamera, collectorQueueBoard, waitingLine, conveyorSystem);
-        CreateVictoryController(pixelGrid);
+        CollectorSelectionController collectorSelectionController = CreateCollectorSelectionController(mainCamera, collectorQueueBoard, waitingLine, conveyorSystem);
+        VictoryController victoryController = CreateVictoryController(pixelGrid);
+        GameplayFlowController gameplayFlowController = CreateGameplayFlowController(victoryController, collectorSelectionController);
         CreateLevelBootstrapper(pixelGrid, conveyorSystem, waitingLine, collectorQueueBoard);
+        CreateEventSystem();
+        CreateVictoryUI(victoryController, gameplayFlowController);
 
         string directory = Path.GetDirectoryName(ScenePath);
         if (!Directory.Exists(directory))
@@ -142,7 +150,7 @@ public static class BootstrapSceneCreator
         return collectorQueueBoard;
     }
 
-    private static void CreateCollectorSelectionController(
+    private static CollectorSelectionController CreateCollectorSelectionController(
         Camera selectionCamera,
         CollectorQueueBoard collectorQueueBoard,
         Project001.Gameplay.WaitingLine.WaitingLine waitingLine,
@@ -159,6 +167,8 @@ public static class BootstrapSceneCreator
         serializedController.FindProperty("waitingLine").objectReferenceValue = waitingLine;
         serializedController.FindProperty("conveyorSystem").objectReferenceValue = conveyorSystem;
         serializedController.ApplyModifiedPropertiesWithoutUndo();
+
+        return controller;
     }
 
     private static FailureController CreateFailureController(PixelGrid pixelGrid)
@@ -173,7 +183,7 @@ public static class BootstrapSceneCreator
         return failureController;
     }
 
-    private static void CreateVictoryController(PixelGrid pixelGrid)
+    private static VictoryController CreateVictoryController(PixelGrid pixelGrid)
     {
         var victoryControllerObject = new GameObject("VictoryController", typeof(VictoryController));
 
@@ -181,6 +191,135 @@ public static class BootstrapSceneCreator
         var serializedVictoryController = new SerializedObject(victoryController);
         serializedVictoryController.FindProperty("pixelGrid").objectReferenceValue = pixelGrid;
         serializedVictoryController.ApplyModifiedPropertiesWithoutUndo();
+
+        return victoryController;
+    }
+
+    /// <summary>
+    /// Explicitly controls whether gameplay interaction is active, reacting
+    /// to victoryController.OnVictory by pausing. Presentation (VictoryUI)
+    /// only ever calls its ResumeGameplay/PauseGameplay API — it never
+    /// manipulates Time.timeScale or collectorSelectionController itself.
+    /// </summary>
+    private static GameplayFlowController CreateGameplayFlowController(
+        VictoryController victoryController,
+        CollectorSelectionController collectorSelectionController)
+    {
+        var gameplayFlowControllerObject = new GameObject("GameplayFlowController", typeof(GameplayFlowController));
+
+        var gameplayFlowController = gameplayFlowControllerObject.GetComponent<GameplayFlowController>();
+        var serializedGameplayFlowController = new SerializedObject(gameplayFlowController);
+        serializedGameplayFlowController.FindProperty("victoryController").objectReferenceValue = victoryController;
+        serializedGameplayFlowController.FindProperty("collectorSelectionController").objectReferenceValue = collectorSelectionController;
+        serializedGameplayFlowController.ApplyModifiedPropertiesWithoutUndo();
+
+        return gameplayFlowController;
+    }
+
+    /// <summary>
+    /// Required for any Unity UI Button to receive clicks at all. The
+    /// project's Active Input Handling is set to the new Input System only,
+    /// so the legacy StandaloneInputModule would throw at runtime —
+    /// InputSystemUIInputModule is the correct module for this project.
+    /// </summary>
+    private static void CreateEventSystem()
+    {
+        new GameObject("EventSystem", typeof(EventSystem), typeof(InputSystemUIInputModule));
+    }
+
+    /// <summary>
+    /// Prototype Victory screen: a Canvas holding an initially-inactive
+    /// centered panel ("Level Complete" text and a Continue button), with
+    /// the VictoryUI component wired to victoryController. No score, coins,
+    /// stars, rewards, ads, transitions, or animations — establishing the
+    /// architecture only.
+    /// </summary>
+    private static void CreateVictoryUI(VictoryController victoryController, GameplayFlowController gameplayFlowController)
+    {
+        var canvasObject = new GameObject(
+            "VictoryCanvas",
+            typeof(Canvas),
+            typeof(CanvasScaler),
+            typeof(GraphicRaycaster),
+            typeof(VictoryUI));
+
+        var canvas = canvasObject.GetComponent<Canvas>();
+        canvas.renderMode = RenderMode.ScreenSpaceOverlay;
+
+        GameObject panel = CreateVictoryPanel(canvasObject.transform);
+        Button continueButton = CreateContinueButton(panel.transform);
+        CreateCenteredText(panel.transform, "Level Complete", new Vector2(0f, 60f), new Vector2(360f, 60f), 28, Color.white);
+
+        var victoryUI = canvasObject.GetComponent<VictoryUI>();
+        var serializedVictoryUI = new SerializedObject(victoryUI);
+        serializedVictoryUI.FindProperty("victoryController").objectReferenceValue = victoryController;
+        serializedVictoryUI.FindProperty("gameplayFlowController").objectReferenceValue = gameplayFlowController;
+        serializedVictoryUI.FindProperty("panel").objectReferenceValue = panel;
+        serializedVictoryUI.FindProperty("continueButton").objectReferenceValue = continueButton;
+        serializedVictoryUI.ApplyModifiedPropertiesWithoutUndo();
+    }
+
+    private static GameObject CreateVictoryPanel(Transform parent)
+    {
+        var panelObject = new GameObject("VictoryPanel", typeof(Image));
+        panelObject.transform.SetParent(parent, false);
+
+        var rectTransform = panelObject.GetComponent<RectTransform>();
+        rectTransform.anchorMin = new Vector2(0.5f, 0.5f);
+        rectTransform.anchorMax = new Vector2(0.5f, 0.5f);
+        rectTransform.pivot = new Vector2(0.5f, 0.5f);
+        rectTransform.sizeDelta = new Vector2(400f, 250f);
+        rectTransform.anchoredPosition = Vector2.zero;
+
+        var image = panelObject.GetComponent<Image>();
+        image.color = new Color(0f, 0f, 0f, 0.85f);
+
+        // Also authored inactive in the saved scene, not just hidden by
+        // VictoryUI.Awake() at runtime — keeps the Editor scene view honest
+        // about the panel's default (hidden) state.
+        panelObject.SetActive(false);
+
+        return panelObject;
+    }
+
+    private static Button CreateContinueButton(Transform parent)
+    {
+        var buttonObject = new GameObject("ContinueButton", typeof(Image), typeof(Button));
+        buttonObject.transform.SetParent(parent, false);
+
+        var rectTransform = buttonObject.GetComponent<RectTransform>();
+        rectTransform.anchorMin = new Vector2(0.5f, 0.5f);
+        rectTransform.anchorMax = new Vector2(0.5f, 0.5f);
+        rectTransform.pivot = new Vector2(0.5f, 0.5f);
+        rectTransform.sizeDelta = new Vector2(160f, 50f);
+        rectTransform.anchoredPosition = new Vector2(0f, -60f);
+
+        var image = buttonObject.GetComponent<Image>();
+        image.color = Color.white;
+
+        CreateCenteredText(buttonObject.transform, "Continue", Vector2.zero, new Vector2(160f, 50f), 20, Color.black);
+
+        return buttonObject.GetComponent<Button>();
+    }
+
+    private static void CreateCenteredText(Transform parent, string content, Vector2 anchoredPosition, Vector2 size, int fontSize, Color color)
+    {
+        var textObject = new GameObject("Text", typeof(Text));
+        textObject.transform.SetParent(parent, false);
+
+        var rectTransform = textObject.GetComponent<RectTransform>();
+        rectTransform.anchorMin = new Vector2(0.5f, 0.5f);
+        rectTransform.anchorMax = new Vector2(0.5f, 0.5f);
+        rectTransform.pivot = new Vector2(0.5f, 0.5f);
+        rectTransform.sizeDelta = size;
+        rectTransform.anchoredPosition = anchoredPosition;
+
+        var text = textObject.GetComponent<Text>();
+        text.text = content;
+        text.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+        text.fontSize = fontSize;
+        text.alignment = TextAnchor.MiddleCenter;
+        text.color = color;
     }
 
     private static void CreateLevelBootstrapper(

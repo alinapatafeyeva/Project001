@@ -49,7 +49,8 @@ namespace Project001.Gameplay.Conveyor
         }
 
         /// <summary>
-        /// Applies level-provided capacity and move speed. Intended for
+        /// Applies caller-provided capacity and move speed (GameplayConstants
+        /// values, not level data — see LevelBootstrapper). Intended for
         /// one-time startup configuration, before any riders board — unlike
         /// PixelGrid/WaitingLine/CollectorQueueBoard this does not generate
         /// any children, so there is nothing to duplicate and no single-call

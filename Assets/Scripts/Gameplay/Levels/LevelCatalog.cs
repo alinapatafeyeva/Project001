@@ -55,19 +55,16 @@ namespace Project001.Gameplay.Levels
         /// non-uniform HungerCapacity values (never all equal) that still sum
         /// to exactly 12 per type — m001: 5+3+2+2, m002: 4+4+3+1,
         /// m003: 6+2+3+1 — proving HungerCapacity is a per-collector value,
-        /// not a per-MatchTypeId constant. Conveyor capacity 5, move speed
-        /// 3.5 (matches SecondTestLevel's pace). Waiting Line capacity is
-        /// not level data — every level gets the same fixed capacity from
-        /// LevelBootstrapper.
+        /// not a per-MatchTypeId constant. Conveyor capacity, conveyor move
+        /// speed, and Waiting Line capacity are not level data — every level
+        /// shares the same GameplayConstants values from LevelBootstrapper.
         /// </summary>
         private static LevelDefinition BuildPrototypeLevel()
         {
             return new LevelDefinition(
                 PrototypeLevelId,
                 BuildPrototypePixelLayout(),
-                BuildPrototypeCollectorQueues(),
-                conveyorCapacity: 5,
-                conveyorMoveSpeed: 3.5f);
+                BuildPrototypeCollectorQueues());
         }
 
         private static PixelLayoutDefinition BuildPrototypePixelLayout()
@@ -126,10 +123,10 @@ namespace Project001.Gameplay.Levels
         /// 2-match-type checkerboard (16 m002 pixels, 16 m004 pixels), 4
         /// queues of 4 collectors each dedicated to a single MatchTypeId per
         /// queue — alternating m002/m004/m002/m004, a structurally different
-        /// arrangement than the prototype's mixed per-queue cycling — and
-        /// conveyor capacity 8 at move speed 3.5 (higher throughput,
-        /// faster). Waiting Line capacity is not level data — every level
-        /// gets the same fixed capacity from LevelBootstrapper.
+        /// arrangement than the prototype's mixed per-queue cycling. Conveyor
+        /// capacity, conveyor move speed, and Waiting Line capacity are not
+        /// level data — every level shares the same GameplayConstants values
+        /// from LevelBootstrapper.
         ///
         /// Only m002 and m004 collectors exist here, matching the grid's
         /// only two MatchTypeIds exactly: 2 queues of m002 and 2 queues of
@@ -145,9 +142,7 @@ namespace Project001.Gameplay.Levels
             return new LevelDefinition(
                 SecondTestLevelId,
                 BuildSecondTestPixelLayout(),
-                BuildSecondTestCollectorQueues(),
-                conveyorCapacity: 8,
-                conveyorMoveSpeed: 3.5f);
+                BuildSecondTestCollectorQueues());
         }
 
         private static PixelLayoutDefinition BuildSecondTestPixelLayout()
