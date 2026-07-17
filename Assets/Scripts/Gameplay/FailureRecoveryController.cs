@@ -28,10 +28,12 @@ namespace Project001.Gameplay
         /// it at 0 would reload directly into a frozen level — then reloads
         /// the active scene. LevelBootstrapper.Awake naturally rebuilds
         /// pixels, queues, hunger, Waiting Line, conveyor, and Victory/Failure
-        /// state from scratch on the next load; this method does not rebuild
-        /// anything itself. The scene's serialized testLevelId and
-        /// enableFailureTestSetup are preserved automatically, since a reload
-        /// re-deserializes the same saved scene data.
+        /// state from scratch on the next load, asking LevelProgressionController
+        /// for the same current LevelId (its static state survives the
+        /// reload, so Retry lands back on the same level, not level_001);
+        /// this method does not rebuild anything itself. The scene's
+        /// serialized enableFailureTestSetup is preserved automatically,
+        /// since a reload re-deserializes the same saved scene data.
         /// </summary>
         public void RetryCurrentLevel()
         {

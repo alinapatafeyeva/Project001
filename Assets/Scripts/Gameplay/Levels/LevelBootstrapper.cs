@@ -15,10 +15,23 @@ namespace Project001.Gameplay.Levels
     ///
     /// Resolves its LevelDefinition from a LevelCatalog by LevelId, and its
     /// MatchTypeId-to-Color presentation mapping from a separate
-    /// MatchTypePresentation. A future CurrentProgressLevelId source replaces
-    /// only where the LevelId passed to the catalog comes from, without
-    /// changing the catalog itself or how the systems below are built from
-    /// its result.
+    /// MatchTypePresentation. Does not own progression — every Awake it
+    /// asks levelProgressionController.GetOrInitializeCurrentLevel(startingLevelId)
+    /// for the LevelId to build, and does not itself decide whether this is
+    /// the first Bootstrap load of the session or a later reload
+    /// (LoadNextLevel, Retry): LevelProgressionController owns that
+    /// distinction and applies startingLevelId only once per session,
+    /// returning its existing current level unchanged on every later call.
+    ///
+    /// startingLevelId lets a developer launch any approved level directly
+    /// from the Inspector (default "level_001") without a separate
+    /// enable/disable checkbox — changing it changes where a new session
+    /// starts; it has no effect on a session already in progress.
+    ///
+    /// levelProgressionController is required. A later Victory's Continue
+    /// still goes through the normal VictoryFlowController -&gt;
+    /// LevelProgressionController.LoadNextLevel() path unchanged — only the
+    /// initial level source is affected here.
     ///
     /// Optionally derives a Bootstrap-only, deterministic Failure test level
     /// from the resolved approved level via FailureTestLevelFactory — see
@@ -45,8 +58,11 @@ namespace Project001.Gameplay.Levels
         [SerializeField, Tooltip("Board built from the level's collector queues.")]
         private CollectorQueueBoard collectorQueueBoard;
 
-        [SerializeField, Tooltip("Test-only LevelId this scene loads from the LevelCatalog. A future CurrentProgressLevelId source replaces this field without changing anything below it. Known test ids: level_001, level_002.")]
-        private string testLevelId = "level_001";
+        [SerializeField, Tooltip("Required. Asked every Awake for the LevelId to build via GetOrInitializeCurrentLevel(startingLevelId) — LevelProgressionController decides whether Starting Level Id applies (first load of the session) or is ignored (later reload).")]
+        private LevelProgressionController levelProgressionController;
+
+        [SerializeField, Tooltip("LevelId a new Play Mode/application session starts on. Applied once, at the first Bootstrap load of the session; ignored on later reloads (Victory's Continue, Retry), which keep whatever level the session already progressed to. Change this directly to launch any approved level from the Inspector. Known ids: level_001, level_002.")]
+        private string startingLevelId = "level_001";
 
         [SerializeField, Tooltip("Bootstrap-only deterministic Failure test setup. When enabled, prepends GameplayConstants.WaitingLineCapacity + 1 debug collectors (a dedicated MatchTypeId that never appears on any approved pixel layout) to the resolved level's queues, so the first GameplayConstants.WaitingLineCapacity fill the Waiting Line and the next one triggers Failure on demand. Never mutates LevelCatalog or approved level data; the derived level is never validated by LevelDefinitionValidator, since it is intentionally invalid test data.")]
         private bool enableFailureTestSetup = false;
@@ -62,16 +78,19 @@ namespace Project001.Gameplay.Levels
                 return;
             }
 
-            if (string.IsNullOrWhiteSpace(testLevelId))
+            if (string.IsNullOrWhiteSpace(startingLevelId))
             {
-                Debug.LogError($"LevelBootstrapper: '{name}' has no LevelId configured; aborting bootstrap.", this);
+                Debug.LogError($"LevelBootstrapper: '{name}' has no Starting Level Id configured; aborting bootstrap.", this);
                 enabled = false;
                 return;
             }
 
-            if (!_levelCatalog.TryGetLevel(new LevelId(testLevelId), out LevelDefinition approvedLevel))
+            var configuredStartingLevelId = new LevelId(startingLevelId);
+            LevelId currentLevelId = levelProgressionController.GetOrInitializeCurrentLevel(configuredStartingLevelId);
+
+            if (!_levelCatalog.TryGetLevel(currentLevelId, out LevelDefinition approvedLevel))
             {
-                Debug.LogError($"LevelBootstrapper: '{name}' has no approved level for LevelId '{testLevelId}'; aborting bootstrap.", this);
+                Debug.LogError($"LevelBootstrapper: '{name}' has no approved level for LevelId '{currentLevelId}'; aborting bootstrap.", this);
                 enabled = false;
                 return;
             }
@@ -119,6 +138,12 @@ namespace Project001.Gameplay.Levels
             if (collectorQueueBoard == null)
             {
                 Debug.LogError($"LevelBootstrapper: '{name}' is missing its CollectorQueueBoard reference; level will not be built.", this);
+                isValid = false;
+            }
+
+            if (levelProgressionController == null)
+            {
+                Debug.LogError($"LevelBootstrapper: '{name}' is missing its LevelProgressionController reference; level will not be built.", this);
                 isValid = false;
             }
 

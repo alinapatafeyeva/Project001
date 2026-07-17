@@ -11,30 +11,30 @@ namespace Project001.UI.Victory
     /// VictoryController has no reference to or knowledge of this class; this
     /// is the only direction the dependency runs.
     ///
-    /// Does not itself pause or resume gameplay — that is
-    /// GameplayFlowController's job (it reacts to the same OnVictory event
-    /// independently), reached here only through its small, Victory-agnostic
-    /// PauseGameplay/ResumeGameplay API so this class stays presentation-only
-    /// and Failure UI can reuse the same API later without touching this one.
+    /// Does not itself decide what Continue does — that is
+    /// VictoryFlowController's job (resume gameplay, then load the next
+    /// level via LevelProgressionController). This class only forwards the
+    /// button press to it and manages panel visibility; it never touches
+    /// Time.timeScale, LevelProgressionController, or scene loading directly.
     ///
     /// Deliberately minimal: a centered panel, "Level Complete" text, and a
-    /// single Continue button that only hides the panel and logs. Future
-    /// additions (Restart, Next Level, coins, stars, x2 reward, ads,
-    /// animations) belong here or in sibling components reacting to the same
-    /// OnVictory event — none of them require any change to VictoryController.
+    /// single Continue button. Future additions (Restart, coins, stars, x2
+    /// reward, ads, animations) belong here or in sibling components
+    /// reacting to the same OnVictory event — none of them require any
+    /// change to VictoryController.
     /// </summary>
     public class VictoryUI : MonoBehaviour
     {
         [SerializeField, Tooltip("Controller whose OnVictory event this UI reacts to.")]
         private VictoryController victoryController;
 
-        [SerializeField, Tooltip("Reached only via PauseGameplay/ResumeGameplay on Continue — this UI never manipulates gameplay state (e.g. Time.timeScale) directly.")]
-        private GameplayFlowController gameplayFlowController;
+        [SerializeField, Tooltip("Owns what Continue actually does (resume gameplay, then load the next level) — this UI only forwards the button press to it and manages panel visibility.")]
+        private VictoryFlowController victoryFlowController;
 
         [SerializeField, Tooltip("Root panel object shown on victory and hidden again on Continue. Starts inactive.")]
         private GameObject panel;
 
-        [SerializeField, Tooltip("Button pressed to dismiss the panel. Does not yet load another level.")]
+        [SerializeField, Tooltip("Button pressed to dismiss the panel and load the next level.")]
         private Button continueButton;
 
         private void Awake()
@@ -66,13 +66,18 @@ namespace Project001.UI.Victory
 
         private void OnContinuePressed()
         {
-            if (gameplayFlowController != null)
-                gameplayFlowController.ResumeGameplay();
+            Debug.Log("Continue pressed");
+
+            // No further cleanup guaranteed needed here: if a next level
+            // loads, VictoryFlowController's scene reload destroys this
+            // object before another frame renders. If there is no next
+            // level, gameplay simply resumes and panel.SetActive(false)
+            // below still correctly dismisses the panel.
+            if (victoryFlowController != null)
+                victoryFlowController.LoadNextLevel();
 
             if (panel != null)
                 panel.SetActive(false);
-
-            Debug.Log("Continue pressed");
         }
     }
 }
