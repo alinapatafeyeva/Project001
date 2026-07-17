@@ -56,9 +56,11 @@ public static class BootstrapSceneCreator
         VictoryController victoryController = CreateVictoryController(pixelGrid);
         GameplayFlowController gameplayFlowController = CreateGameplayFlowController(victoryController, failureController, collectorSelectionController);
         FailureRecoveryController failureRecoveryController = CreateFailureRecoveryController(failureController, gameplayFlowController);
-        CreateLevelBootstrapper(pixelGrid, conveyorSystem, waitingLine, collectorQueueBoard);
+        LevelProgressionController levelProgressionController = CreateLevelProgressionController();
+        VictoryFlowController victoryFlowController = CreateVictoryFlowController(gameplayFlowController, levelProgressionController);
+        CreateLevelBootstrapper(pixelGrid, conveyorSystem, waitingLine, collectorQueueBoard, levelProgressionController);
         CreateEventSystem();
-        CreateVictoryUI(victoryController, gameplayFlowController);
+        CreateVictoryUI(victoryController, victoryFlowController);
         CreateFailureUI(failureController, failureRecoveryController);
 
         string directory = Path.GetDirectoryName(ScenePath);
@@ -271,6 +273,39 @@ public static class BootstrapSceneCreator
     }
 
     /// <summary>
+    /// Owns which level is current for this session and how to resolve the
+    /// next one. No dependencies of its own to wire — LevelBootstrapper reads
+    /// from it, and VictoryFlowController advances through it, but this
+    /// controller depends on neither.
+    /// </summary>
+    private static LevelProgressionController CreateLevelProgressionController()
+    {
+        var levelProgressionControllerObject = new GameObject("LevelProgressionController", typeof(LevelProgressionController));
+        return levelProgressionControllerObject.GetComponent<LevelProgressionController>();
+    }
+
+    /// <summary>
+    /// Owns what Continue actually does after a Victory: resume gameplay via
+    /// gameplayFlowController, then load the next level via
+    /// levelProgressionController. Presentation (VictoryUI) only ever calls
+    /// its LoadNextLevel API.
+    /// </summary>
+    private static VictoryFlowController CreateVictoryFlowController(
+        GameplayFlowController gameplayFlowController,
+        LevelProgressionController levelProgressionController)
+    {
+        var victoryFlowControllerObject = new GameObject("VictoryFlowController", typeof(VictoryFlowController));
+
+        var victoryFlowController = victoryFlowControllerObject.GetComponent<VictoryFlowController>();
+        var serializedVictoryFlowController = new SerializedObject(victoryFlowController);
+        serializedVictoryFlowController.FindProperty("gameplayFlowController").objectReferenceValue = gameplayFlowController;
+        serializedVictoryFlowController.FindProperty("levelProgressionController").objectReferenceValue = levelProgressionController;
+        serializedVictoryFlowController.ApplyModifiedPropertiesWithoutUndo();
+
+        return victoryFlowController;
+    }
+
+    /// <summary>
     /// Required for any Unity UI Button to receive clicks at all. The
     /// project's Active Input Handling is set to the new Input System only,
     /// so the legacy StandaloneInputModule would throw at runtime —
@@ -288,7 +323,7 @@ public static class BootstrapSceneCreator
     /// stars, rewards, ads, transitions, or animations — establishing the
     /// architecture only.
     /// </summary>
-    private static void CreateVictoryUI(VictoryController victoryController, GameplayFlowController gameplayFlowController)
+    private static void CreateVictoryUI(VictoryController victoryController, VictoryFlowController victoryFlowController)
     {
         var canvasObject = new GameObject(
             "VictoryCanvas",
@@ -307,7 +342,7 @@ public static class BootstrapSceneCreator
         var victoryUI = canvasObject.GetComponent<VictoryUI>();
         var serializedVictoryUI = new SerializedObject(victoryUI);
         serializedVictoryUI.FindProperty("victoryController").objectReferenceValue = victoryController;
-        serializedVictoryUI.FindProperty("gameplayFlowController").objectReferenceValue = gameplayFlowController;
+        serializedVictoryUI.FindProperty("victoryFlowController").objectReferenceValue = victoryFlowController;
         serializedVictoryUI.FindProperty("panel").objectReferenceValue = panel;
         serializedVictoryUI.FindProperty("continueButton").objectReferenceValue = continueButton;
         serializedVictoryUI.ApplyModifiedPropertiesWithoutUndo();
@@ -459,7 +494,8 @@ public static class BootstrapSceneCreator
         PixelGrid pixelGrid,
         ConveyorSystem conveyorSystem,
         Project001.Gameplay.WaitingLine.WaitingLine waitingLine,
-        CollectorQueueBoard collectorQueueBoard)
+        CollectorQueueBoard collectorQueueBoard,
+        LevelProgressionController levelProgressionController)
     {
         var bootstrapperObject = new GameObject("LevelBootstrapper", typeof(LevelBootstrapper));
 
@@ -469,6 +505,7 @@ public static class BootstrapSceneCreator
         serializedBootstrapper.FindProperty("conveyorSystem").objectReferenceValue = conveyorSystem;
         serializedBootstrapper.FindProperty("waitingLine").objectReferenceValue = waitingLine;
         serializedBootstrapper.FindProperty("collectorQueueBoard").objectReferenceValue = collectorQueueBoard;
+        serializedBootstrapper.FindProperty("levelProgressionController").objectReferenceValue = levelProgressionController;
         serializedBootstrapper.ApplyModifiedPropertiesWithoutUndo();
     }
 }
