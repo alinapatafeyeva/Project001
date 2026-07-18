@@ -25,39 +25,56 @@ Project001 Roadmap
 
 ⸻
 
-## Gameplay UX
+✅  Gameplay UX
 
 Victory UI
 
-* Victory popup
-* Stars / completion screen (simple placeholder)
-* Continue button
+✅  Victory popup
+✅  Stars / completion screen (simple placeholder)
+✅  Continue button
 
 Failure UI
 
-* Failure popup
-* Retry button
+✅  Failure popup
+✅  Retry button
 
 ⸻
 
-## Level Flow
+✅  Level Flow
 
-* Restart level
-* Next level
-* Load next LevelId
-* Remove manual level switching from testing flow
+✅  Restart level
+✅  Next level
+✅  Load next LevelId
+✅  Remove manual level switching from testing flow
 
 ⸻
 
-if need
-## Documentation Update (Current)
+## Continue Recovery Mechanic
 
-* Update README_GAME
-* Update Architecture
-* Update Decision Log
-* Update TODO
-* Remove obsolete information
-* Document new gameplay rules
+* Add a Recovery Row above the Waiting Line.
+* On Continue after Failure, move every collector currently on the Conveyor into the Recovery Row.
+* Preserve MatchTypeId and RemainingHunger.
+* Allow collectors to be launched back onto the Conveyor manually.
+* Collectors must never return to the Recovery Row after later Conveyor loops.
+* Populate the Recovery Row only when Continue is confirmed.
+* Size the Recovery Row from the actual number of collectors on the Conveyor.
+* Support future Conveyor capacity upgrades.
+* Move the Waiting Line lower so Recovery Row and Waiting Line never overlap.
+* Keep repeated Failure working after Continue.
+* Later connect Continue to coins / rewarded ads.
+
+⸻
+
+## Endgame Cleanup
+
+* Activate when RemainingCollectors <= WaitingLineCapacity.
+* Failure is no longer possible.
+* Collectors no longer enter the Waiting Line.
+* Remaining collectors continuously circulate on the Conveyor.
+* Player still controls collector selection.
+* Increase Conveyor speed.
+* Configure the multiplier through GameplayConstants.
+* Final multiplier will be determined during playtesting.
 
 ⸻
 
@@ -71,6 +88,7 @@ Monsters
 * Idle animation
 * Eating animation
 * Satisfied animation
+* Hunger presentation
 
 Conveyor
 
@@ -96,13 +114,18 @@ Levels
 
 ⸻
 
-## Production Content
+## Responsive Layout
 
-* Create first production levels
-* Gameplay balancing
-* Hunger balancing
-* Conveyor speed balancing
-* Booster balancing
+* Safe Area support.
+* Different aspect ratios.
+* iPhone SE → iPhone Pro Max.
+* iPad portrait.
+* Decide later whether iPad landscape is supported.
+* Android.
+* Dynamic UI sizing.
+* Gameplay field scaling.
+* Recalculate Conveyor / Recovery Row / Waiting Line positions.
+* Adaptive spacing between gameplay layers.
 
 ⸻
 
@@ -115,7 +138,7 @@ Levels
 * Determine practical grid size limit
 * Evaluate readability
 * Decide if GameObject-per-pixel is still acceptable
-* Switch to batched rendering if required
+* Optimize pixel rendering if required
 
 ⸻
 
@@ -197,6 +220,15 @@ Validation
 
 ⸻
 
+## Progress
+
+* Save progress
+* Unlock next level
+* Resume game
+* Current LevelId
+
+⸻
+
 ## Level Map
 
 * Path between levels
@@ -206,15 +238,6 @@ Validation
 * Current level marker
 * Support themed map segments per chapter.
 * Transition visually between chapter environments.
-
-⸻
-
-## Progress
-
-* Save progress
-* Unlock next level
-* Resume game
-* Current LevelId
 
 ⸻
 
