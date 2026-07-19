@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -169,6 +170,44 @@ namespace Project001.Gameplay.Conveyor
             _riderCompletedLaps.RemoveAt(index);
             rider.ExitRiding();
             return true;
+        }
+
+        /// <summary>
+        /// Removes every rider currently on this conveyor and returns them,
+        /// transferring ownership to the caller in their existing (launch)
+        /// order. Each returned rider has already had ExitRiding() called on
+        /// it, exactly as TryRemoveRider does — but no Collector state
+        /// (MatchTypeId, RemainingHunger, HungerCapacity) is read or changed,
+        /// and no rider is cloned or recreated; these are the same instances
+        /// that were riding. OccupiedCount is 0 immediately after this call.
+        /// Returns an empty list, and makes no changes, if the conveyor is
+        /// already empty. Intended for a future gameplay system (e.g. a
+        /// Recovery Row) taking ownership of every rider at once — this
+        /// method exposes no internal progress or lap-tracking state.
+        /// Safe if a rider was destroyed externally and is still present in
+        /// the internal list at call time (i.e. before the next Update()
+        /// prunes it) — such an entry is still included in the returned
+        /// list, matching Update()'s own null handling, but ExitRiding() is
+        /// only called on riders that are not Unity-null.
+        /// </summary>
+        public IReadOnlyList<ConveyorRider> TakeAllRiders()
+        {
+            if (_riders.Count == 0)
+                return Array.Empty<ConveyorRider>();
+
+            var takenRiders = new List<ConveyorRider>(_riders);
+
+            _riders.Clear();
+            _riderProgress.Clear();
+            _riderCompletedLaps.Clear();
+
+            foreach (ConveyorRider rider in takenRiders)
+            {
+                if (rider != null)
+                    rider.ExitRiding();
+            }
+
+            return takenRiders;
         }
 
         /// <summary>
