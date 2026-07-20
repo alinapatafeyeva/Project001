@@ -23,6 +23,8 @@ namespace Project001.Gameplay.Failure
 
         public bool HasFailed { get; private set; }
 
+        private bool _isDisabledPermanently;
+
         /// <summary>
         /// Raised exactly once, the same moment HasFailed becomes true. The
         /// sole notification channel presentation (e.g. a Failure UI) should
@@ -33,12 +35,13 @@ namespace Project001.Gameplay.Failure
         /// <summary>
         /// Called when an unsatisfied collector completes a lap and finds
         /// every Waiting Line slot occupied. No-op if failure already
-        /// triggered, or if PixelGrid is already complete — victory takes
-        /// precedence over failure.
+        /// triggered, if PixelGrid is already complete — victory takes
+        /// precedence over failure — or if DisablePermanently has been
+        /// called (e.g. Endgame Cleanup is active).
         /// </summary>
         public void NotifyWaitingLineFull()
         {
-            if (HasFailed)
+            if (HasFailed || _isDisabledPermanently)
                 return;
 
             if (pixelGrid == null || pixelGrid.IsComplete)
@@ -47,6 +50,19 @@ namespace Project001.Gameplay.Failure
             HasFailed = true;
             Debug.Log("Failure!");
             OnFailure?.Invoke();
+        }
+
+        /// <summary>
+        /// Permanently prevents any future NotifyWaitingLineFull call from
+        /// triggering Failure, for the remainder of this level (e.g. once
+        /// Endgame Cleanup begins, Waiting Line overflow can no longer mean
+        /// Failure). Irreversible — there is no corresponding re-enable;
+        /// only ResetFailure (a distinct, unrelated reset) rearms HasFailed
+        /// for a new attempt within the same level.
+        /// </summary>
+        public void DisablePermanently()
+        {
+            _isDisabledPermanently = true;
         }
 
         /// <summary>

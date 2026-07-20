@@ -37,6 +37,8 @@ namespace Project001.Gameplay.Conveyor
         private readonly List<float> _riderProgress = new List<float>();
         private readonly List<int> _riderCompletedLaps = new List<int>();
 
+        private float _configuredMoveSpeed;
+
         public int Capacity => capacity;
 
         public int OccupiedCount => _riders.Count;
@@ -63,6 +65,19 @@ namespace Project001.Gameplay.Conveyor
         {
             capacity = Mathf.Max(1, levelCapacity);
             moveSpeed = Mathf.Max(0f, levelMoveSpeed);
+            _configuredMoveSpeed = moveSpeed;
+        }
+
+        /// <summary>
+        /// Sets moveSpeed to the configured base speed (from Configure)
+        /// times the given multiplier — e.g. Endgame Cleanup increasing
+        /// conveyor speed via GameplayConstants.
+        /// EndgameCleanupConveyorSpeedMultiplier. Does not touch capacity or
+        /// any rider.
+        /// </summary>
+        public void ApplySpeedMultiplier(float multiplier)
+        {
+            moveSpeed = Mathf.Max(0f, _configuredMoveSpeed * multiplier);
         }
 
         private void Update()

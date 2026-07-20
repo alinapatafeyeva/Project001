@@ -174,6 +174,24 @@ namespace Project001.Gameplay.Collectors
         }
 
         /// <summary>
+        /// Total collectors still queued on this board, across every queue.
+        /// </summary>
+        public int RemainingCollectorCount
+        {
+            get
+            {
+                if (_queues == null)
+                    return 0;
+
+                int count = 0;
+                foreach (CollectorQueue queue in _queues)
+                    count += queue.Views.Count;
+
+                return count;
+            }
+        }
+
+        /// <summary>
         /// True when the given view is currently the first available collector
         /// of one of the board's queues. Implicitly satisfies
         /// ICollectorSource.CanSelect.

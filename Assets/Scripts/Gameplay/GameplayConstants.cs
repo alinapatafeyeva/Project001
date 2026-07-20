@@ -24,5 +24,8 @@ namespace Project001.Gameplay
         public const int WaitingLineCapacity = 5;
         public const int BaseConveyorCapacity = 5;
         public const float BaseConveyorMoveSpeed = 3.5f;
+
+        // Placeholder — real value determined during playtesting.
+        public const float EndgameCleanupConveyorSpeedMultiplier = 1.5f;
     }
 }

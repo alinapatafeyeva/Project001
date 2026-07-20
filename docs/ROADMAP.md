@@ -49,19 +49,19 @@ Failure UI
 
 ⸻
 
-## Continue Recovery Mechanic
+✅ Continue Recovery Mechanic
 
-* Add a Recovery Row above the Waiting Line.
-* On Continue after Failure, move every collector currently on the Conveyor into the Recovery Row.
-* Preserve MatchTypeId and RemainingHunger.
-* Allow collectors to be launched back onto the Conveyor manually.
-* Collectors must never return to the Recovery Row after later Conveyor loops.
-* Populate the Recovery Row only when Continue is confirmed.
-* Size the Recovery Row from the actual number of collectors on the Conveyor.
-* Support future Conveyor capacity upgrades.
-* Move the Waiting Line lower so Recovery Row and Waiting Line never overlap.
-* Keep repeated Failure working after Continue.
-* Later connect Continue to coins / rewarded ads.
+✅ Add a Recovery Row above the Waiting Line.
+✅ On Continue after Failure, move every collector currently on the Conveyor into the Recovery Row.
+✅ Preserve MatchTypeId and RemainingHunger.
+✅ Allow collectors to be launched back onto the Conveyor manually.
+✅ Collectors must never return to the Recovery Row after later Conveyor loops.
+✅ Populate the Recovery Row only when Continue is confirmed.
+✅ Size the Recovery Row from the actual number of collectors on the Conveyor.
+✅ Support future Conveyor capacity upgrades.
+✅ Move the Waiting Line lower so Recovery Row and Waiting Line never overlap.
+✅ Keep repeated Failure working after Continue.
+✅ Later connect Continue to coins / rewarded ads.
 
 ⸻
 

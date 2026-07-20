@@ -58,6 +58,9 @@ namespace Project001.Gameplay.Levels
         [SerializeField, Tooltip("Board built from the level's collector queues.")]
         private CollectorQueueBoard collectorQueueBoard;
 
+        [SerializeField, Tooltip("Notified via NotifyLevelBuilt(), as the last step of BuildLevel, once every system above is populated — the only deterministic point at which Endgame Cleanup's initial RemainingCollectors check can safely run.")]
+        private EndgameCleanupController endgameCleanupController;
+
         [SerializeField, Tooltip("Required. Asked every Awake for the LevelId to build via GetOrInitializeCurrentLevel(startingLevelId) — LevelProgressionController decides whether Starting Level Id applies (first load of the session) or is ignored (later reload).")]
         private LevelProgressionController levelProgressionController;
 
@@ -141,6 +144,12 @@ namespace Project001.Gameplay.Levels
                 isValid = false;
             }
 
+            if (endgameCleanupController == null)
+            {
+                Debug.LogError($"LevelBootstrapper: '{name}' is missing its EndgameCleanupController reference; level will not be built.", this);
+                isValid = false;
+            }
+
             if (levelProgressionController == null)
             {
                 Debug.LogError($"LevelBootstrapper: '{name}' is missing its LevelProgressionController reference; level will not be built.", this);
@@ -156,6 +165,11 @@ namespace Project001.Gameplay.Levels
             conveyorSystem.Configure(GameplayConstants.BaseConveyorCapacity, GameplayConstants.BaseConveyorMoveSpeed);
             waitingLine.Initialize(GameplayConstants.WaitingLineCapacity);
             collectorQueueBoard.Initialize(levelDefinition.CollectorQueues, _presentation.GetColor);
+
+            // Last, and only after every system above is fully populated —
+            // this is the sole deterministic point at which Endgame
+            // Cleanup's initial RemainingCollectors check can safely run.
+            endgameCleanupController.NotifyLevelBuilt();
         }
     }
 }

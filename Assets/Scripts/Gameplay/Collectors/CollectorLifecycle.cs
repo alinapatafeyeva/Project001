@@ -1,3 +1,4 @@
+using System;
 using Project001.Gameplay.Conveyor;
 using Project001.Gameplay.Failure;
 using UnityEngine;
@@ -14,6 +15,17 @@ namespace Project001.Gameplay.Collectors
     /// </summary>
     public class CollectorLifecycle : MonoBehaviour
     {
+        /// <summary>
+        /// Raised right before a satisfied collector is removed from the
+        /// Conveyor and destroyed — the only moment the game's total count
+        /// of remaining (not-yet-satisfied) collectors can decrease. Static
+        /// because a CollectorLifecycle exists per-collector, created and
+        /// destroyed with it, while a listener (e.g. EndgameCleanupController)
+        /// needs a single subscription point regardless of how many
+        /// collector instances currently exist.
+        /// </summary>
+        public static event Action CollectorSatisfied;
+
         private ConveyorRider _rider;
         private ConveyorSystem _conveyorSystem;
         private Project001.Gameplay.WaitingLine.WaitingLine _waitingLine;
@@ -55,7 +67,10 @@ namespace Project001.Gameplay.Collectors
                 // Satisfied collectors leave immediately — never wait for a
                 // lap, and never go to WaitingLine.
                 if (_conveyorSystem.TryRemoveRider(_rider))
+                {
+                    CollectorSatisfied?.Invoke();
                     Destroy(gameObject);
+                }
 
                 return;
             }

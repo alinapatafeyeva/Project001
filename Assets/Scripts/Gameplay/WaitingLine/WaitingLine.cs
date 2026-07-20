@@ -32,6 +32,7 @@ namespace Project001.Gameplay.WaitingLine
         private Sprite _sharedSprite;
         private WaitingSlot[] _slots;
         private bool _isInitialized;
+        private bool _isAcceptingCollectors = true;
 
         /// <summary>
         /// Builds this line's slots using the given capacity, which is
@@ -119,6 +120,9 @@ namespace Project001.Gameplay.WaitingLine
 
         public WaitingSlot GetFirstEmptySlot()
         {
+            if (!_isAcceptingCollectors)
+                return null;
+
             if (_slots == null)
                 return null;
 
@@ -129,6 +133,43 @@ namespace Project001.Gameplay.WaitingLine
             }
 
             return null;
+        }
+
+        /// <summary>
+        /// Number of slots currently occupied. Independent of
+        /// IsAcceptingCollectors — a slot already holding a collector still
+        /// counts even after this line has stopped accepting new ones.
+        /// </summary>
+        public int OccupiedSlotCount
+        {
+            get
+            {
+                if (_slots == null)
+                    return 0;
+
+                int count = 0;
+                foreach (WaitingSlot slot in _slots)
+                {
+                    if (slot.IsOccupied)
+                        count++;
+                }
+
+                return count;
+            }
+        }
+
+        /// <summary>
+        /// Permanently stops this line from handing out empty slots (e.g.
+        /// once Endgame Cleanup begins): GetFirstEmptySlot returns null from
+        /// this point on, regardless of actual occupancy, so unsatisfied
+        /// collectors that complete a lap are left circulating on the
+        /// Conveyor instead of entering the Waiting Line. Irreversible, and
+        /// never clears slots already occupied — those collectors remain
+        /// exactly where they are and stay selectable.
+        /// </summary>
+        public void StopAcceptingCollectors()
+        {
+            _isAcceptingCollectors = false;
         }
 
         /// <summary>
