@@ -57,7 +57,7 @@ public static class BootstrapSceneCreator
         CollectorSelectionController collectorSelectionController = CreateCollectorSelectionController(mainCamera, collectorQueueBoard, waitingLine, recoveryRowController, conveyorSystem);
         VictoryController victoryController = CreateVictoryController(pixelGrid);
         GameplayFlowController gameplayFlowController = CreateGameplayFlowController(victoryController, failureController, collectorSelectionController);
-        FailureRecoveryController failureRecoveryController = CreateFailureRecoveryController(failureController, gameplayFlowController);
+        FailureRecoveryController failureRecoveryController = CreateFailureRecoveryController(failureController, gameplayFlowController, conveyorSystem, recoveryRowController);
         LevelProgressionController levelProgressionController = CreateLevelProgressionController();
         VictoryFlowController victoryFlowController = CreateVictoryFlowController(gameplayFlowController, levelProgressionController);
         CreateLevelBootstrapper(pixelGrid, conveyorSystem, waitingLine, collectorQueueBoard, levelProgressionController);
@@ -286,14 +286,18 @@ public static class BootstrapSceneCreator
 
     /// <summary>
     /// Owns what Retry/Continue actually do after a Failure (full level
-    /// restart vs. resuming the same level state). Presentation (FailureUI)
+    /// restart vs. resuming the same level state, including transferring
+    /// every Conveyor rider into the Recovery Row). Presentation (FailureUI)
     /// only ever calls its RetryCurrentLevel/ContinueCurrentLevel API — it
     /// never resets failureController, reloads scenes, or touches
-    /// gameplayFlowController itself.
+    /// gameplayFlowController, conveyorSystem, or recoveryRowController
+    /// itself.
     /// </summary>
     private static FailureRecoveryController CreateFailureRecoveryController(
         FailureController failureController,
-        GameplayFlowController gameplayFlowController)
+        GameplayFlowController gameplayFlowController,
+        ConveyorSystem conveyorSystem,
+        RecoveryRowController recoveryRowController)
     {
         var failureRecoveryControllerObject = new GameObject("FailureRecoveryController", typeof(FailureRecoveryController));
 
@@ -301,6 +305,8 @@ public static class BootstrapSceneCreator
         var serializedFailureRecoveryController = new SerializedObject(failureRecoveryController);
         serializedFailureRecoveryController.FindProperty("failureController").objectReferenceValue = failureController;
         serializedFailureRecoveryController.FindProperty("gameplayFlowController").objectReferenceValue = gameplayFlowController;
+        serializedFailureRecoveryController.FindProperty("conveyorSystem").objectReferenceValue = conveyorSystem;
+        serializedFailureRecoveryController.FindProperty("recoveryRowController").objectReferenceValue = recoveryRowController;
         serializedFailureRecoveryController.ApplyModifiedPropertiesWithoutUndo();
 
         return failureRecoveryController;
