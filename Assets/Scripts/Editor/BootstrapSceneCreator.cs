@@ -58,9 +58,10 @@ public static class BootstrapSceneCreator
         VictoryController victoryController = CreateVictoryController(pixelGrid);
         GameplayFlowController gameplayFlowController = CreateGameplayFlowController(victoryController, failureController, collectorSelectionController);
         FailureRecoveryController failureRecoveryController = CreateFailureRecoveryController(failureController, gameplayFlowController, conveyorSystem, recoveryRowController);
+        EndgameCleanupController endgameCleanupController = CreateEndgameCleanupController(collectorQueueBoard, conveyorSystem, waitingLine, recoveryRowController, failureController);
         LevelProgressionController levelProgressionController = CreateLevelProgressionController();
         VictoryFlowController victoryFlowController = CreateVictoryFlowController(gameplayFlowController, levelProgressionController);
-        CreateLevelBootstrapper(pixelGrid, conveyorSystem, waitingLine, collectorQueueBoard, levelProgressionController);
+        CreateLevelBootstrapper(pixelGrid, conveyorSystem, waitingLine, collectorQueueBoard, endgameCleanupController, levelProgressionController);
         CreateEventSystem();
         CreateVictoryUI(victoryController, victoryFlowController);
         CreateFailureUI(failureController, failureRecoveryController);
@@ -313,6 +314,34 @@ public static class BootstrapSceneCreator
     }
 
     /// <summary>
+    /// Owns entering the Endgame Cleanup phase once RemainingCollectors drops
+    /// to WaitingLineCapacity or below: directs FailureController to
+    /// permanently disable, WaitingLine to stop accepting new collectors, and
+    /// ConveyorSystem to speed up — each system still owns its own affected
+    /// behaviour, this controller only signals the transition once.
+    /// </summary>
+    private static EndgameCleanupController CreateEndgameCleanupController(
+        CollectorQueueBoard collectorQueueBoard,
+        ConveyorSystem conveyorSystem,
+        Project001.Gameplay.WaitingLine.WaitingLine waitingLine,
+        RecoveryRowController recoveryRowController,
+        FailureController failureController)
+    {
+        var endgameCleanupControllerObject = new GameObject("EndgameCleanupController", typeof(EndgameCleanupController));
+
+        var endgameCleanupController = endgameCleanupControllerObject.GetComponent<EndgameCleanupController>();
+        var serializedEndgameCleanupController = new SerializedObject(endgameCleanupController);
+        serializedEndgameCleanupController.FindProperty("collectorQueueBoard").objectReferenceValue = collectorQueueBoard;
+        serializedEndgameCleanupController.FindProperty("conveyorSystem").objectReferenceValue = conveyorSystem;
+        serializedEndgameCleanupController.FindProperty("waitingLine").objectReferenceValue = waitingLine;
+        serializedEndgameCleanupController.FindProperty("recoveryRowController").objectReferenceValue = recoveryRowController;
+        serializedEndgameCleanupController.FindProperty("failureController").objectReferenceValue = failureController;
+        serializedEndgameCleanupController.ApplyModifiedPropertiesWithoutUndo();
+
+        return endgameCleanupController;
+    }
+
+    /// <summary>
     /// Owns which level is current for this session and how to resolve the
     /// next one. No dependencies of its own to wire — LevelBootstrapper reads
     /// from it, and VictoryFlowController advances through it, but this
@@ -535,6 +564,7 @@ public static class BootstrapSceneCreator
         ConveyorSystem conveyorSystem,
         Project001.Gameplay.WaitingLine.WaitingLine waitingLine,
         CollectorQueueBoard collectorQueueBoard,
+        EndgameCleanupController endgameCleanupController,
         LevelProgressionController levelProgressionController)
     {
         var bootstrapperObject = new GameObject("LevelBootstrapper", typeof(LevelBootstrapper));
@@ -545,6 +575,7 @@ public static class BootstrapSceneCreator
         serializedBootstrapper.FindProperty("conveyorSystem").objectReferenceValue = conveyorSystem;
         serializedBootstrapper.FindProperty("waitingLine").objectReferenceValue = waitingLine;
         serializedBootstrapper.FindProperty("collectorQueueBoard").objectReferenceValue = collectorQueueBoard;
+        serializedBootstrapper.FindProperty("endgameCleanupController").objectReferenceValue = endgameCleanupController;
         serializedBootstrapper.FindProperty("levelProgressionController").objectReferenceValue = levelProgressionController;
         serializedBootstrapper.ApplyModifiedPropertiesWithoutUndo();
     }
