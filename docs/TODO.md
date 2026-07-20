@@ -166,3 +166,12 @@ the current implementation.
 - Add privacy consent and app-ads.txt/store readiness setup.
 
 - Never block normal reward collection behind an ad.
+
+----
+
+## Victory Flow
+- Add a Map button to Victory UI.
+- Allow returning to the level map instead of starting the next level.
+- Handle the last currently available level.
+- Show a “More levels coming soon” state.
+- Optionally support a release countdown later.

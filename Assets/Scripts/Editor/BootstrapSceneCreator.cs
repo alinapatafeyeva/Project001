@@ -6,6 +6,7 @@ using Project001.Gameplay.Conveyor;
 using Project001.Gameplay.Failure;
 using Project001.Gameplay.Levels;
 using Project001.Gameplay.Pixels;
+using Project001.Gameplay.Recovery;
 using Project001.Gameplay.Victory;
 using Project001.UI.Failure;
 using Project001.UI.Victory;
@@ -49,10 +50,11 @@ public static class BootstrapSceneCreator
         Camera mainCamera = CreateCamera();
         PixelGrid pixelGrid = CreatePixelGrid();
         ConveyorSystem conveyorSystem = CreateConveyor();
+        RecoveryRowController recoveryRowController = CreateRecoveryRow();
         Project001.Gameplay.WaitingLine.WaitingLine waitingLine = CreateWaitingLine();
         FailureController failureController = CreateFailureController(pixelGrid);
         CollectorQueueBoard collectorQueueBoard = CreateCollectorQueueBoard(pixelGrid, conveyorSystem, waitingLine, failureController);
-        CollectorSelectionController collectorSelectionController = CreateCollectorSelectionController(mainCamera, collectorQueueBoard, waitingLine, conveyorSystem);
+        CollectorSelectionController collectorSelectionController = CreateCollectorSelectionController(mainCamera, collectorQueueBoard, waitingLine, recoveryRowController, conveyorSystem);
         VictoryController victoryController = CreateVictoryController(pixelGrid);
         GameplayFlowController gameplayFlowController = CreateGameplayFlowController(victoryController, failureController, collectorSelectionController);
         FailureRecoveryController failureRecoveryController = CreateFailureRecoveryController(failureController, gameplayFlowController);
@@ -150,12 +152,42 @@ public static class BootstrapSceneCreator
         return conveyorSystem;
     }
 
+    /// <summary>
+    /// Sits directly beneath the Conveyor, in the world-space slot the
+    /// Waiting Line previously occupied. RecoveryRowController owns whatever
+    /// collectors ReceiveCollectors is later given — no capacity to
+    /// configure here, since the row sizes itself from however many
+    /// collectors it receives. RecoveryRowView lives on the same GameObject
+    /// and handles reparenting/layout, wired to the controller so it
+    /// refreshes on CollectorsChanged rather than being driven directly.
+    /// </summary>
+    private static RecoveryRowController CreateRecoveryRow()
+    {
+        var recoveryRowObject = new GameObject(
+            "RecoveryRow",
+            typeof(RecoveryRowController),
+            typeof(RecoveryRowView));
+        recoveryRowObject.transform.position = new Vector3(0f, -5.0f, 0f);
+
+        var recoveryRowController = recoveryRowObject.GetComponent<RecoveryRowController>();
+
+        var recoveryRowView = recoveryRowObject.GetComponent<RecoveryRowView>();
+        var serializedView = new SerializedObject(recoveryRowView);
+        serializedView.FindProperty("recoveryRowController").objectReferenceValue = recoveryRowController;
+        serializedView.ApplyModifiedPropertiesWithoutUndo();
+
+        return recoveryRowController;
+    }
+
     private static Project001.Gameplay.WaitingLine.WaitingLine CreateWaitingLine()
     {
         var waitingLineObject = new GameObject(
             "WaitingLine",
             typeof(Project001.Gameplay.WaitingLine.WaitingLine));
-        waitingLineObject.transform.position = new Vector3(0f, -5.0f, 0f);
+        // Shifted below the Recovery Row's Y (-5.0) by the same 1.6-unit gap
+        // that already separated WaitingLine from CollectorQueueBoard, so
+        // the two rows never overlap.
+        waitingLineObject.transform.position = new Vector3(0f, -6.6f, 0f);
 
         return waitingLineObject.GetComponent<Project001.Gameplay.WaitingLine.WaitingLine>();
     }
@@ -167,7 +199,7 @@ public static class BootstrapSceneCreator
         FailureController failureController)
     {
         var boardObject = new GameObject("CollectorQueueBoard", typeof(CollectorQueueBoard));
-        boardObject.transform.position = new Vector3(0f, -6.6f, 0f);
+        boardObject.transform.position = new Vector3(0f, -8.2f, 0f);
 
         var collectorQueueBoard = boardObject.GetComponent<CollectorQueueBoard>();
         var serializedBoard = new SerializedObject(collectorQueueBoard);
@@ -184,6 +216,7 @@ public static class BootstrapSceneCreator
         Camera selectionCamera,
         CollectorQueueBoard collectorQueueBoard,
         Project001.Gameplay.WaitingLine.WaitingLine waitingLine,
+        RecoveryRowController recoveryRowController,
         ConveyorSystem conveyorSystem)
     {
         var controllerObject = new GameObject(
@@ -195,6 +228,7 @@ public static class BootstrapSceneCreator
         serializedController.FindProperty("selectionCamera").objectReferenceValue = selectionCamera;
         serializedController.FindProperty("collectorQueueBoard").objectReferenceValue = collectorQueueBoard;
         serializedController.FindProperty("waitingLine").objectReferenceValue = waitingLine;
+        serializedController.FindProperty("recoveryRowController").objectReferenceValue = recoveryRowController;
         serializedController.FindProperty("conveyorSystem").objectReferenceValue = conveyorSystem;
         serializedController.ApplyModifiedPropertiesWithoutUndo();
 

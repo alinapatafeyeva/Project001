@@ -7,8 +7,8 @@ namespace Project001.Gameplay.Collectors
     /// <summary>
     /// Detects pointer selection (mouse click or touch tap, via the shared
     /// Pointer device) of an eligible CollectorView and moves it from its
-    /// source — a queue's front position or an occupied waiting slot — onto
-    /// the ConveyorSystem.
+    /// source — a queue's front position, an occupied waiting slot, or a
+    /// held Recovery Row collector — onto the ConveyorSystem.
     /// </summary>
     public class CollectorSelectionController : MonoBehaviour
     {
@@ -20,6 +20,9 @@ namespace Project001.Gameplay.Collectors
 
         [SerializeField, Tooltip("Waiting line collectors may also be selected from.")]
         private Project001.Gameplay.WaitingLine.WaitingLine waitingLine;
+
+        [SerializeField, Tooltip("Recovery Row collectors may also be selected from.")]
+        private Project001.Gameplay.Recovery.RecoveryRowController recoveryRowController;
 
         [SerializeField, Tooltip("System the selected collector will board.")]
         private ConveyorSystem conveyorSystem;
@@ -82,11 +85,11 @@ namespace Project001.Gameplay.Collectors
         /// <summary>
         /// Finds whichever configured ICollectorSource currently considers the
         /// given view selectable — the queue board's first-available
-        /// collector, or an occupied waiting slot — without either source
-        /// needing removal logic specific to the other. The interface-typed
-        /// locals below are only ever truly null when a serialized field was
-        /// left unassigned, never a destroyed Unity Object, so the plain null
-        /// check is safe here.
+        /// collector, an occupied waiting slot, or a collector held in the
+        /// Recovery Row — without any source needing removal logic specific
+        /// to the others. The interface-typed locals below are only ever
+        /// truly null when a serialized field was left unassigned, never a
+        /// destroyed Unity Object, so the plain null check is safe here.
         /// </summary>
         private ICollectorSource FindSource(CollectorView view)
         {
@@ -97,6 +100,10 @@ namespace Project001.Gameplay.Collectors
             ICollectorSource waitingLineSource = waitingLine;
             if (waitingLineSource != null && waitingLineSource.CanSelect(view))
                 return waitingLineSource;
+
+            ICollectorSource recoveryRowSource = recoveryRowController;
+            if (recoveryRowSource != null && recoveryRowSource.CanSelect(view))
+                return recoveryRowSource;
 
             return null;
         }
