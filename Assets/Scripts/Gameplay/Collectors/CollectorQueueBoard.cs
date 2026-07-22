@@ -4,19 +4,24 @@ using Project001.Gameplay.Conveyor;
 using Project001.Gameplay.Failure;
 using Project001.Gameplay.Levels;
 using Project001.Gameplay.Pixels;
+using Project001.Gameplay.Presentation;
 using UnityEngine;
 
 namespace Project001.Gameplay.Collectors
 {
     /// <summary>
-    /// Generates vertical queues of CollectorView objects on Initialize, using a
-    /// single shared runtime-generated circular sprite. Queue count, per-queue
-    /// collector order, each collector's MatchTypeId, and hunger capacity all
-    /// come from the injected level collector-queue data.
+    /// Generates vertical queues of CollectorView objects on Initialize. Queue
+    /// count, per-queue collector order, each collector's MatchTypeId,
+    /// MonsterColor, and hunger capacity all come from the injected level
+    /// collector-queue data. Appearance is resolved here only as far as
+    /// picking each collector's MonsterSkin (via monsterSkinDatabase) and
+    /// showing its back-idle pose — CollectorPresentation and CollectorView
+    /// own everything about how that sprite is actually displayed.
     /// </summary>
     public class CollectorQueueBoard : MonoBehaviour, ICollectorSource
     {
-        private const int SpriteDiameterPixels = 32;
+        [SerializeField, Tooltip("Resolves each collector's MonsterColor to the MonsterSkin (sprite set) it should display.")]
+        private MonsterSkinDatabase monsterSkinDatabase;
 
         [SerializeField, Tooltip("World-space size of a single collector, in world units.")]
         [Min(0.01f)]
@@ -42,27 +47,21 @@ namespace Project001.Gameplay.Collectors
         [SerializeField, Tooltip("Controller notified when an unsatisfied collector completes a lap and finds no free Waiting Line slot. Optional — if missing, that situation is simply never reported.")]
         private FailureController failureController;
 
-        private Texture2D _sharedTexture;
-        private Sprite _sharedSprite;
         private CollectorQueue[] _queues;
         private float _rowStepY;
         private bool _isInitialized;
 
         /// <summary>
         /// Builds this board's queues from the given level collector-queue
-        /// data, using matchTypeToColor for each collector's visual colour.
-        /// Must be called exactly once, before any selection is attempted. A
-        /// second call, or a first call on an object that already has stale
-        /// baked children, is refused (logged) rather than generating
-        /// duplicate queues. Existing children are never deleted.
+        /// data. Must be called exactly once, before any selection is
+        /// attempted. A second call, or a first call on an object that
+        /// already has stale baked children, is refused (logged) rather than
+        /// generating duplicate queues. Existing children are never deleted.
         /// </summary>
-        public void Initialize(IReadOnlyList<CollectorQueueDefinition> collectorQueues, Func<MatchTypeId, Color> matchTypeToColor)
+        public void Initialize(IReadOnlyList<CollectorQueueDefinition> collectorQueues)
         {
             if (collectorQueues == null)
                 throw new ArgumentNullException(nameof(collectorQueues));
-
-            if (matchTypeToColor == null)
-                throw new ArgumentNullException(nameof(matchTypeToColor));
 
             if (_isInitialized)
             {
@@ -76,45 +75,32 @@ namespace Project001.Gameplay.Collectors
                 return;
             }
 
-            CreateSharedSprite();
-            GenerateBoard(collectorQueues, matchTypeToColor);
+            GenerateBoard(collectorQueues);
             _isInitialized = true;
         }
 
-        private void CreateSharedSprite()
+        /// <summary>
+        /// Resolves the MonsterSkin for the given MonsterColor via
+        /// monsterSkinDatabase. MonsterSkinDatabase.GetSkin never returns
+        /// null, so this never does either — if monsterSkinDatabase itself
+        /// is unassigned, logs a clear error and returns an empty MonsterSkin
+        /// (every sprite null) rather than throwing, so a collector simply
+        /// shows no sprite instead of failing to build. Beyond that, this
+        /// board never has to reason about a missing skin — that is entirely
+        /// MonsterSkinDatabase's responsibility.
+        /// </summary>
+        private MonsterSkin ResolveSkin(MonsterColor monsterColor)
         {
-            _sharedTexture = new Texture2D(SpriteDiameterPixels, SpriteDiameterPixels, TextureFormat.RGBA32, false)
+            if (monsterSkinDatabase == null)
             {
-                filterMode = FilterMode.Point,
-                wrapMode = TextureWrapMode.Clamp
-            };
-
-            float radius = SpriteDiameterPixels * 0.5f;
-            var center = new Vector2(radius, radius);
-            var pixels = new Color32[SpriteDiameterPixels * SpriteDiameterPixels];
-
-            for (int y = 0; y < SpriteDiameterPixels; y++)
-            {
-                for (int x = 0; x < SpriteDiameterPixels; x++)
-                {
-                    float distance = Vector2.Distance(new Vector2(x + 0.5f, y + 0.5f), center);
-                    pixels[y * SpriteDiameterPixels + x] = distance <= radius
-                        ? new Color32(255, 255, 255, 255)
-                        : new Color32(255, 255, 255, 0);
-                }
+                Debug.LogError($"CollectorQueueBoard: '{name}' has no MonsterSkinDatabase assigned; collectors will show no sprite.", this);
+                return new MonsterSkin();
             }
 
-            _sharedTexture.SetPixels32(pixels);
-            _sharedTexture.Apply();
-
-            _sharedSprite = Sprite.Create(
-                _sharedTexture,
-                new Rect(0f, 0f, SpriteDiameterPixels, SpriteDiameterPixels),
-                new Vector2(0.5f, 0.5f),
-                SpriteDiameterPixels);
+            return monsterSkinDatabase.GetSkin(monsterColor);
         }
 
-        private void GenerateBoard(IReadOnlyList<CollectorQueueDefinition> collectorQueues, Func<MatchTypeId, Color> matchTypeToColor)
+        private void GenerateBoard(IReadOnlyList<CollectorQueueDefinition> collectorQueues)
         {
             _queues = new CollectorQueue[collectorQueues.Count];
 
@@ -137,11 +123,11 @@ namespace Project001.Gameplay.Collectors
                 {
                     CollectorDefinition collectorDefinition = collectorDefinitions[rowIndex];
 
-                    // ConveyorRider is not listed explicitly: CollectorView's
-                    // [RequireComponent(typeof(ConveyorRider))] adds it first,
-                    // before CollectorView's own Awake subscribes to it —
-                    // listing it again here would add a second, duplicate
-                    // ConveyorRider instead of reusing that one.
+                    // ConveyorRider and CollectorPresentation are not listed
+                    // explicitly: CollectorView's [RequireComponent] attributes
+                    // add them first, before CollectorView's own Awake runs —
+                    // listing them again here would add a second, duplicate
+                    // instance instead of reusing the one already added.
                     var collectorObject = new GameObject(
                         $"Collector_{queueIndex}_{rowIndex}",
                         typeof(CollectorView),
@@ -151,13 +137,13 @@ namespace Project001.Gameplay.Collectors
                     collectorObject.transform.localPosition = new Vector3(0f, -rowIndex * _rowStepY, 0f);
                     collectorObject.transform.localScale = new Vector3(collectorSize, collectorSize, 1f);
 
-                    var spriteRenderer = collectorObject.GetComponent<SpriteRenderer>();
-                    spriteRenderer.sprite = _sharedSprite;
+                    MonsterSkin skin = ResolveSkin(collectorDefinition.MonsterColor);
 
-                    Color color = matchTypeToColor(collectorDefinition.MatchTypeId);
+                    var collectorPresentation = collectorObject.GetComponent<CollectorPresentation>();
+                    collectorPresentation.Initialize(skin.BackIdle, skin.FrontIdle);
+                    collectorPresentation.ShowQueueBack();
 
                     var collectorView = collectorObject.GetComponent<CollectorView>();
-                    collectorView.Initialize(color);
 
                     var conveyorRider = collectorObject.GetComponent<ConveyorRider>();
                     conveyorRider.Initialize(collectorDefinition.MatchTypeId, collectorDefinition.HungerCapacity);
@@ -247,15 +233,6 @@ namespace Project001.Gameplay.Collectors
 
             for (int rowIndex = 0; rowIndex < views.Count; rowIndex++)
                 views[rowIndex].transform.localPosition = new Vector3(0f, -rowIndex * _rowStepY, 0f);
-        }
-
-        private void OnDestroy()
-        {
-            if (_sharedSprite != null)
-                Destroy(_sharedSprite);
-
-            if (_sharedTexture != null)
-                Destroy(_sharedTexture);
         }
     }
 }

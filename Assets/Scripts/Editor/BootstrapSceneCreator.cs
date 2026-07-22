@@ -6,6 +6,7 @@ using Project001.Gameplay.Conveyor;
 using Project001.Gameplay.Failure;
 using Project001.Gameplay.Levels;
 using Project001.Gameplay.Pixels;
+using Project001.Gameplay.Presentation;
 using Project001.Gameplay.Recovery;
 using Project001.Gameplay.Victory;
 using Project001.UI.Failure;
@@ -53,7 +54,8 @@ public static class BootstrapSceneCreator
         RecoveryRowController recoveryRowController = CreateRecoveryRow();
         Project001.Gameplay.WaitingLine.WaitingLine waitingLine = CreateWaitingLine();
         FailureController failureController = CreateFailureController(pixelGrid);
-        CollectorQueueBoard collectorQueueBoard = CreateCollectorQueueBoard(pixelGrid, conveyorSystem, waitingLine, failureController);
+        MonsterSkinDatabase monsterSkinDatabase = CreateMonsterSkinDatabase();
+        CollectorQueueBoard collectorQueueBoard = CreateCollectorQueueBoard(pixelGrid, conveyorSystem, waitingLine, failureController, monsterSkinDatabase);
         CollectorSelectionController collectorSelectionController = CreateCollectorSelectionController(mainCamera, collectorQueueBoard, waitingLine, recoveryRowController, conveyorSystem);
         VictoryController victoryController = CreateVictoryController(pixelGrid);
         GameplayFlowController gameplayFlowController = CreateGameplayFlowController(victoryController, failureController, collectorSelectionController);
@@ -197,13 +199,15 @@ public static class BootstrapSceneCreator
         PixelGrid pixelGrid,
         ConveyorSystem conveyorSystem,
         Project001.Gameplay.WaitingLine.WaitingLine waitingLine,
-        FailureController failureController)
+        FailureController failureController,
+        MonsterSkinDatabase monsterSkinDatabase)
     {
         var boardObject = new GameObject("CollectorQueueBoard", typeof(CollectorQueueBoard));
         boardObject.transform.position = new Vector3(0f, -8.2f, 0f);
 
         var collectorQueueBoard = boardObject.GetComponent<CollectorQueueBoard>();
         var serializedBoard = new SerializedObject(collectorQueueBoard);
+        serializedBoard.FindProperty("monsterSkinDatabase").objectReferenceValue = monsterSkinDatabase;
         serializedBoard.FindProperty("pixelGrid").objectReferenceValue = pixelGrid;
         serializedBoard.FindProperty("conveyorSystem").objectReferenceValue = conveyorSystem;
         serializedBoard.FindProperty("waitingLine").objectReferenceValue = waitingLine;
@@ -211,6 +215,56 @@ public static class BootstrapSceneCreator
         serializedBoard.ApplyModifiedPropertiesWithoutUndo();
 
         return collectorQueueBoard;
+    }
+
+    private const string MofuSetsRoot = "Assets/Art/Sprites/Characters/Mofu/Sets";
+
+    /// <summary>
+    /// Builds the MonsterSkinDatabase scene object and populates one entry
+    /// per MonsterColor (Purple, Green, Orange) by loading each color's five
+    /// sprites from its Sets/{Color} folder via AssetDatabase — editor-only,
+    /// one-time wiring, exactly like every other cross-reference this class
+    /// sets up. Runtime code never loads sprites this way: MonsterSkinDatabase
+    /// only ever reads the serialized entries this produces.
+    /// </summary>
+    private static MonsterSkinDatabase CreateMonsterSkinDatabase()
+    {
+        var databaseObject = new GameObject("MonsterSkinDatabase", typeof(MonsterSkinDatabase));
+        var database = databaseObject.GetComponent<MonsterSkinDatabase>();
+
+        var monsterColors = new[] { MonsterColor.Purple, MonsterColor.Green, MonsterColor.Orange };
+
+        var serializedDatabase = new SerializedObject(database);
+        SerializedProperty skinsProperty = serializedDatabase.FindProperty("skins");
+        skinsProperty.arraySize = monsterColors.Length;
+
+        for (int i = 0; i < monsterColors.Length; i++)
+        {
+            MonsterColor monsterColor = monsterColors[i];
+            SerializedProperty entryProperty = skinsProperty.GetArrayElementAtIndex(i);
+            entryProperty.FindPropertyRelative("color").enumValueIndex = (int)monsterColor;
+
+            SerializedProperty skinProperty = entryProperty.FindPropertyRelative("skin");
+            string folder = $"{MofuSetsRoot}/{monsterColor}";
+            AssignSkinSprite(skinProperty, "backIdle", $"{folder}/Mofu_Back_Idle.png");
+            AssignSkinSprite(skinProperty, "frontIdle", $"{folder}/Mofu_Front_Idle.png");
+            AssignSkinSprite(skinProperty, "frontEating", $"{folder}/Mofu_Front_Eating.png");
+            AssignSkinSprite(skinProperty, "frontSatisfied", $"{folder}/Mofu_Front_Satisfied.png");
+            AssignSkinSprite(skinProperty, "heart", $"{folder}/Mofu_Heart.png");
+        }
+
+        serializedDatabase.ApplyModifiedPropertiesWithoutUndo();
+
+        return database;
+    }
+
+    private static void AssignSkinSprite(SerializedProperty skinProperty, string fieldName, string assetPath)
+    {
+        var sprite = AssetDatabase.LoadAssetAtPath<Sprite>(assetPath);
+        if (sprite == null)
+            Debug.LogError($"BootstrapSceneCreator: could not load sprite at '{assetPath}'; MonsterSkinDatabase will have no {fieldName} sprite there.");
+
+        skinProperty.FindPropertyRelative(fieldName).objectReferenceValue = sprite;
     }
 
     private static CollectorSelectionController CreateCollectorSelectionController(

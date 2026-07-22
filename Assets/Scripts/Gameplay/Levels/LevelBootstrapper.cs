@@ -164,7 +164,7 @@ namespace Project001.Gameplay.Levels
             pixelGrid.Initialize(levelDefinition.PixelLayout, _presentation.GetColor);
             conveyorSystem.Configure(GameplayConstants.BaseConveyorCapacity, GameplayConstants.BaseConveyorMoveSpeed);
             waitingLine.Initialize(GameplayConstants.WaitingLineCapacity);
-            collectorQueueBoard.Initialize(levelDefinition.CollectorQueues, _presentation.GetColor);
+            collectorQueueBoard.Initialize(levelDefinition.CollectorQueues);
 
             // Last, and only after every system above is fully populated —
             // this is the sole deterministic point at which Endgame
