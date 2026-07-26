@@ -1,10 +1,10 @@
 fileFormatVersion: 2
-guid: a4c0dd46a630743ab991fd8a4ef56ed5
+guid: e6d840e8e32644d5eab06b91e6b9fd82
 TextureImporter:
   internalIDToNameTable:
   - first:
-      213: -4489500017493622252
-    second: Mofu_Heart_0
+      213: -1356671732825447407
+    second: Mofu_Front_Satisfied_0
   externalObjects: {}
   serializedVersion: 13
   mipmaps:
@@ -113,13 +113,13 @@ TextureImporter:
     serializedVersion: 2
     sprites:
     - serializedVersion: 2
-      name: Mofu_Heart_0
+      name: Mofu_Front_Satisfied_0
       rect:
         serializedVersion: 2
-        x: 0
-        y: 0
-        width: 1024
-        height: 1024
+        x: 225
+        y: 192
+        width: 576
+        height: 633
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -128,8 +128,8 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: -1
       bones: []
-      spriteID: 412ce2e358712b1c0800000000000000
-      internalID: -4489500017493622252
+      spriteID: 11420283f322c2de0800000000000000
+      internalID: -1356671732825447407
       vertices: []
       indices: 
       edges: []
@@ -148,7 +148,7 @@ TextureImporter:
     spriteCustomMetadata:
       entries: []
     nameFileIdTable:
-      Mofu_Heart_0: -4489500017493622252
+      Mofu_Front_Satisfied_0: -1356671732825447407
   mipmapLimitGroupName: 
   pSDRemoveMatte: 0
   userData: 
