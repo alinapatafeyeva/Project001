@@ -65,52 +65,33 @@ Failure UI
 
 ⸻
 
-## Endgame Cleanup
+✅ Endgame Cleanup
 
-* Activate when RemainingCollectors <= WaitingLineCapacity.
-* Failure is no longer possible.
-* Collectors no longer enter the Waiting Line.
-* Remaining collectors continuously circulate on the Conveyor.
-* Player still controls collector selection.
-* Increase Conveyor speed.
-* Configure the multiplier through GameplayConstants.
-* Final multiplier will be determined during playtesting.
+✅ Activate when RemainingCollectors <= WaitingLineCapacity.
+✅ Failure is no longer possible.
+✅ Collectors no longer enter the Waiting Line.
+✅ Remaining collectors continuously circulate on the Conveyor.
+✅ Player still controls collector selection.
+✅ Increase Conveyor speed.
+✅ Configure the multiplier through GameplayConstants.
+✅ Final multiplier will be determined during playtesting.
 
 ⸻
 
 ## Visual Vertical Slice
 
-Первый этап “игра начинает выглядеть как игра”.
+- Real monster presentation
+- Hunger presentation
+- Idle / Eat / Satisfied animations
+- Basic VFX & SFX
+- Beautiful handcrafted levels
 
-Monsters
+## Developer Infrastructure
 
-* Proper monster design
-* Idle animation
-* Eating animation
-* Satisfied animation
-* Hunger presentation
+- Developer test levels
+- Performance benchmark scene
+- Testing documentation
 
-Conveyor
-
-* Better visuals
-* Small movement polish
-
-Pixel effects
-
-* Eat particles
-* Small animations
-* Juice
-
-Audio
-
-* Basic SFX
-* Eating sounds
-* Victory / Failure sounds
-
-Levels
-
-* Create several beautiful real levels
-* Start using real art instead of coloured rectangles
 
 ⸻
 

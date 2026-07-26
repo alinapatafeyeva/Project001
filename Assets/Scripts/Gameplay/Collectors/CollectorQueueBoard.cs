@@ -16,24 +16,20 @@ namespace Project001.Gameplay.Collectors
     /// collector-queue data. Appearance is resolved here only as far as
     /// picking each collector's MonsterSkin (via monsterSkinDatabase) and
     /// showing its back-idle pose — CollectorPresentation and CollectorView
-    /// own everything about how that sprite is actually displayed.
+    /// own everything about how that sprite is actually displayed. Queued
+    /// collectors show back-idle until selected; CollectorSelectionController
+    /// switches a collector to front-idle the moment it boards the Conveyor
+    /// (see CollectorSelectionController.TrySelect), so a collector never
+    /// remains back-facing once it leaves this board.
     /// </summary>
     public class CollectorQueueBoard : MonoBehaviour, ICollectorSource
     {
         [SerializeField, Tooltip("Resolves each collector's MonsterColor to the MonsterSkin (sprite set) it should display.")]
         private MonsterSkinDatabase monsterSkinDatabase;
 
-        [SerializeField, Tooltip("World-space size of a single collector, in world units.")]
-        [Min(0.01f)]
-        private float collectorSize = 1f;
-
         [SerializeField, Tooltip("Gap between neighbouring queues, in world units.")]
         [Min(0f)]
         private float horizontalSpacing = 0.3f;
-
-        [SerializeField, Tooltip("Gap between neighbouring collectors within a queue, in world units.")]
-        [Min(0f)]
-        private float verticalSpacing = 0.3f;
 
         [SerializeField, Tooltip("Grid pixel consumption reads from. Optional — if missing, collectors still generate and consumption simply does nothing.")]
         private PixelGrid pixelGrid;
@@ -104,8 +100,8 @@ namespace Project001.Gameplay.Collectors
         {
             _queues = new CollectorQueue[collectorQueues.Count];
 
-            float stepX = collectorSize + horizontalSpacing;
-            _rowStepY = collectorSize + verticalSpacing;
+            float stepX = GameplayLayout.CollectorSpriteScale + horizontalSpacing;
+            _rowStepY = GameplayLayout.QueueRowStep;
             float offsetX = (collectorQueues.Count - 1) * stepX * 0.5f;
 
             for (int queueIndex = 0; queueIndex < collectorQueues.Count; queueIndex++)
@@ -134,8 +130,8 @@ namespace Project001.Gameplay.Collectors
                         typeof(PixelConsumer),
                         typeof(CollectorLifecycle));
                     collectorObject.transform.SetParent(queueObject.transform, false);
-                    collectorObject.transform.localPosition = new Vector3(0f, -rowIndex * _rowStepY, 0f);
-                    collectorObject.transform.localScale = new Vector3(collectorSize, collectorSize, 1f);
+                    collectorObject.transform.localPosition = RowLocalPosition(rowIndex);
+                    collectorObject.transform.localScale = new Vector3(GameplayLayout.CollectorSpriteScale, GameplayLayout.CollectorSpriteScale, 1f);
 
                     MonsterSkin skin = ResolveSkin(collectorDefinition.MonsterColor);
 
@@ -232,7 +228,23 @@ namespace Project001.Gameplay.Collectors
             IReadOnlyList<CollectorView> views = queue.Views;
 
             for (int rowIndex = 0; rowIndex < views.Count; rowIndex++)
-                views[rowIndex].transform.localPosition = new Vector3(0f, -rowIndex * _rowStepY, 0f);
+                views[rowIndex].transform.localPosition = RowLocalPosition(rowIndex);
+        }
+
+        /// <summary>
+        /// Row rowIndex's local position within its queue. GameplayLayout.
+        /// CollectorQueueBoardPositionY is this board's region TOP edge, not
+        /// a center, so row 0's own center sits half a CollectorVisibleHeight
+        /// below local y = 0 — using the sprite's actual visible height, not
+        /// CollectorSpriteScale, so row 0's rendered sprite (not an imaginary
+        /// scale-square) has its true visible top edge at the region's top
+        /// edge, rather than intruding into whatever sits directly above
+        /// this board.
+        /// </summary>
+        private Vector3 RowLocalPosition(int rowIndex)
+        {
+            float y = -GameplayLayout.CollectorVisibleHeight * 0.5f - rowIndex * _rowStepY;
+            return new Vector3(0f, y, 0f);
         }
     }
 }

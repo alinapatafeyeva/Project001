@@ -66,3 +66,6 @@ Thumbs.db
 # Assets/            -> project source, always tracked
 # ProjectSettings/   -> shared project configuration, always tracked
 # Packages/manifest.json -> package dependency list, always tracked
+
+# ---- Root-level local reference material (not part of project source) ----
+/reference/

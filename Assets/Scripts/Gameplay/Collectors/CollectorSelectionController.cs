@@ -64,8 +64,10 @@ namespace Project001.Gameplay.Collectors
 
             // Approved presentation rule: Conveyor and every later gameplay
             // location show front-idle. Applied here, the moment the
-            // collector boards — idempotent for a collector arriving from
-            // Waiting Line or Recovery Row, which are already front-facing.
+            // collector boards — this is what switches a collector leaving
+            // CollectorQueueBoard from back-idle to front-idle; idempotent
+            // for a collector arriving from Waiting Line or Recovery Row,
+            // which are already front-facing.
             view.Presentation.ShowGameplayFront();
 
             // ConveyorSystem now owns the rider's position; only release the

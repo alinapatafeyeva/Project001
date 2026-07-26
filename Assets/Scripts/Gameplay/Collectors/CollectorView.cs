@@ -1,4 +1,5 @@
 using Project001.Gameplay.Conveyor;
+using Project001.Gameplay.Presentation;
 using UnityEngine;
 
 namespace Project001.Gameplay.Collectors
@@ -14,9 +15,16 @@ namespace Project001.Gameplay.Collectors
     /// Also owns a RemainingHunger text indicator kept in sync via
     /// ConveyorRider.RemainingHungerChanged — this view never reads or stores
     /// hunger state itself, only displays whatever value the event last
-    /// reported. Holds no movement, input, or queue logic, and has no
-    /// knowledge of the conveyor beyond that — a Collider2D only makes it
-    /// detectable via Physics2D point queries for selection.
+    /// reported. The label is a child of this collector's root, which is
+    /// scaled by GameplayLayout.CollectorSpriteScale (see
+    /// CollectorQueueBoard.GenerateBoard) — without correction the label
+    /// would inherit that scale and grow right along with Mofu. Instead the
+    /// label's own local scale is set to the inverse of
+    /// CollectorSpriteScale, so its rendered size always equals
+    /// GameplayLayout.HungerLabelWorldSize regardless of how big the
+    /// collector's sprite is. Holds no movement, input, or queue logic, and
+    /// has no knowledge of the conveyor beyond that — a Collider2D only
+    /// makes it detectable via Physics2D point queries for selection.
     /// </summary>
     [RequireComponent(typeof(SpriteRenderer))]
     [RequireComponent(typeof(CircleCollider2D))]
@@ -24,9 +32,11 @@ namespace Project001.Gameplay.Collectors
     [RequireComponent(typeof(CollectorPresentation))]
     public class CollectorView : MonoBehaviour
     {
-        [SerializeField, Tooltip("World-space character size of the RemainingHunger text, scaled by this collector's own transform.")]
-        [Min(0.01f)]
-        private float hungerTextCharacterSize = 0.12f;
+        // Positioned slightly below the sprite's own center — the local
+        // offset is expressed in this collector's local space, so it scales
+        // together with the sprite (staying anchored on the body) even
+        // though the label's own rendered size does not.
+        private static readonly Vector3 HungerTextLocalOffset = new Vector3(0f, -0.15f, 0f);
 
         [SerializeField, Tooltip("Font size, in font-import units, of the RemainingHunger text.")]
         [Min(1)]
@@ -104,14 +114,22 @@ namespace Project001.Gameplay.Collectors
         {
             var textObject = new GameObject("HungerText");
             textObject.transform.SetParent(transform, false);
-            textObject.transform.localPosition = Vector3.zero;
+            textObject.transform.localPosition = HungerTextLocalOffset;
+
+            // Cancels out this collector root's own CollectorSpriteScale
+            // (read directly from GameplayLayout, not this transform's live
+            // localScale, since CollectorQueueBoard assigns that scale after
+            // this Awake already ran) so the label's rendered size is driven
+            // by HungerLabelWorldSize alone.
+            textObject.transform.localScale =
+                Vector3.one / GameplayLayout.CollectorSpriteScale;
 
             var textMesh = textObject.AddComponent<TextMesh>();
             textMesh.font = SharedFont;
             textMesh.anchor = TextAnchor.MiddleCenter;
             textMesh.alignment = TextAlignment.Center;
             textMesh.color = Color.white;
-            textMesh.characterSize = hungerTextCharacterSize;
+            textMesh.characterSize = GameplayLayout.HungerLabelWorldSize;
             textMesh.fontSize = hungerTextFontSize;
 
             var meshRenderer = textObject.GetComponent<MeshRenderer>();

@@ -102,15 +102,26 @@ public static class BootstrapSceneCreator
 
     private static Camera CreateCamera()
     {
-        var cameraObject = new GameObject("Main Camera", typeof(Camera), typeof(AudioListener));
+        var cameraObject = new GameObject(
+            "Main Camera",
+            typeof(Camera),
+            typeof(AudioListener),
+            typeof(PortraitCameraFitter));
         cameraObject.tag = "MainCamera";
-        cameraObject.transform.position = new Vector3(0f, 0f, -10f);
 
         var camera = cameraObject.GetComponent<Camera>();
         camera.orthographic = true;
-        camera.orthographicSize = 10f;
         camera.clearFlags = CameraClearFlags.SolidColor;
         camera.backgroundColor = new Color(0.192f, 0.302f, 0.475f, 0f);
+
+        // Saved at a reference 9:16 aspect using the exact same
+        // GameplayLayout computation PortraitCameraFitter.Awake() runs at
+        // runtime — composition is fixed, so there is no distinction
+        // between an edit-time preview and the real runtime framing; this
+        // is simply that framing evaluated once, up front, at one reference
+        // aspect, so the saved scene isn't left at Unity's arbitrary default.
+        camera.orthographicSize = GameplayLayout.ComputeOrthographicSize(9f, 16f);
+        cameraObject.transform.position = new Vector3(0f, GameplayLayout.CameraVerticalCenter, -10f);
 
         return camera;
     }
@@ -118,12 +129,13 @@ public static class BootstrapSceneCreator
     private static PixelGrid CreatePixelGrid()
     {
         var pixelGridObject = new GameObject("PixelGrid", typeof(PixelGrid));
-        pixelGridObject.transform.position = Vector3.zero;
+        pixelGridObject.transform.position = new Vector3(0f, GameplayLayout.PixelGridPositionY, 0f);
 
         var pixelGrid = pixelGridObject.GetComponent<PixelGrid>();
         var serializedPixelGrid = new SerializedObject(pixelGrid);
-        serializedPixelGrid.FindProperty("availableWidth").floatValue = 6.5f;
-        serializedPixelGrid.FindProperty("availableHeight").floatValue = 6.5f;
+        serializedPixelGrid.FindProperty("availableWidth").floatValue = GameplayLayout.GridRegionWidth;
+        serializedPixelGrid.FindProperty("availableHeight").floatValue = GameplayLayout.GridRegionHeight;
+        serializedPixelGrid.FindProperty("maximumCellSize").floatValue = GameplayLayout.GridMaximumCellSize;
         serializedPixelGrid.ApplyModifiedPropertiesWithoutUndo();
 
         return pixelGrid;
@@ -138,10 +150,16 @@ public static class BootstrapSceneCreator
             typeof(ConveyorSystem));
         conveyorObject.transform.position = Vector3.zero;
 
+        // Square, centered on the world origin, sized from GameplayLayout's
+        // own authored Conveyor extent — never a hand-copied literal — so
+        // the Conveyor BootstrapSceneCreator actually builds and the frame
+        // GameplayLayout computes the camera around can never drift apart.
+        float conveyorSize = GameplayLayout.ConveyorSize;
+
         var conveyorPath = conveyorObject.GetComponent<ConveyorPath>();
         var serializedPath = new SerializedObject(conveyorPath);
-        serializedPath.FindProperty("width").floatValue = 8f;
-        serializedPath.FindProperty("height").floatValue = 8f;
+        serializedPath.FindProperty("width").floatValue = conveyorSize;
+        serializedPath.FindProperty("height").floatValue = conveyorSize;
         serializedPath.FindProperty("cornerRadius").floatValue = 1f;
         serializedPath.ApplyModifiedPropertiesWithoutUndo();
 
@@ -156,8 +174,11 @@ public static class BootstrapSceneCreator
     }
 
     /// <summary>
-    /// Sits directly beneath the Conveyor, in the world-space slot the
-    /// Waiting Line previously occupied. RecoveryRowController owns whatever
+    /// Shares WaitingLine's own row instead of reserving one of its own:
+    /// positioned at GameplayLayout.WaitingLinePositionY, the same world Y
+    /// WaitingLine sits at, since RecoveryRow only ever holds collectors
+    /// during failure recovery and a row permanently reserved for it would
+    /// sit empty the rest of the time. RecoveryRowController owns whatever
     /// collectors ReceiveCollectors is later given — no capacity to
     /// configure here, since the row sizes itself from however many
     /// collectors it receives. RecoveryRowView lives on the same GameObject
@@ -170,7 +191,7 @@ public static class BootstrapSceneCreator
             "RecoveryRow",
             typeof(RecoveryRowController),
             typeof(RecoveryRowView));
-        recoveryRowObject.transform.position = new Vector3(0f, -5.0f, 0f);
+        recoveryRowObject.transform.position = new Vector3(0f, GameplayLayout.WaitingLinePositionY, 0f);
 
         var recoveryRowController = recoveryRowObject.GetComponent<RecoveryRowController>();
 
@@ -187,10 +208,7 @@ public static class BootstrapSceneCreator
         var waitingLineObject = new GameObject(
             "WaitingLine",
             typeof(Project001.Gameplay.WaitingLine.WaitingLine));
-        // Shifted below the Recovery Row's Y (-5.0) by the same 1.6-unit gap
-        // that already separated WaitingLine from CollectorQueueBoard, so
-        // the two rows never overlap.
-        waitingLineObject.transform.position = new Vector3(0f, -6.6f, 0f);
+        waitingLineObject.transform.position = new Vector3(0f, GameplayLayout.WaitingLinePositionY, 0f);
 
         return waitingLineObject.GetComponent<Project001.Gameplay.WaitingLine.WaitingLine>();
     }
@@ -203,7 +221,7 @@ public static class BootstrapSceneCreator
         MonsterSkinDatabase monsterSkinDatabase)
     {
         var boardObject = new GameObject("CollectorQueueBoard", typeof(CollectorQueueBoard));
-        boardObject.transform.position = new Vector3(0f, -8.2f, 0f);
+        boardObject.transform.position = new Vector3(0f, GameplayLayout.CollectorQueueBoardPositionY, 0f);
 
         var collectorQueueBoard = boardObject.GetComponent<CollectorQueueBoard>();
         var serializedBoard = new SerializedObject(collectorQueueBoard);
