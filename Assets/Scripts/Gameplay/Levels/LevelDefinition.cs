@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using Project001.Gameplay.Presentation;
 
 namespace Project001.Gameplay.Levels
 {
@@ -60,7 +61,12 @@ namespace Project001.Gameplay.Levels
 
     /// <summary>
     /// One collector's immutable gameplay identity: which MatchTypeId it
-    /// accepts and how many matching pixels satisfy it.
+    /// accepts and how many matching pixels satisfy it. MonsterColor is
+    /// carried alongside this identity but is not part of it — it is the
+    /// collector's visual skin selection, entirely independent of
+    /// MatchTypeId. Defaults to MonsterColor.Purple so existing call sites
+    /// that predate MonsterColor keep compiling and behave the same as
+    /// before it existed.
     /// </summary>
     public sealed class CollectorDefinition
     {
@@ -68,13 +74,16 @@ namespace Project001.Gameplay.Levels
 
         public int HungerCapacity { get; }
 
-        public CollectorDefinition(MatchTypeId matchTypeId, int hungerCapacity)
+        public MonsterColor MonsterColor { get; }
+
+        public CollectorDefinition(MatchTypeId matchTypeId, int hungerCapacity, MonsterColor monsterColor = MonsterColor.Purple)
         {
             if (hungerCapacity <= 0)
                 throw new ArgumentOutOfRangeException(nameof(hungerCapacity), "Hunger capacity must be positive.");
 
             MatchTypeId = matchTypeId;
             HungerCapacity = hungerCapacity;
+            MonsterColor = monsterColor;
         }
     }
 

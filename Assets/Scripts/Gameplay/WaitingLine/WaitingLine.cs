@@ -1,4 +1,5 @@
 using Project001.Gameplay.Collectors;
+using Project001.Gameplay.Presentation;
 using UnityEngine;
 
 namespace Project001.Gameplay.WaitingLine
@@ -9,7 +10,12 @@ namespace Project001.Gameplay.WaitingLine
     /// Slot count comes from the capacity passed to Initialize — a fixed
     /// global gameplay setting (see GameplayConstants.WaitingLineCapacity),
     /// not level data, since Waiting Line capacity must stay constant across
-    /// every level.
+    /// every level. Each slot renders at GameplayLayout.WaitingSlotSize —
+    /// deliberately independent of GameplayLayout.CollectorSpriteScale, since
+    /// a slot is only ever a landing marker an arriving collector's world
+    /// position snaps to (see CollectorLifecycle.ResolveLap): the collector
+    /// keeps its own scale, so the slot's own size is a free visual choice,
+    /// not something that must equal or bound it.
     /// </summary>
     public class WaitingLine : MonoBehaviour, ICollectorSource
     {
@@ -19,14 +25,6 @@ namespace Project001.Gameplay.WaitingLine
         [SerializeField, Tooltip("Number of waiting slots to generate.")]
         [Min(1)]
         private int slotCount = 5;
-
-        [SerializeField, Tooltip("World-space size of a single waiting slot, in world units.")]
-        [Min(0.01f)]
-        private float slotSize = 1f;
-
-        [SerializeField, Tooltip("Gap between neighbouring slots, in world units.")]
-        [Min(0f)]
-        private float horizontalSpacing = 0.3f;
 
         private Texture2D _sharedTexture;
         private Sprite _sharedSprite;
@@ -101,7 +99,7 @@ namespace Project001.Gameplay.WaitingLine
         {
             _slots = new WaitingSlot[slotCount];
 
-            float stepX = slotSize + horizontalSpacing;
+            float stepX = GameplayLayout.WaitingSlotSize + GameplayLayout.WaitingSlotSpacing;
             float offsetX = (slotCount - 1) * stepX * 0.5f;
 
             for (int index = 0; index < slotCount; index++)
@@ -109,7 +107,7 @@ namespace Project001.Gameplay.WaitingLine
                 var slotObject = new GameObject($"WaitingSlot_{index}", typeof(WaitingSlot));
                 slotObject.transform.SetParent(transform, false);
                 slotObject.transform.localPosition = new Vector3(index * stepX - offsetX, 0f, 0f);
-                slotObject.transform.localScale = new Vector3(slotSize, slotSize, 1f);
+                slotObject.transform.localScale = new Vector3(GameplayLayout.WaitingSlotSize, GameplayLayout.WaitingSlotSize, 1f);
 
                 var spriteRenderer = slotObject.GetComponent<SpriteRenderer>();
                 spriteRenderer.sprite = _sharedSprite;

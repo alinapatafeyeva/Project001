@@ -12,14 +12,6 @@ namespace Project001.Gameplay.Pixels
     /// </summary>
     public class PixelGrid : MonoBehaviour
     {
-        /// <summary>
-        /// Cell size used whenever the available area is generous enough not
-        /// to constrain it — the same fixed value this grid always used
-        /// before available bounds existed, so small layouts keep their
-        /// current appearance.
-        /// </summary>
-        private const float DefaultMaximumCellSize = 1f;
-
         [SerializeField, Tooltip("Extra spacing added between neighbouring cells, in world units.")]
         [Min(0f)]
         private float cellGap = 0.05f;
@@ -31,6 +23,10 @@ namespace Project001.Gameplay.Pixels
         [SerializeField, Tooltip("Scene-owned maximum world-space height this grid may occupy. Set by scene layout (e.g. BootstrapSceneCreator), not by level data — never referenced by ConveyorSystem or any other gameplay system.")]
         [Min(0f)]
         private float availableHeight = 6.5f;
+
+        [SerializeField, Tooltip("Scene-owned cap on a single cell's world-space size, applied even when availableWidth/availableHeight would allow a larger cell. Set by scene layout (e.g. BootstrapSceneCreator), not by level data — purely a presentation cap, never referenced by any gameplay system.")]
+        [Min(0.01f)]
+        private float maximumCellSize = 1f;
 
         private Texture2D _sharedTexture;
         private Sprite _sharedSprite;
@@ -94,11 +90,11 @@ namespace Project001.Gameplay.Pixels
         /// <summary>
         /// Computes the uniform square cell size that fits layout's
         /// dimensions inside availableWidth x availableHeight (accounting for
-        /// cellGap between cells), capped at DefaultMaximumCellSize so a
-        /// generous area does not enlarge cells beyond their normal size.
-        /// Fails cleanly — logging one specific diagnostic and generating
-        /// nothing — if the bounds or the resulting cell size are not
-        /// positive, rather than building a partially-sized grid.
+        /// cellGap between cells), capped at maximumCellSize so a generous
+        /// area does not enlarge cells beyond that cap. Fails cleanly —
+        /// logging one specific diagnostic and generating nothing — if the
+        /// bounds or the resulting cell size are not positive, rather than
+        /// building a partially-sized grid.
         /// </summary>
         private bool TryComputeCellSize(PixelLayoutDefinition layout, out float cellSize)
         {
@@ -118,7 +114,7 @@ namespace Project001.Gameplay.Pixels
 
             float cellSizeByWidth = (availableWidth - cellGap * (layout.Width - 1)) / layout.Width;
             float cellSizeByHeight = (availableHeight - cellGap * (layout.Height - 1)) / layout.Height;
-            float computedCellSize = Mathf.Min(DefaultMaximumCellSize, Mathf.Min(cellSizeByWidth, cellSizeByHeight));
+            float computedCellSize = Mathf.Min(maximumCellSize, Mathf.Min(cellSizeByWidth, cellSizeByHeight));
 
             if (computedCellSize <= 0f)
             {

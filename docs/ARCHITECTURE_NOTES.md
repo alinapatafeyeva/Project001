@@ -518,3 +518,57 @@ Examples:
 Presentation must not affect gameplay behaviour.
 
 Changing presentation should never require changing `LevelDefinition`.
+
+---
+
+## Assets structure
+
+Assets
+└── Art
+    └── Sprites
+        └── Themes
+            ├── Classic
+            │   ├── Characters
+            │   │   ├── Character_01
+            │   │   │   ├── Mofu_Front_Idle.png
+            │   │   │   ├── Mofu_Front_Eating.png
+            │   │   │   ├── Mofu_Front_Satisfied.png
+            │   │   │   ├── Mofu_Back_Idle.png
+            │   │   │   └── Mofu_Heart.png
+            │   │   ├── Character_02
+            │   │   │   └── те же имена файлов
+            │   │   ├── Character_03
+            │   │   └── ...
+            │   │
+            │   ├── Food
+            │   │   ├── Food_01.png
+            │   │   ├── Food_02.png
+            │   │   ├── Food_03.png
+            │   │   └── ...
+            │   │
+            │   ├── UI
+            │   └── Backgrounds
+            │
+            ├── Candy
+            │   ├── Characters
+            │   │   ├── Character_01
+            │   │   ├── Character_02
+            │   │   └── ...
+            │   ├── Food
+            │   │   ├── Food_01.png
+            │   │   ├── Food_02.png
+            │   │   └── ...
+            │   ├── UI
+            │   └── Backgrounds
+            │
+            └── Halloween
+                ├── Characters
+                │   ├── Character_01
+                │   ├── Character_02
+                │   └── ...
+                ├── Food
+                │   ├── Food_01.png
+                │   ├── Food_02.png
+                │   └── ...
+                ├── UI
+                └── Backgrounds

@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using Project001.Gameplay.Conveyor;
+using Project001.Gameplay.Presentation;
 using UnityEngine;
 
 namespace Project001.Gameplay.Recovery
@@ -15,15 +16,18 @@ namespace Project001.Gameplay.Recovery
     /// recreates them. Refreshes automatically whenever
     /// recoveryRowController.CollectorsChanged fires (a successful receive or
     /// release); never polls or searches for the controller itself.
+    ///
+    /// Has no reserved region of its own: BootstrapSceneCreator places this
+    /// component's transform at GameplayLayout.WaitingLinePositionY, the same
+    /// row WaitingLine already occupies, since RecoveryRow only ever holds
+    /// collectors during failure recovery and permanently reserving a second
+    /// row for it — empty the rest of the time — is exactly the wasted
+    /// vertical space GameplayLayout's composition no longer allocates.
     /// </summary>
     public class RecoveryRowView : MonoBehaviour
     {
         [SerializeField, Tooltip("Recovery Row whose held collectors this view displays.")]
         private RecoveryRowController recoveryRowController;
-
-        [SerializeField, Tooltip("World-space size of a single collector, in world units.")]
-        [Min(0.01f)]
-        private float collectorSize = 1f;
 
         [SerializeField, Tooltip("Gap between neighbouring collectors, in world units.")]
         [Min(0f)]
@@ -57,7 +61,7 @@ namespace Project001.Gameplay.Recovery
 
             IReadOnlyList<ConveyorRider> collectors = recoveryRowController.Collectors;
 
-            float stepX = collectorSize + horizontalSpacing;
+            float stepX = GameplayLayout.CollectorSpriteScale + horizontalSpacing;
             float offsetX = (collectors.Count - 1) * stepX * 0.5f;
 
             for (int index = 0; index < collectors.Count; index++)

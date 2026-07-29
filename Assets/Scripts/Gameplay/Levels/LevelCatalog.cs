@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using Project001.Gameplay.Presentation;
 
 namespace Project001.Gameplay.Levels
 {
@@ -90,25 +91,33 @@ namespace Project001.Gameplay.Levels
         /// modulo cycling produced, so each MatchTypeId's total HungerCapacity
         /// (12, matching its pixel count) is directly readable here while
         /// deliberately varying across that type's four collectors.
+        ///
+        /// Each collector also carries an explicit, hand-authored
+        /// MonsterColor (MatchType1 -&gt; Purple, MatchType2 -&gt; Orange,
+        /// MatchType3 -&gt; Green) — a level-authoring choice for this
+        /// specific level, not a MatchTypeId-to-MonsterColor rule enforced
+        /// anywhere in code. Nothing stops a future level from assigning
+        /// MonsterColor differently, including inconsistently within a
+        /// single MatchTypeId.
         /// </summary>
         private static IReadOnlyList<CollectorQueueDefinition> BuildPrototypeCollectorQueues()
         {
-            var queueSpecs = new (MatchTypeId matchTypeId, int hungerCapacity)[][]
+            var queueSpecs = new (MatchTypeId matchTypeId, int hungerCapacity, MonsterColor monsterColor)[][]
             {
-                new[] { (MatchType1, 5), (MatchType2, 4), (MatchType3, 6) },
-                new[] { (MatchType2, 4), (MatchType3, 2), (MatchType1, 3) },
-                new[] { (MatchType3, 3), (MatchType1, 2), (MatchType2, 3) },
-                new[] { (MatchType1, 2), (MatchType2, 1), (MatchType3, 1) },
+                new[] { (MatchType1, 5, MonsterColor.Purple), (MatchType2, 4, MonsterColor.Orange), (MatchType3, 6, MonsterColor.Green) },
+                new[] { (MatchType2, 4, MonsterColor.Orange), (MatchType3, 2, MonsterColor.Green), (MatchType1, 3, MonsterColor.Purple) },
+                new[] { (MatchType3, 3, MonsterColor.Green), (MatchType1, 2, MonsterColor.Purple), (MatchType2, 3, MonsterColor.Orange) },
+                new[] { (MatchType1, 2, MonsterColor.Purple), (MatchType2, 1, MonsterColor.Orange), (MatchType3, 1, MonsterColor.Green) },
             };
 
             var queues = new List<CollectorQueueDefinition>(queueSpecs.Length);
 
-            foreach ((MatchTypeId matchTypeId, int hungerCapacity)[] spec in queueSpecs)
+            foreach ((MatchTypeId matchTypeId, int hungerCapacity, MonsterColor monsterColor)[] spec in queueSpecs)
             {
                 var collectors = new List<CollectorDefinition>(spec.Length);
 
-                foreach ((MatchTypeId matchTypeId, int hungerCapacity) in spec)
-                    collectors.Add(new CollectorDefinition(matchTypeId, hungerCapacity));
+                foreach ((MatchTypeId matchTypeId, int hungerCapacity, MonsterColor monsterColor) in spec)
+                    collectors.Add(new CollectorDefinition(matchTypeId, hungerCapacity, monsterColor));
 
                 queues.Add(new CollectorQueueDefinition(collectors));
             }

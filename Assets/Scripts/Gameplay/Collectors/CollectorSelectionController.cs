@@ -62,6 +62,15 @@ namespace Project001.Gameplay.Collectors
             if (!conveyorSystem.TryAddRider(rider))
                 return;
 
+            // Approved presentation rule: boarding plays Back Idle → bounce →
+            // Front Eating, and the collector stays Front Eating for the rest
+            // of its time actively riding. Applied here, the moment the
+            // collector boards — every current waiting source
+            // (CollectorQueueBoard, Waiting Line, Recovery Row) shows Back
+            // Idle beforehand, so this is always a genuine Back Idle → Front
+            // Eating transition, never a no-op repeat.
+            view.Presentation.ShowConveyorFrontEating();
+
             // ConveyorSystem now owns the rider's position; only release the
             // source side. If release fails, the source still logically holds
             // the collector while it is now also riding the conveyor — that
@@ -74,6 +83,10 @@ namespace Project001.Gameplay.Collectors
             {
                 collectorTransform.SetParent(originalParent, true);
                 collectorTransform.localPosition = originalLocalPosition;
+
+                // All waiting sources show Back Idle, so a collector rolled
+                // back to one must be restored to it too.
+                view.Presentation.ShowWaitingBackIdle();
             }
 
             Debug.LogError(
