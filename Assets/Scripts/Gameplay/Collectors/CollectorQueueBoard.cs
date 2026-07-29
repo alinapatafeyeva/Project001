@@ -17,8 +17,8 @@ namespace Project001.Gameplay.Collectors
     /// picking each collector's MonsterSkin (via monsterSkinDatabase) and
     /// showing its back-idle pose — CollectorPresentation and CollectorView
     /// own everything about how that sprite is actually displayed. Queued
-    /// collectors show back-idle until selected; CollectorSelectionController
-    /// switches a collector to front-idle the moment it boards the Conveyor
+    /// collectors show Back Idle until selected; CollectorSelectionController
+    /// switches a collector to Front Eating the moment it boards the Conveyor
     /// (see CollectorSelectionController.TrySelect), so a collector never
     /// remains back-facing once it leaves this board.
     /// </summary>
@@ -100,7 +100,15 @@ namespace Project001.Gameplay.Collectors
         {
             _queues = new CollectorQueue[collectorQueues.Count];
 
-            float stepX = GameplayLayout.CollectorSpriteScale + horizontalSpacing;
+            // CollectorVisibleWidth, not CollectorSpriteScale — the sprite
+            // does not fill its full transform-scale square (see
+            // GameplayLayout), so using the scale here would count that
+            // square's own empty margin as part of the gap on both sides of
+            // every neighbouring pair, making the real visible gap several
+            // times larger than horizontalSpacing actually promises. Mirrors
+            // QueueRowStep, which already derives from CollectorVisibleHeight
+            // for exactly this reason, just vertically.
+            float stepX = GameplayLayout.CollectorVisibleWidth + horizontalSpacing;
             _rowStepY = GameplayLayout.QueueRowStep;
             float offsetX = (collectorQueues.Count - 1) * stepX * 0.5f;
 
@@ -119,11 +127,15 @@ namespace Project001.Gameplay.Collectors
                 {
                     CollectorDefinition collectorDefinition = collectorDefinitions[rowIndex];
 
-                    // ConveyorRider and CollectorPresentation are not listed
-                    // explicitly: CollectorView's [RequireComponent] attributes
-                    // add them first, before CollectorView's own Awake runs —
-                    // listing them again here would add a second, duplicate
-                    // instance instead of reusing the one already added.
+                    // ConveyorRider, CollectorPresentation, and
+                    // CollectorAnimation are not listed explicitly:
+                    // CollectorView's [RequireComponent] attributes add
+                    // ConveyorRider and CollectorPresentation first, and
+                    // CollectorPresentation's own [RequireComponent] then adds
+                    // CollectorAnimation — all before CollectorView's own
+                    // Awake runs. Listing any of them again here would add a
+                    // second, duplicate instance instead of reusing the one
+                    // already added.
                     var collectorObject = new GameObject(
                         $"Collector_{queueIndex}_{rowIndex}",
                         typeof(CollectorView),
@@ -136,8 +148,8 @@ namespace Project001.Gameplay.Collectors
                     MonsterSkin skin = ResolveSkin(collectorDefinition.MonsterColor);
 
                     var collectorPresentation = collectorObject.GetComponent<CollectorPresentation>();
-                    collectorPresentation.Initialize(skin.BackIdle, skin.FrontIdle);
-                    collectorPresentation.ShowQueueBack();
+                    collectorPresentation.Initialize(skin.BackIdle, skin.FrontIdle, skin.FrontEating, skin.FrontSatisfied, skin.Heart);
+                    collectorPresentation.ShowWaitingBackIdle();
 
                     var collectorView = collectorObject.GetComponent<CollectorView>();
 

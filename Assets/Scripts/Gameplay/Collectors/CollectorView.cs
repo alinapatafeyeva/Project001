@@ -5,28 +5,41 @@ using UnityEngine;
 namespace Project001.Gameplay.Collectors
 {
     /// <summary>
-    /// A single visual collector slot. Owns the SpriteRenderer and applies
-    /// whatever sprite CollectorPresentation requests via ApplySprite() —
-    /// this view never decides which pose to show, only applies it. The
-    /// SpriteRenderer's color is always Color.white and is never tinted:
-    /// MonsterColor selects which sprites are shown (via MonsterSkin), not a
-    /// tint applied on top of them.
+    /// A single visual collector slot. Owns a Visual child GameObject that
+    /// holds the actual SpriteRenderer, and applies whatever sprite
+    /// CollectorPresentation requests via ApplySprite() — this view never
+    /// decides which pose to show, only applies it. The SpriteRenderer's
+    /// color is always Color.white and is never tinted: MonsterColor selects
+    /// which sprites are shown (via MonsterSkin), not a tint applied on top
+    /// of them.
+    ///
+    /// The SpriteRenderer deliberately lives on a child (Visual), not on
+    /// this root: this root's transform is gameplay-owned (queue placement
+    /// by CollectorQueueBoard, movement by ConveyorSystem, reparenting by
+    /// WaitingLine/RecoveryRowView), while Visual's local transform is the
+    /// only thing CollectorAnimation is ever allowed to animate — see
+    /// CollectorAnimation. Root and Visual share the same local origin, so
+    /// the rendered result is identical to before this split; only the
+    /// ownership of "who may move what" changed.
     ///
     /// Also owns a RemainingHunger text indicator kept in sync via
-    /// ConveyorRider.RemainingHungerChanged — this view never reads or stores
-    /// hunger state itself, only displays whatever value the event last
-    /// reported. The label is a child of this collector's root, which is
-    /// scaled by GameplayLayout.CollectorSpriteScale (see
+    /// ConveyorRider.RemainingHungerChanged — this view never reads or
+    /// stores hunger state itself, only displays whatever value the event
+    /// last reported. The label is a direct child of this root (a sibling of
+    /// Visual, never a child of it), which is scaled by
+    /// GameplayLayout.CollectorSpriteScale (see
     /// CollectorQueueBoard.GenerateBoard) — without correction the label
     /// would inherit that scale and grow right along with Mofu. Instead the
     /// label's own local scale is set to the inverse of
     /// CollectorSpriteScale, so its rendered size always equals
     /// GameplayLayout.HungerLabelWorldSize regardless of how big the
-    /// collector's sprite is. Holds no movement, input, or queue logic, and
-    /// has no knowledge of the conveyor beyond that — a Collider2D only
-    /// makes it detectable via Physics2D point queries for selection.
+    /// collector's sprite is, and being a sibling of Visual rather than its
+    /// child, the label is also completely unaffected by any presentation
+    /// animation played on Visual. Holds no movement, input, or queue logic,
+    /// and has no knowledge of the conveyor beyond that — a Collider2D on
+    /// this root only makes it detectable via Physics2D point queries for
+    /// selection.
     /// </summary>
-    [RequireComponent(typeof(SpriteRenderer))]
     [RequireComponent(typeof(CircleCollider2D))]
     [RequireComponent(typeof(ConveyorRider))]
     [RequireComponent(typeof(CollectorPresentation))]
@@ -48,12 +61,10 @@ namespace Project001.Gameplay.Collectors
             _sharedFont != null ? _sharedFont : _sharedFont = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
 
         private SpriteRenderer _spriteRenderer;
+        private Transform _visual;
         private ConveyorRider _conveyorRider;
         private CollectorPresentation _presentation;
         private TextMesh _hungerText;
-
-        private SpriteRenderer SpriteRenderer =>
-            _spriteRenderer != null ? _spriteRenderer : _spriteRenderer = GetComponent<SpriteRenderer>();
 
         /// <summary>
         /// This collector's CollectorPresentation, cached once in Awake.
@@ -62,6 +73,17 @@ namespace Project001.Gameplay.Collectors
         /// runtime GetComponent call.
         /// </summary>
         public CollectorPresentation Presentation => _presentation;
+
+        /// <summary>
+        /// This collector's Visual child transform — the SpriteRenderer's
+        /// own GameObject, created here in Awake. Gameplay never reads or
+        /// writes this transform; it exists purely so CollectorAnimation has
+        /// a local scale/position/rotation to animate that is never also
+        /// being driven by ConveyorSystem, CollectorQueueBoard, WaitingLine,
+        /// or RecoveryRowView, all of which only ever touch this collector's
+        /// root transform (this GameObject's own transform), never Visual's.
+        /// </summary>
+        public Transform Visual => _visual;
 
         /// <summary>
         /// Currently displayed RemainingHunger text. Read-only — this view
@@ -77,8 +99,7 @@ namespace Project001.Gameplay.Collectors
             // Selection detection only; must not participate in physical collision.
             GetComponent<Collider2D>().isTrigger = true;
 
-            // MonsterColor selects sprites, never a tint on top of them.
-            SpriteRenderer.color = Color.white;
+            _visual = CreateVisual();
 
             _presentation = GetComponent<CollectorPresentation>();
             _hungerText = CreateHungerText();
@@ -94,20 +115,55 @@ namespace Project001.Gameplay.Collectors
         }
 
         /// <summary>
-        /// Applies the given sprite to the SpriteRenderer. Called only by
-        /// this collector's own CollectorPresentation (ShowQueueBack,
-        /// ShowGameplayFront) — this view makes no pose decision itself.
-        /// Never touches SpriteRenderer.color: that stays Color.white, fixed
-        /// in Awake.
+        /// Applies the given sprite to the Visual child's SpriteRenderer.
+        /// Called only by this collector's own CollectorPresentation
+        /// (ShowWaitingBackIdle, ShowConveyorFrontEating, and its bite/
+        /// satisfied/heart sequences) — this view makes no pose decision
+        /// itself. Never touches the SpriteRenderer's color: that stays
+        /// Color.white, fixed in Awake.
         /// </summary>
         public void ApplySprite(Sprite sprite)
         {
-            SpriteRenderer.sprite = sprite;
+            _spriteRenderer.sprite = sprite;
+        }
+
+        /// <summary>
+        /// Hides the RemainingHunger label for good. Called once, by
+        /// CollectorPresentation right as the terminal final-bite sequence
+        /// begins — RemainingHunger already reads 0 at that point (set by
+        /// ConveyorRider.RegisterConsumedPixel just before), and the player
+        /// must never see that value on screen. There is no matching "show"
+        /// method: this collector is destroyed shortly after the sequence
+        /// completes, so the label never needs to reappear.
+        /// </summary>
+        public void HideHungerText()
+        {
+            _hungerText.gameObject.SetActive(false);
         }
 
         private void OnRemainingHungerChanged(int remainingHunger)
         {
             _hungerText.text = remainingHunger.ToString();
+        }
+
+        /// <summary>
+        /// Creates the Visual child that owns the SpriteRenderer and is the
+        /// only transform CollectorAnimation is ever allowed to animate.
+        /// Local position/scale/rotation are left at identity, so — combined
+        /// with this root's own CollectorSpriteScale localScale, assigned by
+        /// CollectorQueueBoard — the rendered result is pixel-identical to
+        /// when the SpriteRenderer lived directly on this root.
+        /// </summary>
+        private Transform CreateVisual()
+        {
+            var visualObject = new GameObject("Visual");
+            visualObject.transform.SetParent(transform, false);
+
+            _spriteRenderer = visualObject.AddComponent<SpriteRenderer>();
+            // MonsterColor selects sprites, never a tint on top of them.
+            _spriteRenderer.color = Color.white;
+
+            return visualObject.transform;
         }
 
         private TextMesh CreateHungerText()
@@ -134,8 +190,8 @@ namespace Project001.Gameplay.Collectors
 
             var meshRenderer = textObject.GetComponent<MeshRenderer>();
             meshRenderer.sharedMaterial = SharedFont.material;
-            meshRenderer.sortingLayerID = SpriteRenderer.sortingLayerID;
-            meshRenderer.sortingOrder = SpriteRenderer.sortingOrder + 1;
+            meshRenderer.sortingLayerID = _spriteRenderer.sortingLayerID;
+            meshRenderer.sortingOrder = _spriteRenderer.sortingOrder + 1;
 
             return textMesh;
         }

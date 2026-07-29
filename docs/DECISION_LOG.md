@@ -240,3 +240,20 @@ balancing, testing, and art production more predictable.
 
 The current target of approximately 30 levels per chapter is provisional and
 may change during testing before production content is locked.
+
+## Asset folder structure
+
+Decision:
+All visual assets are organized by Theme.
+
+Each character and collectible has a stable numeric ID instead of a semantic name.
+
+Examples:
+Character_01 ↔ Food_01
+Character_02 ↔ Food_02
+
+Reasons:
+- Themes can replace all assets without changing code.
+- Asset names are independent of visual appearance.
+- Easier to create seasonal themes.
+- Simplifies procedural loading.

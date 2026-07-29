@@ -1,3 +1,4 @@
+using Project001.Gameplay.Collectors;
 using Project001.Gameplay.Conveyor;
 using UnityEngine;
 
@@ -6,7 +7,12 @@ namespace Project001.Gameplay.Pixels
     /// <summary>
     /// Periodically asks a PixelGrid to consume one matching exposed pixel near
     /// a ConveyorRider's current position. Holds no hunger, scoring, victory,
-    /// disappearance, animation, or sound/VFX logic of its own.
+    /// or disappearance logic of its own. After a successful consume it
+    /// triggers exactly one CollectorPresentation reaction — the normal bite
+    /// reaction, or (only when this consume brought RemainingHunger to zero)
+    /// the full final-bite completion sequence — but owns none of the
+    /// animation or sprite-swap logic that reaction actually plays; that is
+    /// entirely CollectorPresentation/CollectorAnimation's responsibility.
     /// </summary>
     public class PixelConsumer : MonoBehaviour
     {
@@ -25,6 +31,10 @@ namespace Project001.Gameplay.Pixels
         private float alignmentTolerance = 0.5f;
 
         private float _cooldownRemaining;
+        private CollectorPresentation _presentation;
+
+        private CollectorPresentation Presentation =>
+            _presentation != null ? _presentation : _presentation = rider != null ? rider.GetComponent<CollectorPresentation>() : null;
 
         /// <summary>
         /// Assigns the grid to consume from and the rider that drives
@@ -58,9 +68,34 @@ namespace Project001.Gameplay.Pixels
             // does not re-scan the whole grid on the very next frame.
             bool consumed = pixelGrid.TryConsumeNearestExposed(rider.transform.position, rider.MatchTypeId, alignmentTolerance);
             if (consumed)
+            {
                 rider.RegisterConsumedPixel();
+                TriggerBiteReaction();
+            }
 
             _cooldownRemaining = consumptionCooldown;
+        }
+
+        /// <summary>
+        /// Starts exactly one CollectorPresentation reaction for the bite
+        /// that was just consumed — never both. Which one depends only on
+        /// rider.IsSatisfied immediately after RegisterConsumedPixel, so this
+        /// is the single point that decides "normal bite" vs "final bite":
+        /// nothing else ever independently starts either sequence from a
+        /// pixel consume. CollectorLifecycle separately calls
+        /// PlayFinalBiteSequence too, but only as an idempotent safety net —
+        /// see CollectorPresentation.PlayFinalBiteSequence.
+        /// </summary>
+        private void TriggerBiteReaction()
+        {
+            CollectorPresentation presentation = Presentation;
+            if (presentation == null)
+                return;
+
+            if (rider.IsSatisfied)
+                presentation.PlayFinalBiteSequence();
+            else
+                presentation.PlayNormalBiteReaction();
         }
     }
 }

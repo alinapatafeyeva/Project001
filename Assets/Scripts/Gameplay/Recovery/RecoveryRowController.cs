@@ -65,6 +65,11 @@ namespace Project001.Gameplay.Recovery
         /// is responsible for whatever gameplay event triggered the transfer,
         /// and for removing the collectors from their previous owner (e.g.
         /// ConveyorSystem.TakeAllRiders) before calling this.
+        ///
+        /// Does switch presentation, though: every collector actually added
+        /// is arriving from the Conveyor (Front Eating, mid-ride), and every
+        /// waiting source — Recovery Row included — shows Back Idle, so each
+        /// newly received collector is switched to it here.
         /// </summary>
         public void ReceiveCollectors(IReadOnlyList<ConveyorRider> collectors)
         {
@@ -80,6 +85,10 @@ namespace Project001.Gameplay.Recovery
 
                 _collectors.Add(collector);
                 added = true;
+
+                CollectorPresentation presentation = collector.GetComponent<CollectorPresentation>();
+                if (presentation != null)
+                    presentation.ShowWaitingBackIdle();
             }
 
             if (added)
