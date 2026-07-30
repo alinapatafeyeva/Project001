@@ -19,25 +19,34 @@
 
 ---
 
-## Planned Colors
+## Stable Match IDs
 
-- Red        — #E74C3C
-- Orange     — #F39C12
-- Yellow     — #F1C40F
-- Lime       — #A3E635
-- Green      — #27AE60
-- Mint       — #5EEAD4
-- Cyan       — #06B6D4
-- Sky Blue   — #38BDF8
-- Blue       — #3B82F6
-- Navy       — #2563EB
-- Purple     — #8E44AD
-- Violet     — #A855F7
-- Pink       — #EC4899
-- Coral      — #FF7F50
-- Brown      — #8D6E63
-- Beige      — #E8D5B7
-- White      — #F8FAFC
-- Gray       — #94A3B8
-- Black      — #2C3E50
-- Gold       — #D4AF37
+Each gameplay Match ID is permanently assigned to one color.
+
+| Match ID | Color |
+|----------:|-------|
+| 01 | Red | #B82728
+| 02 | Orange | #D86B25
+| 03 | Yellow | #DEB322
+| 04 | Lime | #7AB80B
+| 05 | Green | #2D9A34
+| 06 | Mint | #2D9A34
+| 07 | Cyan | #21B1C3
+| 08 | Azure | #2378BB
+| 09 | Peach | #DD8F66
+| 10 | Navy | #0E2E52
+| 11 | Purple | #722BA9
+| 12 | Violet | #AF82C2
+| 13 | Pink | #DA3872
+| 14 | Coral | #E25039
+| 15 | Brown | #6D3213
+| 16 | Cream | #DFBB8D
+| 17 | Teal | #22908E
+| 18 | White | #D2CCC3
+| 19 | Gray | #8B8984
+| 20 | Black | #373736
+
+These IDs are permanent.
+
+Character_XX and Food_XX use the same numeric ID.
+Gameplay matching is performed by ID, not by color name.
