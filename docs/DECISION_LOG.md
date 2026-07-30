@@ -257,3 +257,54 @@ Reasons:
 - Asset names are independent of visual appearance.
 - Easier to create seasonal themes.
 - Simplifies procedural loading.
+
+---
+
+## 015 — Gameplay and presentation transforms are separated
+
+Decision:
+
+Gameplay owns and moves the collector root transform. Presentation owns a
+`Visual` child transform, animated only by `CollectorAnimation`. `HungerText`
+is a sibling of `Visual`, not a child of it.
+
+Reason:
+
+Keeping gameplay movement and presentation animation on different transforms
+means animating a collector can never desynchronise it from its gameplay
+position, and presentation code never needs to reason about queue, conveyor,
+or Waiting Line placement.
+
+---
+
+## 016 — A visual completion sequence plays after gameplay completion
+
+Decision:
+
+Gameplay resolves a satisfied collector immediately: its collider is disabled
+and the `CollectorSatisfied` event fires synchronously. Destruction of the
+GameObject is deferred until `CollectorPresentation` finishes its completion
+sequence (Front Eating → Front Satisfied → Heart → pulse → collapse). If
+presentation is unavailable, destruction happens immediately instead.
+
+Reason:
+
+Gameplay state (capacity, hunger, victory conditions) must resolve immediately
+and must not wait on animation. Delaying only the destroy call lets the
+satisfied monster play a readable completion sequence without affecting
+gameplay timing.
+
+---
+
+## 017 — Queue spacing is based on visible sprite width
+
+Decision:
+
+`CollectorQueueBoard` spaces collectors using the visible width and height of
+the character sprite, not the transform or sprite bounds.
+
+Reason:
+
+The source sprite includes empty margin around the character. Spacing by
+transform bounds would count that margin as gap, producing uneven-looking
+queues.

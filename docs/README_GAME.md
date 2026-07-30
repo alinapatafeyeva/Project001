@@ -17,8 +17,8 @@ The monster moves counter-clockwise around the image
 While aligned with an accessible pixel of its favourite food,
 the monster eats it and reduces its remaining hunger
         ↓
-If Remaining Hunger reaches zero,
-the satisfied monster leaves immediately
+If Remaining Hunger reaches zero, the monster becomes satisfied,
+plays its completion sequence, then leaves the conveyor
         ↓
 If the monster completes a full lap while still hungry,
 it enters the first free Waiting Line slot
@@ -40,5 +40,9 @@ The prototype currently includes:
 - Victory
 - Failure
 
-All visuals are temporary placeholders and currently exist only to validate
-gameplay architecture.
+Presentation status:
+
+- Mofu presentation is implemented.
+- Food presentation is still temporary.
+- Hunger UI is temporary and will become a production hunger bar.
+- VFX/SFX are still temporary.

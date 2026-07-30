@@ -235,15 +235,28 @@ public static class BootstrapSceneCreator
         return collectorQueueBoard;
     }
 
-    private const string MofuSetsRoot = "Assets/Art/Sprites/Characters/Mofu/Sets";
+    private const string ClassicCharactersRoot = "Assets/Art/Sprites/Themes/Classic/Characters";
+
+    /// <summary>
+    /// Which Classic/Characters/Character_XX folder backs each MonsterColor.
+    /// Character IDs are stable per the approved Themes migration; this map
+    /// is the only place a MonsterColor resolves to one.
+    /// </summary>
+    private static readonly Dictionary<MonsterColor, string> MonsterColorToCharacterFolder = new Dictionary<MonsterColor, string>
+    {
+        { MonsterColor.Purple, "Character_11" },
+        { MonsterColor.Green, "Character_05" },
+        { MonsterColor.Orange, "Character_02" },
+    };
 
     /// <summary>
     /// Builds the MonsterSkinDatabase scene object and populates one entry
     /// per MonsterColor (Purple, Green, Orange) by loading each color's five
-    /// sprites from its Sets/{Color} folder via AssetDatabase — editor-only,
-    /// one-time wiring, exactly like every other cross-reference this class
-    /// sets up. Runtime code never loads sprites this way: MonsterSkinDatabase
-    /// only ever reads the serialized entries this produces.
+    /// sprites from its Classic/Characters/Character_XX folder via
+    /// AssetDatabase — editor-only, one-time wiring, exactly like every other
+    /// cross-reference this class sets up. Runtime code never loads sprites
+    /// this way: MonsterSkinDatabase only ever reads the serialized entries
+    /// this produces.
     /// </summary>
     private static MonsterSkinDatabase CreateMonsterSkinDatabase()
     {
@@ -263,7 +276,7 @@ public static class BootstrapSceneCreator
             entryProperty.FindPropertyRelative("color").enumValueIndex = (int)monsterColor;
 
             SerializedProperty skinProperty = entryProperty.FindPropertyRelative("skin");
-            string folder = $"{MofuSetsRoot}/{monsterColor}";
+            string folder = $"{ClassicCharactersRoot}/{MonsterColorToCharacterFolder[monsterColor]}";
             AssignSkinSprite(skinProperty, "backIdle", $"{folder}/Mofu_Back_Idle.png");
             AssignSkinSprite(skinProperty, "frontIdle", $"{folder}/Mofu_Front_Idle.png");
             AssignSkinSprite(skinProperty, "frontEating", $"{folder}/Mofu_Front_Eating.png");

@@ -318,7 +318,10 @@ Current prototype behaviour:
 - generates a configurable number of collectors per queue;
 - uses a deterministic mixed-colour pattern;
 - creates and initializes all collector-related components;
-- shifts a queue upward after successful removal of its first collector.
+- shifts a queue upward after successful removal of its first collector;
+- spaces collectors using the visible sprite width, rather than the transform
+  bounds, so the empty margin around the source sprite is not counted as
+  spacing.
 
 It does not board collectors onto the conveyor directly.
 
@@ -362,7 +365,11 @@ Decides what happens to a collector after eating or completing a lap.
 
 Behaviour:
 
-- a satisfied riding collector is removed and destroyed immediately;
+- a satisfied riding collector is resolved immediately: its collider is
+  disabled and the `CollectorSatisfied` event fires synchronously;
+- destruction of the collector's GameObject is deferred until its visual
+  completion sequence finishes (see Presentation below); if presentation is
+  unavailable, destruction happens immediately instead;
 - an unsatisfied collector continues riding until it completes a full lap;
 - after completing a lap, it moves into the first available Waiting Line slot;
 - if no Waiting Line slot is available, it remains on the conveyor;
@@ -370,6 +377,140 @@ Behaviour:
 
 This is the only system that decides whether a monster disappears or enters
 the Waiting Line.
+
+---
+
+# Presentation Systems
+
+## Presentation Architecture
+
+Gameplay and presentation own separate parts of a collector's transform
+hierarchy:
+
+- gameplay (queue, conveyor, and Waiting Line code) owns and moves the
+  collector root transform;
+- presentation owns the `Visual` child, which holds the `SpriteRenderer`;
+- `CollectorAnimation` animates only the `Visual` child (local scale,
+  position, rotation) and never the collector root;
+- `HungerText` is a sibling of `Visual`, not a child of it.
+
+Gameplay completion (satisfaction, collider disabling, the
+`CollectorSatisfied` event) is immediate. Only the destruction of the
+GameObject is delayed, and only to let the visual completion sequence finish.
+
+## CollectorPresentation
+
+Location:
+
+```text
+Assets/Scripts/Gameplay/Collectors/CollectorPresentation.cs
+```
+
+Responsibility:
+
+Decides which sprite is shown on the collector's `Visual` child and drives
+`CollectorAnimation`. Requires a `CollectorAnimation` component.
+
+Owns:
+
+- a reference to `CollectorView` (for applying sprites and hiding the hunger
+  text);
+- the five `MonsterSkin` sprites for the assigned skin.
+
+Behaviour:
+
+- `ShowWaitingBackIdle` + `PlayIdleBreathing` for the Waiting state;
+- `ShowConveyorFrontEating` + a boarding bounce when entering the conveyor;
+- `PlayNormalBiteReaction` for a mid-lap pixel bite;
+- `PlayFinalBiteSequence` for the completion sequence, raising
+  `VisualSequenceComplete` once it finishes.
+
+It never moves the collector root transform.
+
+---
+
+## CollectorAnimation
+
+Location:
+
+```text
+Assets/Scripts/Gameplay/Collectors/CollectorAnimation.cs
+```
+
+Responsibility:
+
+Animates only the `Visual` child transform.
+
+Behaviour:
+
+- `PlayIdleBreathing`: looping gentle breathing while waiting;
+- `PlayBoardingBounce`: squash/punch reaction on conveyor entry;
+- `PlayEatingPunch`: squash/punch on each pixel bite;
+- `PlaySatisfiedPunch`: punch and hop when satisfied;
+- `PlayHeartPulseAndCollapse`: terminal sequence — one pulse, then a
+  scale-to-zero collapse. Once played, no further animation is accepted.
+
+---
+
+## Mofu Presentation Lifecycle
+
+Waiting:
+
+- Back Idle
+- breathing animation
+
+Conveyor:
+
+- boarding reaction
+- Front Eating
+
+Completion:
+
+- Front Eating
+- Front Satisfied
+- Heart
+- pulse
+- collapse
+- disappear
+
+`Front Idle` exists in the asset set and is loaded by `MonsterSkin`, but it is
+currently unused during gameplay — no state in the lifecycle above displays
+it.
+
+---
+
+## MonsterSkin
+
+Location:
+
+```text
+Assets/Scripts/Gameplay/Presentation/MonsterSkin.cs
+```
+
+Responsibility:
+
+A plain data holder (not a `MonoBehaviour`) for one character's five sprites:
+back idle, front idle, front eating, front satisfied, and heart.
+
+---
+
+## MonsterSkinDatabase
+
+Location:
+
+```text
+Assets/Scripts/Gameplay/Presentation/MonsterSkinDatabase.cs
+```
+
+Responsibility:
+
+Inspector-configured registry mapping a `MonsterColor` to its `MonsterSkin`.
+
+Behaviour:
+
+- `GetSkin` looks up the matching entry for a colour;
+- falls back to Purple, and then to an empty skin with logged errors, rather
+  than returning null.
 
 ---
 

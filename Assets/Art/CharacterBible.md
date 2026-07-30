@@ -1,5 +1,11 @@
 # Mofu Character Bible
 
+## Asset Location
+
+Current character sprite sets: `Assets/Art/Sprites/Themes/Classic/Characters/Character_XX`
+
+---
+
 ## Overview
 
 Mofu is the main character species of the game.

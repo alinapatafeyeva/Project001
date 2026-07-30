@@ -50,6 +50,29 @@ the current implementation.
 
 ---
 
+## UI
+
+- Replace temporary hunger number with the production hunger bar.
+- Add an in-game Help (ⓘ) screen explaining:
+  - hunger bar colours;
+  - gameplay rules;
+  - bonuses and power-ups;
+  - other mechanics introduced later.
+
+---
+
+## Feedback
+
+- Add haptic feedback on supported mobile devices.
+- Tune different haptic patterns for:
+  - eating a pixel;
+  - satisfying a Mofu;
+  - victory;
+  - failure;
+  - important UI interactions.
+
+---
+
 ## Pixel Grid and Levels
 
 - Replace the temporary 6×6 generated pattern with level-defined pixel data.
@@ -136,6 +159,12 @@ the current implementation.
 - preserve exact per-MatchTypeId collector capacity
 - support controlled cluster/pattern generation
 - preview and validate generated levels
+
+---
+
+## Documentation
+
+- Update `ColorPalette.md` once the final production palette is locked.
 
 ---
 
