@@ -41,15 +41,15 @@ namespace Project001.EditorTools
         // multiplied by the same CollectorSpriteScale at runtime.
         public const float PrefabRootScale = 632f / 800f;
 
-        // Colours read from ColorPalette (the single source of truth for
-        // approved 3D Mofu fur colours) rather than hardcoded here — see
-        // ColorPalette's own remarks for why these differ from
-        // ColorPalette.md's brighter, flat-sprite-tuned Orange/Green/Purple.
+        // Colours read from ColorPalette — the runtime mirror of
+        // Assets/Art/ColorPalette.md's approved Match ID -&gt; Color table —
+        // rather than hardcoded here, so there is exactly one place to
+        // update if the approved values ever change.
         private static readonly (string name, Color color)[] Colors =
         {
-            ("Purple", ColorPalette.MofuPurple),
-            ("Green", ColorPalette.MofuGreen),
-            ("Orange", ColorPalette.MofuOrange),
+            ("Purple", ColorPalette.Purple),
+            ("Green", ColorPalette.Green),
+            ("Orange", ColorPalette.Orange),
         };
 
         [MenuItem("Tools/Mofu3D/Run Full Setup")]
@@ -97,16 +97,32 @@ namespace Project001.EditorTools
             Debug.Log("Mofu3DSetup: FBX import configured (no rig/animation, no imported materials).");
         }
 
+        // Universal Render Pipeline/Simple Lit, not Lit: compared side by
+        // side at identical palette Base Colors under this rig's lighting,
+        // Simple Lit's Blinn-Phong response reproduces the approved hex more
+        // brightly and evenly than Lit's energy-conserving PBR response,
+        // while still shading fur relief (eye sockets, chin, tuft crevices)
+        // from the same Directional Light/ambient - the "bright stylized
+        // game character" look this pipeline targets, not realistic
+        // lighting. See CreateEnvironmentLighting's remarks for the ambient
+        // half of that same fix.
+        private const string MofuShaderName = "Universal Render Pipeline/Simple Lit";
+
+        // Very low but non-zero: a soft, readable highlight/fur relief
+        // without a tight PBR-style specular hotspot. 0 (fully matte) was
+        // tried and read as flatter/less "3D" than this.
+        private const float MofuSmoothness = 0.08f;
+
         [MenuItem("Tools/Mofu3D/2 Create Materials")]
         public static void CreateMaterials()
         {
             if (!AssetDatabase.IsValidFolder(MaterialsFolder))
                 AssetDatabase.CreateFolder(CharacterFolder, "Materials");
 
-            Shader shader = Shader.Find("Universal Render Pipeline/Lit");
+            Shader shader = Shader.Find(MofuShaderName);
             if (shader == null)
             {
-                Debug.LogError("Mofu3DSetup: 'Universal Render Pipeline/Lit' shader not found - is URP installed?");
+                Debug.LogError($"Mofu3DSetup: '{MofuShaderName}' shader not found - is URP installed?");
                 return;
             }
 
@@ -120,8 +136,14 @@ namespace Project001.EditorTools
 
                 material.shader = shader;
                 material.SetColor("_BaseColor", color);
-                material.SetFloat("_Smoothness", 0.25f);
-                material.SetFloat("_Metallic", 0f);
+                material.SetFloat("_Smoothness", MofuSmoothness);
+
+                // No skybox/reflection probe is configured for this scene
+                // (see CreateEnvironmentLighting), so environment reflections
+                // only ever sampled a flat, ungrounded gray fallback - a
+                // dulling sheen with no visual benefit. Simple Lit has no
+                // Metallic workflow to configure (it is always dielectric).
+                material.SetFloat("_EnvironmentReflections", 0f);
 
                 if (isNew)
                     AssetDatabase.CreateAsset(material, path);

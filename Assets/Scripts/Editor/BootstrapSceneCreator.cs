@@ -16,6 +16,7 @@ using UnityEditor.SceneManagement;
 using UnityEngine;
 using UnityEngine.EventSystems;
 using UnityEngine.InputSystem.UI;
+using UnityEngine.Rendering;
 using UnityEngine.Rendering.Universal;
 using UnityEngine.SceneManagement;
 using UnityEngine.UI;
@@ -51,6 +52,7 @@ public static class BootstrapSceneCreator
 
         Camera mainCamera = CreateCamera();
         CreateKeyLight();
+        ConfigureEnvironmentLighting();
         PixelGrid pixelGrid = CreatePixelGrid();
         ConveyorSystem conveyorSystem = CreateConveyor();
         RecoveryRowController recoveryRowController = CreateRecoveryRow();
@@ -210,6 +212,29 @@ public static class BootstrapSceneCreator
         light.type = LightType.Directional;
         light.color = Color.white;
         light.intensity = 1f;
+    }
+
+    /// <summary>
+    /// Sets a flat, neutral-white ambient fill (RenderSettings), replacing
+    /// whatever dim, cool-tinted values a freshly created scene otherwise
+    /// defaults to (a new URP scene's own defaults, never previously set by
+    /// this class). Alongside CreateKeyLight's single Directional Light,
+    /// this is the entire lighting rig Mofu renders under: with no fill
+    /// light and only that dim/cool default ambient, the side of a rounded
+    /// Mofu facing away from the key light read as dark and grayish-blue
+    /// rather than a shaded version of its own fur colour. A stronger,
+    /// colour-neutral ambient keeps that far side readable and saturated
+    /// (a "bright stylized character" look) without washing out the key
+    /// light's own shading, which is what still gives the fur its relief.
+    /// Deliberately Flat (a single ambient colour), not Skybox/Trilight -
+    /// there is no skybox in this scene for either of those modes to derive
+    /// gradient/reflection values from.
+    /// </summary>
+    private static void ConfigureEnvironmentLighting()
+    {
+        RenderSettings.ambientMode = AmbientMode.Flat;
+        RenderSettings.ambientLight = new Color(0.45f, 0.45f, 0.45f, 1f);
+        RenderSettings.ambientIntensity = 1f;
     }
 
     private static PixelGrid CreatePixelGrid()

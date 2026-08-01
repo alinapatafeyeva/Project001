@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using Project001.Gameplay.Presentation;
 using UnityEngine;
 
 namespace Project001.Gameplay.Levels
@@ -24,24 +25,16 @@ namespace Project001.Gameplay.Levels
         /// </summary>
         public static readonly MatchTypeId DebugUnmatchedMatchTypeId = new MatchTypeId("debug_unmatched");
 
-        // Approximate sRGB reads of Assets/Art/ColorPalette.png's Purple (#11),
-        // Orange (#2), and Green (#5) swatches — picked by eye against that
-        // reference image, not sampled pixel-exact. Re-tune here if the
-        // finished Mofu art establishes exact hex values later; nothing else
-        // needs to change.
-        private static readonly Color Purple = new Color(0.557f, 0.267f, 0.678f); // ~#8E44AD
-        private static readonly Color Orange = new Color(0.953f, 0.612f, 0.071f); // ~#F39C12
-        private static readonly Color Green = new Color(0.153f, 0.682f, 0.376f); // ~#27AE60
-
         private static readonly Dictionary<MatchTypeId, Color> Colors = new Dictionary<MatchTypeId, Color>
         {
-            // m001/m002/m003 now match the collectors' finished MonsterColor
-            // skins (Purple/Orange/Green respectively) instead of technical
-            // red/green/blue — pixel presentation only; MatchTypeId, matching
-            // logic, and level data are untouched.
-            { new MatchTypeId("m001"), Purple },
-            { new MatchTypeId("m002"), Orange },
-            { new MatchTypeId("m003"), Green },
+            // m001/m002/m003 match the collectors' finished MonsterColor
+            // skins (Purple/Orange/Green respectively), read from
+            // ColorPalette — the runtime mirror of ColorPalette.md — rather
+            // than a separate approximation. Pixel presentation only;
+            // MatchTypeId, matching logic, and level data are untouched.
+            { new MatchTypeId("m001"), ColorPalette.Purple },
+            { new MatchTypeId("m002"), ColorPalette.Orange },
+            { new MatchTypeId("m003"), ColorPalette.Green },
             { new MatchTypeId("m004"), Color.yellow },
             { DebugUnmatchedMatchTypeId, Color.black },
         };
