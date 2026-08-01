@@ -14,18 +14,22 @@ namespace Project001.Gameplay.Collectors
     /// count, per-queue collector order, each collector's MatchTypeId,
     /// MonsterColor, and hunger capacity all come from the injected level
     /// collector-queue data. Appearance is resolved here only as far as
-    /// picking each collector's MonsterSkin (via monsterSkinDatabase) and
-    /// showing its back-idle pose — CollectorPresentation and CollectorView
-    /// own everything about how that sprite is actually displayed. Queued
-    /// collectors show Back Idle until selected; CollectorSelectionController
-    /// switches a collector to Front Eating the moment it boards the Conveyor
+    /// instantiating each collector's Visual from mofuVisualPrefab, picking
+    /// its material (via monsterMaterialDatabase), and showing its
+    /// facing-away idle pose — CollectorPresentation and CollectorAnimation
+    /// own everything about how that model is actually posed/animated.
+    /// Queued collectors face away until selected; CollectorSelectionController
+    /// switches a collector to facing toward the moment it boards the Conveyor
     /// (see CollectorSelectionController.TrySelect), so a collector never
-    /// remains back-facing once it leaves this board.
+    /// remains facing away once it leaves this board.
     /// </summary>
     public class CollectorQueueBoard : MonoBehaviour, ICollectorSource
     {
-        [SerializeField, Tooltip("Resolves each collector's MonsterColor to the MonsterSkin (sprite set) it should display.")]
-        private MonsterSkinDatabase monsterSkinDatabase;
+        [SerializeField, Tooltip("Resolves each collector's MonsterColor to the Material it should display.")]
+        private MonsterMaterialDatabase monsterMaterialDatabase;
+
+        [SerializeField, Tooltip("Prefab instantiated as every collector's Visual child.")]
+        private GameObject mofuVisualPrefab;
 
         [SerializeField, Tooltip("Gap between neighbouring queues, in world units.")]
         [Min(0f)]
@@ -76,24 +80,24 @@ namespace Project001.Gameplay.Collectors
         }
 
         /// <summary>
-        /// Resolves the MonsterSkin for the given MonsterColor via
-        /// monsterSkinDatabase. MonsterSkinDatabase.GetSkin never returns
-        /// null, so this never does either — if monsterSkinDatabase itself
-        /// is unassigned, logs a clear error and returns an empty MonsterSkin
-        /// (every sprite null) rather than throwing, so a collector simply
-        /// shows no sprite instead of failing to build. Beyond that, this
-        /// board never has to reason about a missing skin — that is entirely
-        /// MonsterSkinDatabase's responsibility.
+        /// Resolves the Material for the given MonsterColor via
+        /// monsterMaterialDatabase. MonsterMaterialDatabase.GetMaterial never
+        /// throws, so this never does either — if monsterMaterialDatabase
+        /// itself is unassigned, logs a clear error and returns null rather
+        /// than throwing, so a collector simply shows Unity's default
+        /// material instead of failing to build. Beyond that, this board
+        /// never has to reason about a missing material — that is entirely
+        /// MonsterMaterialDatabase's responsibility.
         /// </summary>
-        private MonsterSkin ResolveSkin(MonsterColor monsterColor)
+        private Material ResolveMaterial(MonsterColor monsterColor)
         {
-            if (monsterSkinDatabase == null)
+            if (monsterMaterialDatabase == null)
             {
-                Debug.LogError($"CollectorQueueBoard: '{name}' has no MonsterSkinDatabase assigned; collectors will show no sprite.", this);
-                return new MonsterSkin();
+                Debug.LogError($"CollectorQueueBoard: '{name}' has no MonsterMaterialDatabase assigned; collectors will show the default material.", this);
+                return null;
             }
 
-            return monsterSkinDatabase.GetSkin(monsterColor);
+            return monsterMaterialDatabase.GetMaterial(monsterColor);
         }
 
         private void GenerateBoard(IReadOnlyList<CollectorQueueDefinition> collectorQueues)
@@ -143,15 +147,19 @@ namespace Project001.Gameplay.Collectors
                         typeof(CollectorLifecycle));
                     collectorObject.transform.SetParent(queueObject.transform, false);
                     collectorObject.transform.localPosition = RowLocalPosition(rowIndex);
-                    collectorObject.transform.localScale = new Vector3(GameplayLayout.CollectorSpriteScale, GameplayLayout.CollectorSpriteScale, 1f);
+                    // Uniform scale, unlike the old (scale, scale, 1) used
+                    // for a flat sprite: a 3D model needs its depth (Z)
+                    // scaled along with width/height, or it renders stretched
+                    // relative to its authored proportions.
+                    collectorObject.transform.localScale = Vector3.one * GameplayLayout.CollectorSpriteScale;
 
-                    MonsterSkin skin = ResolveSkin(collectorDefinition.MonsterColor);
-
-                    var collectorPresentation = collectorObject.GetComponent<CollectorPresentation>();
-                    collectorPresentation.Initialize(skin.BackIdle, skin.FrontIdle, skin.FrontEating, skin.FrontSatisfied, skin.Heart);
-                    collectorPresentation.ShowWaitingBackIdle();
+                    Material material = ResolveMaterial(collectorDefinition.MonsterColor);
 
                     var collectorView = collectorObject.GetComponent<CollectorView>();
+                    collectorView.Initialize(mofuVisualPrefab, material);
+
+                    var collectorPresentation = collectorObject.GetComponent<CollectorPresentation>();
+                    collectorPresentation.ShowWaitingBackIdle();
 
                     var conveyorRider = collectorObject.GetComponent<ConveyorRider>();
                     conveyorRider.Initialize(collectorDefinition.MatchTypeId, collectorDefinition.HungerCapacity);

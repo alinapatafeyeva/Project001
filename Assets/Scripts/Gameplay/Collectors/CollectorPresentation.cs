@@ -5,32 +5,33 @@ using UnityEngine;
 namespace Project001.Gameplay.Collectors
 {
     /// <summary>
-    /// Decides which of this collector's sprites is currently shown, and
-    /// asks CollectorView to apply it — holds no rendering logic itself,
-    /// CollectorView owns the SpriteRenderer (on its Visual child) and is
-    /// the only thing that ever touches it directly. Also the sole caller
-    /// into CollectorAnimation, so CollectorAnimation never has to decide
-    /// which reaction fits which gameplay moment — this class is that
-    /// single authority.
+    /// Decides which pose this collector's Visual is currently in and asks
+    /// CollectorAnimation to play it — holds no rendering or animation logic
+    /// itself, CollectorView owns the instantiated model (on its Visual
+    /// child) and CollectorAnimation owns every transform tween played on it.
+    /// This is the sole caller into CollectorAnimation, so CollectorAnimation
+    /// never has to decide which reaction fits which gameplay moment — this
+    /// class is that single authority.
     ///
-    /// The five sprites come from whichever MonsterSkin CollectorQueueBoard
-    /// resolved for this collector's MonsterColor (see
-    /// CollectorQueueBoard.GenerateBoard) — this component only ever holds
-    /// and switches between them, it never looks up a skin itself. Front
-    /// Idle is held but never displayed by the current lifecycle below — it
-    /// is kept only for possible future use.
+    /// With a single mesh instead of five sprites, "pose" now means facing
+    /// (which way Visual is rotated) plus whichever reaction animation is
+    /// playing, rather than which sprite is shown — see CollectorAnimation
+    /// for the facing rotation this drives.
     ///
-    /// Approved visible lifecycle: Back Idle while waiting anywhere
-    /// (CollectorQueueBoard, WaitingLine, Recovery Row) with idle breathing;
-    /// Front Eating for the entire time a collector actively rides the
-    /// Conveyor, including every normal bite reaction; and, on the final
-    /// bite only, Front Eating → Front Satisfied → Heart → collapse. A
-    /// collector that leaves the Conveyor unsatisfied and lands back in
-    /// WaitingLine or Recovery Row switches back to Back Idle — see
-    /// ShowWaitingBackIdle, called from CollectorLifecycle.ResolveLap and
-    /// RecoveryRowController.ReceiveCollectors — and the same restoration
-    /// happens if a boarding attempt is rolled back (see
-    /// CollectorSelectionController.TrySelect).
+    /// Approved visible lifecycle: facing away (the equivalent of the old
+    /// Back Idle) while waiting anywhere (CollectorQueueBoard, WaitingLine,
+    /// Recovery Row) with idle breathing; facing the pixel grid (the
+    /// equivalent of Front Eating, now a continuously re-aimed turn rather
+    /// than a fixed camera-facing pose — see CollectorAnimation) for the
+    /// entire time a collector actively rides the Conveyor, including every
+    /// normal bite reaction; and, on the final bite only, still facing the
+    /// grid through the eating punch, satisfied punch, and heart
+    /// pulse/collapse. A collector that leaves the
+    /// Conveyor unsatisfied and lands back in WaitingLine or Recovery Row
+    /// switches back to facing away — see ShowWaitingBackIdle, called from
+    /// CollectorLifecycle.ResolveLap and RecoveryRowController.ReceiveCollectors
+    /// — and the same restoration happens if a boarding attempt is rolled
+    /// back (see CollectorSelectionController.TrySelect).
     ///
     /// Sequencing rule (see CollectorAnimation for the transform-level half
     /// of this): at most one sequence coroutine is active on this component
@@ -51,17 +52,6 @@ namespace Project001.Gameplay.Collectors
     [RequireComponent(typeof(CollectorAnimation))]
     public class CollectorPresentation : MonoBehaviour
     {
-        private Sprite _backSprite;
-
-        // Stored but never displayed by the current lifecycle — Front Idle
-        // is not part of the approved gameplay presentation, kept only so
-        // it can be reintroduced without a signature change.
-        private Sprite _frontSprite;
-
-        private Sprite _frontEatingSprite;
-        private Sprite _frontSatisfiedSprite;
-        private Sprite _heartSprite;
-
         private CollectorView _view;
         private CollectorAnimation _animation;
         private Coroutine _activeSequence;
@@ -80,31 +70,13 @@ namespace Project001.Gameplay.Collectors
         public event Action VisualSequenceComplete;
 
         /// <summary>
-        /// Assigns the sprites this collector may display. Collectors are
-        /// built at runtime (CollectorQueueBoard.GenerateBoard), never from a
-        /// prefab, so there is no Inspector session for this component to
-        /// deserialize values into directly — the real, Inspector-assigned
-        /// sprites live on the MonsterSkin CollectorQueueBoard resolved for
-        /// this collector, and are injected here exactly once, the same way
-        /// ConveyorRider, PixelConsumer, and CollectorLifecycle are each
-        /// initialized.
-        /// </summary>
-        public void Initialize(Sprite backSprite, Sprite frontSprite, Sprite frontEatingSprite, Sprite frontSatisfiedSprite, Sprite heartSprite)
-        {
-            _backSprite = backSprite;
-            _frontSprite = frontSprite;
-            _frontEatingSprite = frontEatingSprite;
-            _frontSatisfiedSprite = frontSatisfiedSprite;
-            _heartSprite = heartSprite;
-        }
-
-        /// <summary>
-        /// Shows the back-idle pose plus its subtle idle breathing. This is
-        /// the pose for every waiting location — called by
-        /// CollectorQueueBoard right after Initialize, by
-        /// CollectorLifecycle.ResolveLap when an unsatisfied collector lands
-        /// in a WaitingLine slot, by RecoveryRowController.ReceiveCollectors
-        /// when a collector is transferred into the Recovery Row, and by
+        /// Shows the facing-away idle pose plus its subtle idle breathing.
+        /// This is the pose for every waiting location — called by
+        /// CollectorQueueBoard right after this collector's Visual is set up
+        /// (CollectorView.Initialize), by CollectorLifecycle.ResolveLap when
+        /// an unsatisfied collector lands in a WaitingLine slot, by
+        /// RecoveryRowController.ReceiveCollectors when a collector is
+        /// transferred into the Recovery Row, and by
         /// CollectorSelectionController when a failed boarding attempt is
         /// rolled back to its original source.
         /// </summary>
@@ -113,20 +85,20 @@ namespace Project001.Gameplay.Collectors
             if (_terminalStarted)
                 return;
 
-            View.ApplySprite(_backSprite);
+            Animation.SetFacingImmediate(faceAway: true);
             StopActiveSequence();
             Animation.PlayIdleBreathing();
         }
 
         /// <summary>
-        /// Plays the boarding reaction — a short squash/bounce while still
-        /// showing Back Idle, reading as the Mofu turning around without any
-        /// literal rotation — then switches to Front Eating, where it
-        /// remains for the rest of this collector's time actively riding the
-        /// Conveyor. Called by CollectorSelectionController the moment this
-        /// collector boards, regardless of which source (CollectorQueueBoard,
-        /// WaitingLine, or Recovery Row) it boarded from. Never leaves Front
-        /// Eating for Front Idle afterwards.
+        /// Plays the boarding reaction — a short squash/bounce combined with
+        /// a real turn to face the pixel grid (see
+        /// CollectorAnimation.PlayBoardingBounce) — then keeps facing the
+        /// grid, continuously re-aimed as the conveyor moves it, for the
+        /// rest of this collector's time actively riding the Conveyor.
+        /// Called by CollectorSelectionController the moment this collector
+        /// boards, regardless of which source (CollectorQueueBoard,
+        /// WaitingLine, or Recovery Row) it boarded from.
         /// </summary>
         public void ShowConveyorFrontEating()
         {
@@ -137,10 +109,10 @@ namespace Project001.Gameplay.Collectors
         }
 
         /// <summary>
-        /// Plays a small eating punch and stays on Front Eating — the mouth
-        /// remains open for the entire time this collector actively rides
-        /// the Conveyor. Called by PixelConsumer after a successful,
-        /// non-final consume.
+        /// Plays a small eating punch while remaining faced toward the
+        /// pixel grid for the entire time this collector actively rides the
+        /// Conveyor. Called by PixelConsumer after a successful, non-final
+        /// consume.
         /// </summary>
         public void PlayNormalBiteReaction()
         {
@@ -151,17 +123,17 @@ namespace Project001.Gameplay.Collectors
         }
 
         /// <summary>
-        /// Plays the full completion sequence — Front Eating + punch, Front
-        /// Satisfied + happy punch, Heart + one pulse, then a collapse —
-        /// firing VisualSequenceComplete once it finishes. Terminal: once
-        /// started, every other method on this component becomes a no-op.
-        /// Idempotent — a second call (from either PixelConsumer or
-        /// CollectorLifecycle, whichever reaches it first) is a no-op that
-        /// still returns true, since the sequence is already in flight.
-        /// Returns false only if the sequence cannot start at all (e.g. no
-        /// Visual child to animate) — CollectorLifecycle treats false as its
-        /// cue to destroy the collector immediately instead of waiting for a
-        /// completion event that would never arrive.
+        /// Plays the full completion sequence — eating punch, satisfied
+        /// punch, one heart pulse, then a collapse, all while still facing
+        /// the pixel grid — firing VisualSequenceComplete once it
+        /// finishes. Terminal: once started, every other method on this
+        /// component becomes a no-op. Idempotent — a second call (from either
+        /// PixelConsumer or CollectorLifecycle, whichever reaches it first)
+        /// is a no-op that still returns true, since the sequence is already
+        /// in flight. Returns false only if the sequence cannot start at all
+        /// (e.g. no Visual child to animate) — CollectorLifecycle treats
+        /// false as its cue to destroy the collector immediately instead of
+        /// waiting for a completion event that would never arrive.
         /// </summary>
         public bool PlayFinalBiteSequence()
         {
@@ -198,34 +170,34 @@ namespace Project001.Gameplay.Collectors
 
         private IEnumerator BoardingSequence()
         {
-            // Stays on Back Idle through the bounce itself — the pose only
-            // switches once the bounce completes, which is what reads as the
-            // Mofu turning around to face the Conveyor.
+            // The turn itself happens inside PlayBoardingBounce — nothing
+            // else to apply once it completes, unlike the old sprite swap
+            // that had to happen as a separate step after the bounce.
             yield return WaitForCallback(Animation.PlayBoardingBounce);
-            View.ApplySprite(_frontEatingSprite);
         }
 
         private IEnumerator NormalBiteSequence()
         {
-            // Sprite was already Front Eating from boarding (or the previous
-            // bite) and stays Front Eating throughout — only the punch reacts.
-            View.ApplySprite(_frontEatingSprite);
+            // Already facing toward from boarding (or unchanged since the
+            // previous bite) — only the punch reacts.
             yield return WaitForCallback(Animation.PlayEatingPunch);
         }
 
         private IEnumerator FinalBiteSequence()
         {
-            // Hidden before any of Front Satisfied/Heart shows, so the
+            // Hidden before the satisfied/heart reactions play, so the
             // player never sees the RemainingHunger label read "0".
             View.HideHungerText();
 
-            View.ApplySprite(_frontEatingSprite);
+            // Foregrounded for the whole terminal sequence, not just the
+            // Heart, so an ordinary rider that reaches this collector's
+            // screen position at any point from here through the final
+            // collapse can never visually merge with it — see
+            // CollectorAnimation.EnterTerminalForeground.
+            Animation.EnterTerminalForeground();
+
             yield return WaitForCallback(Animation.PlayEatingPunch);
-
-            View.ApplySprite(_frontSatisfiedSprite);
             yield return WaitForCallback(Animation.PlaySatisfiedPunch);
-
-            View.ApplySprite(_heartSprite);
             yield return WaitForCallback(Animation.PlayHeartPulseAndCollapse);
 
             VisualSequenceComplete?.Invoke();

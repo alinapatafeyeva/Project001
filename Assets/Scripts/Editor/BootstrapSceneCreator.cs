@@ -16,6 +16,7 @@ using UnityEditor.SceneManagement;
 using UnityEngine;
 using UnityEngine.EventSystems;
 using UnityEngine.InputSystem.UI;
+using UnityEngine.Rendering.Universal;
 using UnityEngine.SceneManagement;
 using UnityEngine.UI;
 
@@ -49,13 +50,17 @@ public static class BootstrapSceneCreator
         Scene scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
 
         Camera mainCamera = CreateCamera();
+        CreateKeyLight();
         PixelGrid pixelGrid = CreatePixelGrid();
         ConveyorSystem conveyorSystem = CreateConveyor();
         RecoveryRowController recoveryRowController = CreateRecoveryRow();
         Project001.Gameplay.WaitingLine.WaitingLine waitingLine = CreateWaitingLine();
         FailureController failureController = CreateFailureController(pixelGrid);
-        MonsterSkinDatabase monsterSkinDatabase = CreateMonsterSkinDatabase();
-        CollectorQueueBoard collectorQueueBoard = CreateCollectorQueueBoard(pixelGrid, conveyorSystem, waitingLine, failureController, monsterSkinDatabase);
+        MonsterMaterialDatabase monsterMaterialDatabase = CreateMonsterMaterialDatabase();
+        GameObject mofuVisualPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(MofuPrefabPath);
+        if (mofuVisualPrefab == null)
+            Debug.LogError($"BootstrapSceneCreator: could not load Mofu prefab at '{MofuPrefabPath}'; collectors will have no Visual.");
+        CollectorQueueBoard collectorQueueBoard = CreateCollectorQueueBoard(pixelGrid, conveyorSystem, waitingLine, failureController, monsterMaterialDatabase, mofuVisualPrefab);
         CollectorSelectionController collectorSelectionController = CreateCollectorSelectionController(mainCamera, collectorQueueBoard, waitingLine, recoveryRowController, conveyorSystem);
         VictoryController victoryController = CreateVictoryController(pixelGrid);
         GameplayFlowController gameplayFlowController = CreateGameplayFlowController(victoryController, failureController, collectorSelectionController);
@@ -123,7 +128,88 @@ public static class BootstrapSceneCreator
         camera.orthographicSize = GameplayLayout.ComputeOrthographicSize(9f, 16f);
         cameraObject.transform.position = new Vector3(0f, GameplayLayout.CameraVerticalCenter, -10f);
 
+        AssignUniversalRenderer(cameraObject);
+
         return camera;
+    }
+
+    private const string UniversalPipelineAssetPath = "Assets/Settings/UniversalRP.asset";
+    private const string UniversalRendererDataPath = "Assets/Settings/UniversalRenderer.asset";
+
+    /// <summary>
+    /// Overrides just this camera to render through the Universal Renderer
+    /// registered on UniversalRP.asset (added by the renderer-compatibility
+    /// spike alongside the project's existing, still-default 2D Renderer —
+    /// see UniversalRP.asset's m_RendererDataList and
+    /// Mofu3DRendererSpike). Without this override the camera falls back to
+    /// the pipeline's default (the 2D Renderer), which does not shade URP
+    /// Lit materials against a Directional Light at all — every 3D Mofu
+    /// would render flat/unlit regardless of the key light's own settings.
+    /// Every other 2D visual (SpriteRenderers, UI, PixelGrid) renders
+    /// identically under either renderer, so this only ever affects Mofu.
+    /// Looks the Universal Renderer's index up on the pipeline asset rather
+    /// than hardcoding it, so this keeps working if the renderer list is
+    /// ever reordered.
+    /// </summary>
+    private static void AssignUniversalRenderer(GameObject cameraObject)
+    {
+        var pipelineAsset = AssetDatabase.LoadAssetAtPath<UniversalRenderPipelineAsset>(UniversalPipelineAssetPath);
+        var rendererData = AssetDatabase.LoadAssetAtPath<UniversalRendererData>(UniversalRendererDataPath);
+        if (pipelineAsset == null || rendererData == null)
+        {
+            Debug.LogError($"BootstrapSceneCreator: could not load '{UniversalPipelineAssetPath}' and/or '{UniversalRendererDataPath}'; Main Camera will fall back to the pipeline's default renderer and Mofu will render unlit.");
+            return;
+        }
+
+        var serializedPipelineAsset = new SerializedObject(pipelineAsset);
+        SerializedProperty rendererDataList = serializedPipelineAsset.FindProperty("m_RendererDataList");
+
+        int rendererIndex = -1;
+        for (int i = 0; i < rendererDataList.arraySize; i++)
+        {
+            if (rendererDataList.GetArrayElementAtIndex(i).objectReferenceValue == rendererData)
+            {
+                rendererIndex = i;
+                break;
+            }
+        }
+
+        if (rendererIndex < 0)
+        {
+            Debug.LogError($"BootstrapSceneCreator: '{rendererData.name}' is not registered in '{pipelineAsset.name}''s renderer list; Main Camera will fall back to the pipeline's default renderer and Mofu will render unlit.");
+            return;
+        }
+
+        var cameraData = cameraObject.AddComponent<UniversalAdditionalCameraData>();
+        cameraData.SetRenderer(rendererIndex);
+    }
+
+    /// <summary>
+    /// The only light in the scene: one Directional Light, still simple,
+    /// white, and neutral (default intensity/shadow settings) but no longer
+    /// Unity's own standard default rotation for a new light (50, -30, 0) —
+    /// that angle's travel direction sits close enough to the camera's own
+    /// forward axis (both facing mostly +Z) that a camera-facing Mofu's
+    /// visible hemisphere was lit almost head-on, which read as flat/
+    /// marker-filled instead of showing the model's actual sculpted
+    /// surface relief. (40, -55, 0) keeps the same general "high and to one
+    /// side" key-light feel but swings yaw further around (-55 vs -30) and
+    /// eases pitch back slightly (40 vs 50), producing a more oblique,
+    /// raking angle across the model — still a simple single-light setup,
+    /// not a production lighting rig, just aimed so the geometry is
+    /// actually readable. Added for the 3D Mofu presentation spike so the
+    /// model's volume, silhouette, and materials are actually visible (the
+    /// URP Lit materials render flat/unlit without any light in scene).
+    /// </summary>
+    private static void CreateKeyLight()
+    {
+        var lightObject = new GameObject("Directional Light", typeof(Light));
+        lightObject.transform.rotation = Quaternion.Euler(40f, -55f, 0f);
+
+        var light = lightObject.GetComponent<Light>();
+        light.type = LightType.Directional;
+        light.color = Color.white;
+        light.intensity = 1f;
     }
 
     private static PixelGrid CreatePixelGrid()
@@ -167,7 +253,12 @@ public static class BootstrapSceneCreator
         var serializedSystem = new SerializedObject(conveyorSystem);
         serializedSystem.FindProperty("conveyorPath").objectReferenceValue = conveyorPath;
         serializedSystem.FindProperty("boardingProgress").floatValue = 0.55f;
-        serializedSystem.FindProperty("boardingClearance").floatValue = 1f;
+        // GameplayLayout.ConveyorRiderMinimumSpacing, not a bare literal —
+        // this must safely exceed the rendered Mofu footprint (see its own
+        // derivation comment) or riders that board close together end up
+        // permanently overlapping, since every rider moves at the same
+        // fixed speed and never closes or opens that gap afterward.
+        serializedSystem.FindProperty("boardingClearance").floatValue = GameplayLayout.ConveyorRiderMinimumSpacing;
         serializedSystem.ApplyModifiedPropertiesWithoutUndo();
 
         return conveyorSystem;
@@ -218,14 +309,16 @@ public static class BootstrapSceneCreator
         ConveyorSystem conveyorSystem,
         Project001.Gameplay.WaitingLine.WaitingLine waitingLine,
         FailureController failureController,
-        MonsterSkinDatabase monsterSkinDatabase)
+        MonsterMaterialDatabase monsterMaterialDatabase,
+        GameObject mofuVisualPrefab)
     {
         var boardObject = new GameObject("CollectorQueueBoard", typeof(CollectorQueueBoard));
         boardObject.transform.position = new Vector3(0f, GameplayLayout.CollectorQueueBoardPositionY, 0f);
 
         var collectorQueueBoard = boardObject.GetComponent<CollectorQueueBoard>();
         var serializedBoard = new SerializedObject(collectorQueueBoard);
-        serializedBoard.FindProperty("monsterSkinDatabase").objectReferenceValue = monsterSkinDatabase;
+        serializedBoard.FindProperty("monsterMaterialDatabase").objectReferenceValue = monsterMaterialDatabase;
+        serializedBoard.FindProperty("mofuVisualPrefab").objectReferenceValue = mofuVisualPrefab;
         serializedBoard.FindProperty("pixelGrid").objectReferenceValue = pixelGrid;
         serializedBoard.FindProperty("conveyorSystem").objectReferenceValue = conveyorSystem;
         serializedBoard.FindProperty("waitingLine").objectReferenceValue = waitingLine;
@@ -235,67 +328,58 @@ public static class BootstrapSceneCreator
         return collectorQueueBoard;
     }
 
-    private const string ClassicCharactersRoot = "Assets/Art/Sprites/Themes/Classic/Characters";
+    private const string CharacterMaterialsRoot = "Assets/Art/Themes/Classic/Character/Materials";
+    private const string MofuPrefabPath = "Assets/Art/Themes/Classic/Character/Mofu.prefab";
 
     /// <summary>
-    /// Which Classic/Characters/Character_XX folder backs each MonsterColor.
-    /// Character IDs are stable per the approved Themes migration; this map
-    /// is the only place a MonsterColor resolves to one.
+    /// Which Materials/Mofu_{Name}.mat asset backs each MonsterColor. Created
+    /// by the 3D presentation spike's Mofu3DSetup tooling; this map is the
+    /// only place a MonsterColor resolves to one.
     /// </summary>
-    private static readonly Dictionary<MonsterColor, string> MonsterColorToCharacterFolder = new Dictionary<MonsterColor, string>
+    private static readonly Dictionary<MonsterColor, string> MonsterColorToMaterialName = new Dictionary<MonsterColor, string>
     {
-        { MonsterColor.Purple, "Character_11" },
-        { MonsterColor.Green, "Character_05" },
-        { MonsterColor.Orange, "Character_02" },
+        { MonsterColor.Purple, "Mofu_Purple" },
+        { MonsterColor.Green, "Mofu_Green" },
+        { MonsterColor.Orange, "Mofu_Orange" },
     };
 
     /// <summary>
-    /// Builds the MonsterSkinDatabase scene object and populates one entry
-    /// per MonsterColor (Purple, Green, Orange) by loading each color's five
-    /// sprites from its Classic/Characters/Character_XX folder via
-    /// AssetDatabase — editor-only, one-time wiring, exactly like every other
-    /// cross-reference this class sets up. Runtime code never loads sprites
-    /// this way: MonsterSkinDatabase only ever reads the serialized entries
-    /// this produces.
+    /// Builds the MonsterMaterialDatabase scene object and populates one
+    /// entry per MonsterColor (Purple, Green, Orange) by loading each
+    /// color's material from Character/Materials via AssetDatabase —
+    /// editor-only, one-time wiring, exactly like every other cross-reference
+    /// this class sets up. Runtime code never loads materials this way:
+    /// MonsterMaterialDatabase only ever reads the serialized entries this
+    /// produces.
     /// </summary>
-    private static MonsterSkinDatabase CreateMonsterSkinDatabase()
+    private static MonsterMaterialDatabase CreateMonsterMaterialDatabase()
     {
-        var databaseObject = new GameObject("MonsterSkinDatabase", typeof(MonsterSkinDatabase));
-        var database = databaseObject.GetComponent<MonsterSkinDatabase>();
+        var databaseObject = new GameObject("MonsterMaterialDatabase", typeof(MonsterMaterialDatabase));
+        var database = databaseObject.GetComponent<MonsterMaterialDatabase>();
 
         var monsterColors = new[] { MonsterColor.Purple, MonsterColor.Green, MonsterColor.Orange };
 
         var serializedDatabase = new SerializedObject(database);
-        SerializedProperty skinsProperty = serializedDatabase.FindProperty("skins");
-        skinsProperty.arraySize = monsterColors.Length;
+        SerializedProperty materialsProperty = serializedDatabase.FindProperty("materials");
+        materialsProperty.arraySize = monsterColors.Length;
 
         for (int i = 0; i < monsterColors.Length; i++)
         {
             MonsterColor monsterColor = monsterColors[i];
-            SerializedProperty entryProperty = skinsProperty.GetArrayElementAtIndex(i);
+            SerializedProperty entryProperty = materialsProperty.GetArrayElementAtIndex(i);
             entryProperty.FindPropertyRelative("color").enumValueIndex = (int)monsterColor;
 
-            SerializedProperty skinProperty = entryProperty.FindPropertyRelative("skin");
-            string folder = $"{ClassicCharactersRoot}/{MonsterColorToCharacterFolder[monsterColor]}";
-            AssignSkinSprite(skinProperty, "backIdle", $"{folder}/Mofu_Back_Idle.png");
-            AssignSkinSprite(skinProperty, "frontIdle", $"{folder}/Mofu_Front_Idle.png");
-            AssignSkinSprite(skinProperty, "frontEating", $"{folder}/Mofu_Front_Eating.png");
-            AssignSkinSprite(skinProperty, "frontSatisfied", $"{folder}/Mofu_Front_Satisfied.png");
-            AssignSkinSprite(skinProperty, "heart", $"{folder}/Mofu_Heart.png");
+            string assetPath = $"{CharacterMaterialsRoot}/{MonsterColorToMaterialName[monsterColor]}.mat";
+            var material = AssetDatabase.LoadAssetAtPath<Material>(assetPath);
+            if (material == null)
+                Debug.LogError($"BootstrapSceneCreator: could not load material at '{assetPath}'; MonsterMaterialDatabase will have no material for {monsterColor}.");
+
+            entryProperty.FindPropertyRelative("material").objectReferenceValue = material;
         }
 
         serializedDatabase.ApplyModifiedPropertiesWithoutUndo();
 
         return database;
-    }
-
-    private static void AssignSkinSprite(SerializedProperty skinProperty, string fieldName, string assetPath)
-    {
-        var sprite = AssetDatabase.LoadAssetAtPath<Sprite>(assetPath);
-        if (sprite == null)
-            Debug.LogError($"BootstrapSceneCreator: could not load sprite at '{assetPath}'; MonsterSkinDatabase will have no {fieldName} sprite there.");
-
-        skinProperty.FindPropertyRelative(fieldName).objectReferenceValue = sprite;
     }
 
     private static CollectorSelectionController CreateCollectorSelectionController(

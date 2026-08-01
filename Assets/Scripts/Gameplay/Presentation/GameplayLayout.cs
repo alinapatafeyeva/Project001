@@ -73,6 +73,32 @@ namespace Project001.Gameplay.Presentation
 
         public static float CollectorVisibleHeight => CollectorSpriteScale * MofuVisibleHeightRatio;
 
+        // ----- Conveyor rider spacing -----------------------------------------
+        // The minimum path-progress (arc-length) distance ConveyorSystem must
+        // keep between the boarding point and every already-riding collector
+        // before it lets another one board (see ConveyorSystem.
+        // boardingClearance, assigned this value by BootstrapSceneCreator).
+        // Two riders that board with at least this much arc-length between
+        // them keep exactly that separation forever afterward — every rider
+        // moves at the same fixed speed, so their relative spacing along the
+        // path never changes once boarding is behind them, on straight
+        // sections and rounded corners alike.
+        //
+        // Derived from the rendered footprint (CollectorVisibleHeight, the
+        // larger of the two visible-extent tokens above — the model's own
+        // mesh footprint is close to circular, see Mofu3DSetup, so either
+        // axis is a reasonable stand-in) plus ConveyorRiderVisualGap, an
+        // explicit breathing-room margin sized to comfortably absorb the
+        // small chord-vs-arc "squeeze" a tight corner introduces (two points
+        // separated by a given arc length sit slightly closer together in a
+        // straight line while both are inside the same rounded corner) — at
+        // ConveyorPath's authored cornerRadius (1 world unit, see
+        // BootstrapSceneCreator.CreateConveyor), the worst case is only
+        // about a 10% reduction, well inside this margin.
+        public const float ConveyorRiderVisualGap = 0.35f;
+
+        public static float ConveyorRiderMinimumSpacing => CollectorVisibleHeight + ConveyorRiderVisualGap;
+
         // ----- WaitingLine's own presentation tokens -------------------------
         // WaitingSlotSize is independent of CollectorSpriteScale: WaitingLine
         // only ever snaps an arriving collector to a slot's world position
