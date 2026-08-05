@@ -12,24 +12,22 @@ namespace Project001.Gameplay.Collectors
     /// <summary>
     /// Generates vertical queues of CollectorView objects on Initialize. Queue
     /// count, per-queue collector order, each collector's MatchTypeId,
-    /// MonsterColor, and hunger capacity all come from the injected level
+    /// MatchId, and hunger capacity all come from the injected level
     /// collector-queue data. Appearance is resolved here only as far as
-    /// instantiating each collector's Visual from mofuVisualPrefab, picking
-    /// its material (via monsterMaterialDatabase), and showing its
-    /// facing-away idle pose — CollectorPresentation and CollectorAnimation
-    /// own everything about how that model is actually posed/animated.
-    /// Queued collectors face away until selected; CollectorSelectionController
-    /// switches a collector to facing toward the moment it boards the Conveyor
-    /// (see CollectorSelectionController.TrySelect), so a collector never
-    /// remains facing away once it leaves this board.
+    /// resolving each collector's MatchId to a Character_XX prefab (via
+    /// characterDatabase) and instantiating it as that collector's Visual,
+    /// then showing its facing-away idle pose — CollectorPresentation and
+    /// CollectorAnimation own everything about how that model is actually
+    /// posed/animated. Queued collectors face away until selected;
+    /// CollectorSelectionController switches a collector to facing toward
+    /// the moment it boards the Conveyor (see
+    /// CollectorSelectionController.TrySelect), so a collector never remains
+    /// facing away once it leaves this board.
     /// </summary>
     public class CollectorQueueBoard : MonoBehaviour, ICollectorSource
     {
-        [SerializeField, Tooltip("Resolves each collector's MonsterColor to the Material it should display.")]
-        private MonsterMaterialDatabase monsterMaterialDatabase;
-
-        [SerializeField, Tooltip("Prefab instantiated as every collector's Visual child.")]
-        private GameObject mofuVisualPrefab;
+        [SerializeField, Tooltip("Resolves each collector's MatchId to the Character_XX prefab it should display.")]
+        private CharacterDatabase characterDatabase;
 
         [SerializeField, Tooltip("Gap between neighbouring queues, in world units.")]
         [Min(0f)]
@@ -80,24 +78,24 @@ namespace Project001.Gameplay.Collectors
         }
 
         /// <summary>
-        /// Resolves the Material for the given MonsterColor via
-        /// monsterMaterialDatabase. MonsterMaterialDatabase.GetMaterial never
-        /// throws, so this never does either — if monsterMaterialDatabase
-        /// itself is unassigned, logs a clear error and returns null rather
-        /// than throwing, so a collector simply shows Unity's default
-        /// material instead of failing to build. Beyond that, this board
-        /// never has to reason about a missing material — that is entirely
-        /// MonsterMaterialDatabase's responsibility.
+        /// Resolves the Visual prefab for the given MatchId via
+        /// characterDatabase. CharacterDatabase.GetPrefab never throws, so
+        /// this never does either — if characterDatabase itself is
+        /// unassigned, logs a clear error and returns null rather than
+        /// throwing, so a collector simply has no Visual instead of failing
+        /// to build. Beyond that, this board never has to reason about a
+        /// missing prefab — that is entirely CharacterDatabase's
+        /// responsibility.
         /// </summary>
-        private Material ResolveMaterial(MonsterColor monsterColor)
+        private GameObject ResolvePrefab(int matchId)
         {
-            if (monsterMaterialDatabase == null)
+            if (characterDatabase == null)
             {
-                Debug.LogError($"CollectorQueueBoard: '{name}' has no MonsterMaterialDatabase assigned; collectors will show the default material.", this);
+                Debug.LogError($"CollectorQueueBoard: '{name}' has no CharacterDatabase assigned; collectors will have no Visual.", this);
                 return null;
             }
 
-            return monsterMaterialDatabase.GetMaterial(monsterColor);
+            return characterDatabase.GetPrefab(matchId);
         }
 
         private void GenerateBoard(IReadOnlyList<CollectorQueueDefinition> collectorQueues)
@@ -153,10 +151,10 @@ namespace Project001.Gameplay.Collectors
                     // relative to its authored proportions.
                     collectorObject.transform.localScale = Vector3.one * GameplayLayout.CollectorSpriteScale;
 
-                    Material material = ResolveMaterial(collectorDefinition.MonsterColor);
+                    GameObject visualPrefab = ResolvePrefab(collectorDefinition.MatchId);
 
                     var collectorView = collectorObject.GetComponent<CollectorView>();
-                    collectorView.Initialize(mofuVisualPrefab, material);
+                    collectorView.Initialize(visualPrefab);
 
                     var collectorPresentation = collectorObject.GetComponent<CollectorPresentation>();
                     collectorPresentation.ShowWaitingBackIdle();

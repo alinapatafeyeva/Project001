@@ -18,10 +18,10 @@ namespace Project001.Gameplay.Collectors
     ///           collapse are the only things that ever touch its
     ///           localScale/localPosition, and never its localRotation
     ///           (always identity)
-    ///           └── MofuModel — the actual Mofu prefab instance (injected
-    ///               via Initialize(), pivot-corrected against its own mesh
-    ///               bounds), carrying the resolved MonsterColor material on
-    ///               its MeshRenderer(s)
+    ///           └── MofuModel — the resolved Character_XX prefab instance
+    ///               (injected via Initialize(), pivot-corrected against its
+    ///               own mesh bounds), already carrying its own baked
+    ///               Character_XX material on its renderer(s)
     ///
     /// Splitting yaw (Visual) from scale/position (VisualMotion) is what
     /// makes it structurally impossible for a reaction animation to
@@ -31,12 +31,13 @@ namespace Project001.Gameplay.Collectors
     /// single-node design was the actual root cause of the rotation bugs
     /// this replaced.
     ///
-    /// This view never decides pose or facing, only which prefab/material to
+    /// This view never decides pose or facing, only which prefab to
     /// instantiate; CollectorPresentation and CollectorAnimation own the
-    /// rest. Material is applied with sharedMaterial (never an instanced
-    /// copy) and is never a tint layered on top: MonsterColor selects which
-    /// of the (currently 3, trivially more later) material assets is used,
-    /// via MonsterMaterialDatabase.
+    /// rest. The prefab it is given (resolved by CollectorQueueBoard via
+    /// CharacterDatabase from the collector's MatchId) already carries its
+    /// own baked Character_XX material on every renderer — there is no
+    /// runtime material selection or swap here, unlike the shared-model/
+    /// resolved-color scheme this replaced.
     ///
     /// Also owns a RemainingHunger text indicator kept in sync via
     /// ConveyorRider.RemainingHungerChanged — this view never reads or
@@ -161,17 +162,14 @@ namespace Project001.Gameplay.Collectors
 
         /// <summary>
         /// Builds the Visual/VisualMotion/MofuModel hierarchy (see the class
-        /// remarks) and applies material to every MeshRenderer found under
-        /// MofuModel. Must be called exactly once, by CollectorQueueBoard
+        /// remarks). Must be called exactly once, by CollectorQueueBoard
         /// right after this collector is constructed and before
         /// CollectorPresentation.ShowWaitingBackIdle() — there is no
         /// Inspector session for this component to source a prefab
         /// reference from (collectors are still built at runtime, never from
         /// a prefab themselves), so it is injected here the same way
         /// ConveyorRider, PixelConsumer, and CollectorLifecycle are each
-        /// initialized. Applies material via sharedMaterial, never an
-        /// instanced copy — MonsterColor selects which of a small, shared set
-        /// of material assets is used, never a per-collector tint.
+        /// initialized.
         ///
         /// Visual and VisualMotion are both plain, empty pivot GameObjects —
         /// never the prefab instance itself — left at local position zero,
@@ -181,23 +179,28 @@ namespace Project001.Gameplay.Collectors
         /// the two pivots above them is currently being animated.
         ///
         /// MofuModel (VisualMotion's child) is the actual visualPrefab
-        /// instance, carrying its own authored localScale (Mofu3DSetup.
-        /// PrefabRootScale, preserved by leaving it untouched after
-        /// Instantiate) plus a derived localPosition correction: the
-        /// imported Mofu.fbx is pivoted at the model's feet (local Y running
-        /// ~0 to ~1, not centered on Y 0), while every queue/conveyor slot in
+        /// instance, carrying its own authored localScale (derived by
+        /// CharacterAssetBuilder, preserved by leaving it untouched after
+        /// Instantiate) plus a derived localPosition correction: an imported
+        /// model is typically pivoted at its feet (local Y running ~0 to ~1,
+        /// not centered on Y 0), while every queue/conveyor slot in
         /// GameplayLayout places a collector's root at the visual CENTER of
         /// the old, center-pivoted sprite (see GameplayLayout's symmetric
         /// CollectorVisibleHeight*0.5 usage). Left uncorrected, every queued
-        /// or riding Mofu would render shifted upward by roughly half its
-        /// own visible height. The correction below re-centers MofuModel by
-        /// reading its own combined mesh bounds (CollectorAnimation.
+        /// or riding character would render shifted upward by roughly half
+        /// its own visible height. The correction below re-centers MofuModel
+        /// by reading its own combined mesh bounds (CollectorAnimation.
         /// ComputeLocalRendererBounds, shared rather than duplicated) and
         /// offsetting by the negative of that bounds center — derived from
-        /// the model's actual geometry, not a hand-measured constant, so it
-        /// keeps working if the FBX or PrefabRootScale ever changes.
+        /// the model's actual geometry, not a hand-measured constant.
+        ///
+        /// No material is applied here: visualPrefab already carries its own
+        /// baked Character_XX material on every renderer (built once, at
+        /// editor time, by CharacterAssetBuilder), so Instantiate() alone
+        /// produces the correct, fully-textured result — there is nothing
+        /// left for this method to swap or tint.
         /// </summary>
-        public void Initialize(GameObject visualPrefab, Material material)
+        public void Initialize(GameObject visualPrefab)
         {
             var visualWrapper = new GameObject("Visual");
             visualWrapper.transform.SetParent(transform, false);
@@ -213,12 +216,6 @@ namespace Project001.Gameplay.Collectors
             modelInstance.transform.localPosition = localBounds.HasValue
                 ? -Vector3.Scale(modelInstance.transform.localScale, localBounds.Value.center)
                 : Vector3.zero;
-
-            if (material != null)
-            {
-                foreach (var meshRenderer in modelInstance.GetComponentsInChildren<MeshRenderer>())
-                    meshRenderer.sharedMaterial = material;
-            }
 
             _visual = visualWrapper.transform;
             _visualMotion = visualMotion.transform;

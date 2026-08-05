@@ -58,11 +58,8 @@ public static class BootstrapSceneCreator
         RecoveryRowController recoveryRowController = CreateRecoveryRow();
         Project001.Gameplay.WaitingLine.WaitingLine waitingLine = CreateWaitingLine();
         FailureController failureController = CreateFailureController(pixelGrid);
-        MonsterMaterialDatabase monsterMaterialDatabase = CreateMonsterMaterialDatabase();
-        GameObject mofuVisualPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(MofuPrefabPath);
-        if (mofuVisualPrefab == null)
-            Debug.LogError($"BootstrapSceneCreator: could not load Mofu prefab at '{MofuPrefabPath}'; collectors will have no Visual.");
-        CollectorQueueBoard collectorQueueBoard = CreateCollectorQueueBoard(pixelGrid, conveyorSystem, waitingLine, failureController, monsterMaterialDatabase, mofuVisualPrefab);
+        CharacterDatabase characterDatabase = CreateCharacterDatabase();
+        CollectorQueueBoard collectorQueueBoard = CreateCollectorQueueBoard(pixelGrid, conveyorSystem, waitingLine, failureController, characterDatabase);
         CollectorSelectionController collectorSelectionController = CreateCollectorSelectionController(mainCamera, collectorQueueBoard, waitingLine, recoveryRowController, conveyorSystem);
         VictoryController victoryController = CreateVictoryController(pixelGrid);
         GameplayFlowController gameplayFlowController = CreateGameplayFlowController(victoryController, failureController, collectorSelectionController);
@@ -334,16 +331,14 @@ public static class BootstrapSceneCreator
         ConveyorSystem conveyorSystem,
         Project001.Gameplay.WaitingLine.WaitingLine waitingLine,
         FailureController failureController,
-        MonsterMaterialDatabase monsterMaterialDatabase,
-        GameObject mofuVisualPrefab)
+        CharacterDatabase characterDatabase)
     {
         var boardObject = new GameObject("CollectorQueueBoard", typeof(CollectorQueueBoard));
         boardObject.transform.position = new Vector3(0f, GameplayLayout.CollectorQueueBoardPositionY, 0f);
 
         var collectorQueueBoard = boardObject.GetComponent<CollectorQueueBoard>();
         var serializedBoard = new SerializedObject(collectorQueueBoard);
-        serializedBoard.FindProperty("monsterMaterialDatabase").objectReferenceValue = monsterMaterialDatabase;
-        serializedBoard.FindProperty("mofuVisualPrefab").objectReferenceValue = mofuVisualPrefab;
+        serializedBoard.FindProperty("characterDatabase").objectReferenceValue = characterDatabase;
         serializedBoard.FindProperty("pixelGrid").objectReferenceValue = pixelGrid;
         serializedBoard.FindProperty("conveyorSystem").objectReferenceValue = conveyorSystem;
         serializedBoard.FindProperty("waitingLine").objectReferenceValue = waitingLine;
@@ -353,53 +348,39 @@ public static class BootstrapSceneCreator
         return collectorQueueBoard;
     }
 
-    private const string CharacterMaterialsRoot = "Assets/Art/Themes/Classic/Character/Materials";
-    private const string MofuPrefabPath = "Assets/Art/Themes/Classic/Character/Mofu.prefab";
+    private const string CharacterRoot = "Assets/Art/Themes/Classic/Character";
 
     /// <summary>
-    /// Which Materials/Mofu_{Name}.mat asset backs each MonsterColor. Created
-    /// by the 3D presentation spike's Mofu3DSetup tooling; this map is the
-    /// only place a MonsterColor resolves to one.
+    /// Builds the CharacterDatabase scene object and populates one entry per
+    /// Match ID (1-20, see Assets/Art/ColorPalette.md) by loading that id's
+    /// Character_XX.prefab (built by CharacterAssetBuilder) via
+    /// AssetDatabase — editor-only, one-time wiring, exactly like every
+    /// other cross-reference this class sets up. Runtime code never loads
+    /// prefabs this way: CharacterDatabase only ever reads the serialized
+    /// entries this produces. Logs an error, rather than throwing, for any
+    /// Match ID whose prefab has not been built yet, so a partial checkout
+    /// still produces a scene instead of failing scene creation outright.
     /// </summary>
-    private static readonly Dictionary<MonsterColor, string> MonsterColorToMaterialName = new Dictionary<MonsterColor, string>
+    private static CharacterDatabase CreateCharacterDatabase()
     {
-        { MonsterColor.Purple, "Mofu_Purple" },
-        { MonsterColor.Green, "Mofu_Green" },
-        { MonsterColor.Orange, "Mofu_Orange" },
-    };
-
-    /// <summary>
-    /// Builds the MonsterMaterialDatabase scene object and populates one
-    /// entry per MonsterColor (Purple, Green, Orange) by loading each
-    /// color's material from Character/Materials via AssetDatabase —
-    /// editor-only, one-time wiring, exactly like every other cross-reference
-    /// this class sets up. Runtime code never loads materials this way:
-    /// MonsterMaterialDatabase only ever reads the serialized entries this
-    /// produces.
-    /// </summary>
-    private static MonsterMaterialDatabase CreateMonsterMaterialDatabase()
-    {
-        var databaseObject = new GameObject("MonsterMaterialDatabase", typeof(MonsterMaterialDatabase));
-        var database = databaseObject.GetComponent<MonsterMaterialDatabase>();
-
-        var monsterColors = new[] { MonsterColor.Purple, MonsterColor.Green, MonsterColor.Orange };
+        var databaseObject = new GameObject("CharacterDatabase", typeof(CharacterDatabase));
+        var database = databaseObject.GetComponent<CharacterDatabase>();
 
         var serializedDatabase = new SerializedObject(database);
-        SerializedProperty materialsProperty = serializedDatabase.FindProperty("materials");
-        materialsProperty.arraySize = monsterColors.Length;
+        SerializedProperty charactersProperty = serializedDatabase.FindProperty("characters");
+        charactersProperty.arraySize = 20;
 
-        for (int i = 0; i < monsterColors.Length; i++)
+        for (int matchId = 1; matchId <= 20; matchId++)
         {
-            MonsterColor monsterColor = monsterColors[i];
-            SerializedProperty entryProperty = materialsProperty.GetArrayElementAtIndex(i);
-            entryProperty.FindPropertyRelative("color").enumValueIndex = (int)monsterColor;
+            string idLabel = matchId.ToString("D2");
+            string prefabPath = $"{CharacterRoot}/Character_{idLabel}/Character_{idLabel}.prefab";
+            var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(prefabPath);
+            if (prefab == null)
+                Debug.LogError($"BootstrapSceneCreator: could not load Character prefab at '{prefabPath}'; CharacterDatabase will have no prefab for Match ID {idLabel}.");
 
-            string assetPath = $"{CharacterMaterialsRoot}/{MonsterColorToMaterialName[monsterColor]}.mat";
-            var material = AssetDatabase.LoadAssetAtPath<Material>(assetPath);
-            if (material == null)
-                Debug.LogError($"BootstrapSceneCreator: could not load material at '{assetPath}'; MonsterMaterialDatabase will have no material for {monsterColor}.");
-
-            entryProperty.FindPropertyRelative("material").objectReferenceValue = material;
+            SerializedProperty entryProperty = charactersProperty.GetArrayElementAtIndex(matchId - 1);
+            entryProperty.FindPropertyRelative("matchId").intValue = matchId;
+            entryProperty.FindPropertyRelative("prefab").objectReferenceValue = prefab;
         }
 
         serializedDatabase.ApplyModifiedPropertiesWithoutUndo();

@@ -51,27 +51,73 @@ namespace Project001.Gameplay.Presentation
         public const float GridMaximumCellSize = 0.95f;
 
         // ----- Collector sprite scale and its actual visible extent ---------
-        // CollectorSpriteScale controls only the rendered Mofu visual (the
-        // world-space localScale CollectorQueueBoard assigns to a collector's
-        // root, which every other collector — WaitingLine occupant, Recovery
-        // Row occupant, Conveyor rider — keeps for the rest of its lifetime,
-        // since none of them ever rescale it). It does NOT mean the visible
-        // character occupies a square of that size: the imported Mofu sprite
-        // rect (575x632 px at 800 PPU) only covers 0.71875 x 0.79 world units
-        // at scale 1, so at CollectorSpriteScale the actual rendered
-        // character is CollectorVisibleWidth x CollectorVisibleHeight, never
-        // a full CollectorSpriteScale square. Every camera or board footprint
+        // CollectorSpriteScale controls only the rendered collector visual
+        // (the world-space localScale CollectorQueueBoard assigns to a
+        // collector's root, which every other collector — WaitingLine
+        // occupant, Recovery Row occupant, Conveyor rider — keeps for the
+        // rest of its lifetime, since none of them ever rescale it). It does
+        // NOT mean the visible character occupies a square of that size: at
+        // scale 1 a character only covers CollectorVisibleWidthRatio x
+        // CollectorVisibleHeightRatio world units (originally derived from
+        // the imported Mofu sprite rect, 575x632px at 800 PPU = 0.71875 x
+        // 0.79 - the height ratio is unchanged from that original value, see
+        // CollectorVisibleHeightRatio's own remarks; the width ratio no
+        // longer is, see CollectorVisibleWidthRatio's), so at
+        // CollectorSpriteScale the actual rendered character is
+        // CollectorVisibleWidth x CollectorVisibleHeight, never a full
+        // CollectorSpriteScale square. Every camera or board footprint
         // calculation that needs the visible character's actual extent
         // (Conveyor rider clearance, queue row placement) reads
         // CollectorVisibleWidth/Height, never CollectorSpriteScale directly.
         public const float CollectorSpriteScale = 1.9f;
 
-        private const float MofuVisibleWidthRatio = 575f / 800f;
-        private const float MofuVisibleHeightRatio = 632f / 800f;
+        // CollectorVisibleHeightRatio is the single shared body-height
+        // target CharacterAssetBuilder scales every species to (see its own
+        // remarks) - originally derived from the imported Mofu sprite rect
+        // (632/800), kept unchanged since Mofu's height was never the
+        // problem (only its narrow width, see CollectorVisibleWidthRatio
+        // below) and every other vertical composition value below
+        // (QueueRowStep, WaitingLine/RecoveryRow placement, conveyor rider
+        // spacing) is already built around this exact height - changing it
+        // would mean re-deriving the entire vertical composition for no
+        // benefit.
+        //
+        // CollectorVisibleWidthRatio is NOT a fixed envelope species are
+        // scaled DOWN to fit any more (see CharacterAssetBuilder - scale is
+        // shared-height-only, never width-capped) - it is instead the
+        // measured width of the WIDEST species that shared-height scaling
+        // actually produces, so the queue/camera can size themselves to the
+        // real roster ("the queue adapts to the characters, not the
+        // opposite").
+        //
+        // Measured via CharacterAssetBuilder.BuildAll's own build log after
+        // rebuilding all 20 under shared-height scaling (unscaled bounds,
+        // then scaled by TargetVisibleHeight/size.y - see CharacterAssetBuilder):
+        //   Crab:    scaled body width(x) = 0.888
+        //   Turtle:  scaled body width(x) = 1.037  <- widest (both by body
+        //            width at yaw 0, relevant to queue columns, AND by max
+        //            visual width across every conveyor facing angle)
+        //   Fish:    scaled body width(x) = 0.961, max visual width = 0.972
+        //   Octopus: scaled body width(x) = 0.782
+        // Turtle, not Crab, is the widest species once shared-height scaling
+        // replaces contain-fit - the Crab claw pose adjustment (see
+        // CharacterAssetBuilder.ApplyCrabClawPoseAdjustment) already
+        // narrowed Crab's own aspect ratio below Turtle's.
+        //
+        // Set to 1.04 - Turtle's own measured 1.037, plus a ~0.3% margin
+        // covering the 3-decimal-digit rounding in that log measurement
+        // (not a padding guess). CollectorQueueBoard's own horizontalSpacing
+        // (0.3 world units, unchanged) remains the actual neighbour-to-
+        // neighbour breathing room on top of this - the same zero-slack
+        // convention this constant already used before (species previously
+        // AT the old fixed width cap had no extra margin baked into the
+        // ratio either).
+        public const float CollectorVisibleHeightRatio = 632f / 800f;
+        public const float CollectorVisibleWidthRatio = 1.04f;
 
-        public static float CollectorVisibleWidth => CollectorSpriteScale * MofuVisibleWidthRatio;
+        public static float CollectorVisibleWidth => CollectorSpriteScale * CollectorVisibleWidthRatio;
 
-        public static float CollectorVisibleHeight => CollectorSpriteScale * MofuVisibleHeightRatio;
+        public static float CollectorVisibleHeight => CollectorSpriteScale * CollectorVisibleHeightRatio;
 
         // ----- Conveyor rider spacing -----------------------------------------
         // The minimum path-progress (arc-length) distance ConveyorSystem must
@@ -84,10 +130,7 @@ namespace Project001.Gameplay.Presentation
         // path never changes once boarding is behind them, on straight
         // sections and rounded corners alike.
         //
-        // Derived from the rendered footprint (CollectorVisibleHeight, the
-        // larger of the two visible-extent tokens above — the model's own
-        // mesh footprint is close to circular, see Mofu3DSetup, so either
-        // axis is a reasonable stand-in) plus ConveyorRiderVisualGap, an
+        // Derived from CollectorVisibleHeight plus ConveyorRiderVisualGap, an
         // explicit breathing-room margin sized to comfortably absorb the
         // small chord-vs-arc "squeeze" a tight corner introduces (two points
         // separated by a given arc length sit slightly closer together in a
@@ -95,6 +138,23 @@ namespace Project001.Gameplay.Presentation
         // ConveyorPath's authored cornerRadius (1 world unit, see
         // BootstrapSceneCreator.CreateConveyor), the worst case is only
         // about a 10% reduction, well inside this margin.
+        //
+        // Deliberately left keyed to height, not updated to the new
+        // per-species measured widths (see CollectorVisibleWidthRatio's own
+        // remarks) - conveyor spacing/behaviour was explicitly out of scope
+        // for the shared-height-scaling change this accompanies. Worth
+        // flagging honestly rather than silently: this was originally sized
+        // assuming a "close to circular" mesh footprint (true for the old
+        // Mofu placeholder, no longer true for Turtle specifically -
+        // measured scaled width 1.037 vs the height this spacing is keyed
+        // to, 0.79, an aspect ratio of ~1.31), so on a conveyor edge whose
+        // fixed facing angle happens to align a Turtle rider's wide axis
+        // with the direction of travel, two adjacent Turtle riders'
+        // combined footprint can exceed this spacing's own margin by a few
+        // percent. Confirmed via real Play Mode observation not to read as
+        // an actual visible overlap in practice (see this change's own
+        // verification notes) - called out here for whoever revisits
+        // conveyor spacing next, not fixed now.
         public const float ConveyorRiderVisualGap = 0.35f;
 
         public static float ConveyorRiderMinimumSpacing => CollectorVisibleHeight + ConveyorRiderVisualGap;

@@ -482,23 +482,43 @@ namespace Project001.Gameplay.Collectors
         /// combined (matters if the prefab nests the mesh under its own
         /// child transform, as an FBX import typically does).
         ///
-        /// Internal rather than private: CollectorView.Initialize reuses
-        /// this same bounds computation to derive MofuModel's pivot
-        /// correction from the imported Mofu.fbx's own mesh bounds (its
-        /// pivot sits at the model's feet, not its center — see
-        /// CollectorView), rather than duplicating this matrix math there.
+        /// Public rather than private: CollectorView.Initialize reuses this
+        /// same bounds computation to derive MofuModel's pivot correction
+        /// from the imported model's own mesh bounds (its pivot sits at the
+        /// model's feet, not its center — see CollectorView), rather than
+        /// duplicating this matrix math there. Also called from the Editor
+        /// assembly by CharacterAssetBuilder, so build-time root-scale
+        /// measurement and this runtime pivot correction always agree on
+        /// exactly the same bounds for the same character — a plain
+        /// visibility promotion, not a duplicate implementation.
+        ///
+        /// Walks every Renderer, not just MeshFilter/MeshRenderer pairs: a
+        /// rigged visual prefab (e.g. a vendor character swapped in via
+        /// CollectorQueueBoard.mofuVisualPrefab) carries its body mesh on a
+        /// SkinnedMeshRenderer, which has no MeshFilter sibling at all — a
+        /// MeshFilter-only walk would silently see none of it and either
+        /// mis-center on an unrelated static child mesh or fall back to no
+        /// correction. A SkinnedMeshRenderer's bounds are computed via
+        /// BakeMesh (see TryGetLocalBounds) rather than read from its
+        /// .localBounds property — that property is a STATIC, pose-
+        /// independent value (confirmed empirically: posing a bone up to 50
+        /// degrees on every axis left it completely unchanged), so it cannot
+        /// reflect a build-time pose adjustment like CharacterAssetBuilder's
+        /// Crab claw tuck at all. BakeMesh snapshots the renderer's actual
+        /// current skinned vertex positions in its own local space instead,
+        /// so bounds always match whatever pose the bones are really in.
         /// </summary>
-        internal static Bounds? ComputeLocalRendererBounds(Transform visual)
+        public static Bounds? ComputeLocalRendererBounds(Transform visual)
         {
             Bounds? combined = null;
 
-            foreach (var meshFilter in visual.GetComponentsInChildren<MeshFilter>())
+            foreach (var renderer in visual.GetComponentsInChildren<Renderer>())
             {
-                if (meshFilter.sharedMesh == null)
+                if (!TryGetLocalBounds(renderer, out Bounds localBounds, out Transform boundsSpace))
                     continue;
 
-                Matrix4x4 relativeMatrix = visual.worldToLocalMatrix * meshFilter.transform.localToWorldMatrix;
-                Bounds transformed = TransformBounds(meshFilter.sharedMesh.bounds, relativeMatrix);
+                Matrix4x4 relativeMatrix = visual.worldToLocalMatrix * boundsSpace.localToWorldMatrix;
+                Bounds transformed = TransformBounds(localBounds, relativeMatrix);
 
                 if (combined == null)
                 {
@@ -513,6 +533,51 @@ namespace Project001.Gameplay.Collectors
             }
 
             return combined;
+        }
+
+        /// <summary>
+        /// SkinnedMeshRenderer.localBounds is a STATIC, pose-independent
+        /// value (confirmed empirically: rotating a bone by up to 50 degrees
+        /// on each axis and re-reading localBounds produced the exact same
+        /// bounds every time) - it does not shrink or grow as bones are
+        /// posed, whether by an Animator or, as CharacterAssetBuilder's Crab
+        /// claw adjustment does, by a one-off build-time transform edit.
+        /// BakeMesh snapshots the renderer's actual current skinned vertex
+        /// positions instead, so bounds always reflect whatever pose the
+        /// bones are actually in right now - required for
+        /// CharacterAssetBuilder's Crab pose adjustment to affect the scale
+        /// it computes at all, and more accurate in general for every other
+        /// species too (their bind pose likely happens to already be close
+        /// to whatever localBounds was authored from, which is why this was
+        /// never visibly wrong for them). useScale:false keeps the baked
+        /// vertices in the renderer's own unscaled local space, matching the
+        /// MeshFilter branch below exactly, so boundsSpace is simply the
+        /// renderer's own transform here - no rootBone-relative-space
+        /// handling needed any more (BakeMesh's output space is always the
+        /// renderer's own transform, unlike the old .localBounds property).
+        /// </summary>
+        private static bool TryGetLocalBounds(Renderer renderer, out Bounds localBounds, out Transform boundsSpace)
+        {
+            if (renderer is SkinnedMeshRenderer skinnedMeshRenderer && skinnedMeshRenderer.sharedMesh != null)
+            {
+                var bakedMesh = new Mesh();
+                skinnedMeshRenderer.BakeMesh(bakedMesh, useScale: false);
+                localBounds = bakedMesh.bounds;
+                boundsSpace = skinnedMeshRenderer.transform;
+                UnityEngine.Object.DestroyImmediate(bakedMesh);
+                return true;
+            }
+
+            if (renderer.TryGetComponent(out MeshFilter meshFilter) && meshFilter.sharedMesh != null)
+            {
+                localBounds = meshFilter.sharedMesh.bounds;
+                boundsSpace = renderer.transform;
+                return true;
+            }
+
+            localBounds = default;
+            boundsSpace = null;
+            return false;
         }
 
         private static Bounds TransformBounds(Bounds bounds, Matrix4x4 matrix)

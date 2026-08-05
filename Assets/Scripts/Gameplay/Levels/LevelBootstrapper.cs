@@ -13,9 +13,11 @@ namespace Project001.Gameplay.Levels
     /// expected to survive Unity scene serialization, only this component's
     /// own object references do.
     ///
-    /// Resolves its LevelDefinition from a LevelCatalog by LevelId, and its
-    /// MatchTypeId-to-Color presentation mapping from a separate
-    /// MatchTypePresentation. Does not own progression — every Awake it
+    /// Resolves its LevelDefinition from a LevelCatalog by LevelId. Pixel
+    /// colour presentation is resolved entirely inside PixelGrid now, from
+    /// each cell's own Match ID (see PixelLayoutDefinition/ColorPalette) —
+    /// this class injects no separate colour mapping any more. Does not own
+    /// progression — every Awake it
     /// asks levelProgressionController.GetOrInitializeCurrentLevel(startingLevelId)
     /// for the LevelId to build, and does not itself decide whether this is
     /// the first Bootstrap load of the session or a later reload
@@ -71,7 +73,6 @@ namespace Project001.Gameplay.Levels
         private bool enableFailureTestSetup = false;
 
         private readonly LevelCatalog _levelCatalog = new LevelCatalog();
-        private readonly MatchTypePresentation _presentation = new MatchTypePresentation();
 
         private void Awake()
         {
@@ -161,7 +162,7 @@ namespace Project001.Gameplay.Levels
 
         private void BuildLevel(LevelDefinition levelDefinition)
         {
-            pixelGrid.Initialize(levelDefinition.PixelLayout, _presentation.GetColor);
+            pixelGrid.Initialize(levelDefinition.PixelLayout);
             conveyorSystem.Configure(GameplayConstants.BaseConveyorCapacity, GameplayConstants.BaseConveyorMoveSpeed);
             waitingLine.Initialize(GameplayConstants.WaitingLineCapacity);
             collectorQueueBoard.Initialize(levelDefinition.CollectorQueues);
