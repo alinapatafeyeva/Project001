@@ -1,5 +1,5 @@
-using Project001.Gameplay.Collectors;
 using Project001.Gameplay.Conveyor;
+using Project001.Gameplay.Feeding;
 using UnityEngine;
 
 namespace Project001.Gameplay.Pixels
@@ -7,12 +7,16 @@ namespace Project001.Gameplay.Pixels
     /// <summary>
     /// Periodically asks a PixelGrid to consume one matching exposed pixel near
     /// a ConveyorRider's current position. Holds no hunger, scoring, victory,
-    /// or disappearance logic of its own. After a successful consume it
-    /// triggers exactly one CollectorPresentation reaction — the normal bite
-    /// reaction, or (only when this consume brought RemainingHunger to zero)
-    /// the full final-bite completion sequence — but owns none of the
-    /// animation or sprite-swap logic that reaction actually plays; that is
-    /// entirely CollectorPresentation/CollectorAnimation's responsibility.
+    /// or disappearance logic of its own, and no presentation logic either —
+    /// a successful consume only hands the pixel's own world position and
+    /// colour to this collector's own FoodFlightController (a sibling
+    /// component, see CollectorQueueBoard.GenerateBoard), which owns
+    /// everything about the resulting FoodPacket's flight and, on arrival,
+    /// the rider's own hunger decrement (see FoodFlightController's own
+    /// remarks for why that decrement must not happen here, at consume
+    /// time). The pixel itself is already reserved the instant PixelGrid
+    /// consumes it — see PixelGrid.TryConsumeNearestExposed — regardless of
+    /// how long the resulting packet then takes to fly.
     /// </summary>
     public class PixelConsumer : MonoBehaviour
     {
@@ -31,10 +35,10 @@ namespace Project001.Gameplay.Pixels
         private float alignmentTolerance = 0.5f;
 
         private float _cooldownRemaining;
-        private CollectorPresentation _presentation;
+        private FoodFlightController _foodFlightController;
 
-        private CollectorPresentation Presentation =>
-            _presentation != null ? _presentation : _presentation = rider != null ? rider.GetComponent<CollectorPresentation>() : null;
+        private FoodFlightController FoodFlightController =>
+            _foodFlightController != null ? _foodFlightController : _foodFlightController = rider != null ? rider.GetComponent<FoodFlightController>() : null;
 
         /// <summary>
         /// Assigns the grid to consume from and the rider that drives
@@ -66,36 +70,11 @@ namespace Project001.Gameplay.Pixels
 
             // Reset after every attempt, successful or not, so a failed search
             // does not re-scan the whole grid on the very next frame.
-            bool consumed = pixelGrid.TryConsumeNearestExposed(rider.transform.position, rider.MatchTypeId, alignmentTolerance);
+            bool consumed = pixelGrid.TryConsumeNearestExposed(rider.transform.position, rider.MatchTypeId, alignmentTolerance, out Vector3 consumedWorldPosition, out Color consumedColor);
             if (consumed)
-            {
-                rider.RegisterConsumedPixel();
-                TriggerBiteReaction();
-            }
+                FoodFlightController?.Enqueue(consumedWorldPosition, consumedColor);
 
             _cooldownRemaining = consumptionCooldown;
-        }
-
-        /// <summary>
-        /// Starts exactly one CollectorPresentation reaction for the bite
-        /// that was just consumed — never both. Which one depends only on
-        /// rider.IsSatisfied immediately after RegisterConsumedPixel, so this
-        /// is the single point that decides "normal bite" vs "final bite":
-        /// nothing else ever independently starts either sequence from a
-        /// pixel consume. CollectorLifecycle separately calls
-        /// PlayFinalBiteSequence too, but only as an idempotent safety net —
-        /// see CollectorPresentation.PlayFinalBiteSequence.
-        /// </summary>
-        private void TriggerBiteReaction()
-        {
-            CollectorPresentation presentation = Presentation;
-            if (presentation == null)
-                return;
-
-            if (rider.IsSatisfied)
-                presentation.PlayFinalBiteSequence();
-            else
-                presentation.PlayNormalBiteReaction();
         }
     }
 }

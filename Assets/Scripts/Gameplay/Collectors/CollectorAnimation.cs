@@ -1,5 +1,6 @@
 using System;
 using System.Collections;
+using System.Collections.Generic;
 using Project001.Gameplay.Conveyor;
 using Project001.Gameplay.Presentation;
 using UnityEngine;
@@ -135,6 +136,74 @@ namespace Project001.Gameplay.Collectors
         private const float HeartPulseAmount = 0.25f;
         private const float HeartCollapseDuration = 0.22f;
 
+        // Pixel Feed Flow: the collector's own reaction to a FoodPacket
+        // reaching FeedTarget (see CollectorPresentation.
+        // HandleFoodPacketArrived, the sole caller of PlayFoodArrivedBounce/
+        // PlayFoodArrivedHighlight below).
+        //
+        // Bounce (redesigned - see UpdateFoodArrivedReaction): a real Play
+        // Mode staggered-sequence test of the ORIGINAL squash/overshoot/
+        // settle design (three-phase, fixed FoodArrivedBounceDuration,
+        // restarted via StartRoutine on every single packet) read as
+        // twitching/repeated spasms - each new packet snapped VisualMotion
+        // back to exact baseline via StartRoutine's own ResetToBaseline
+        // before restarting the curve at phase zero, so several packets
+        // arriving close together (the normal case - see
+        // FoodFlightController.launchInterval) produced several complete,
+        // independent squash cycles back to back rather than one motion.
+        // This replacement is deliberately NOT a StartRoutine/coroutine at
+        // all: PlayFoodArrivedBounce only ever refreshes
+        // _foodArrivedTimeSinceTrigger (never restarts, snaps, or stacks
+        // anything), and Update() drives a single persistent value
+        // (_foodArrivedCurrent) toward a retriggerable target via
+        // Mathf.SmoothDamp every frame - "target-driven damped
+        // interpolation." A burst of arrivals just keeps the target at its
+        // peak a little longer; _foodArrivedCurrent itself is never reset
+        // or multiplied, so however many packets land during one burst,
+        // there is exactly one continuous rise-and-settle, not one per
+        // packet.
+        // Amplitude tuned up a second time after the first (0.04/0.03) pass
+        // read as correct-but-too-subtle in real Play Mode - "clearly
+        // visible and satisfying" per direct feedback, still uniform scale
+        // + lift only, no squash/stretch.
+        private const float FoodArrivedPeakScaleBump = 0.08f; // peak scale = baseline * 1.08 - "mostly uniform pop", not squash/stretch.
+        private const float FoodArrivedPeakLift = 0.07f; // local units on VisualMotion only - a clearly readable upward "received it" nudge.
+        private const float FoodArrivedHoldSeconds = 0.05f; // how long the target stays at its peak after the MOST RECENT trigger before easing back down.
+        // Separate rise/settle SmoothDamp times (previously one shared
+        // FoodArrivedSmoothTime): a single mid-value time forced a choice
+        // between a slow, hard-to-notice pop and a settle sharp enough to
+        // reintroduce visible snappiness. Rising fast makes the pop land on
+        // the eye immediately; settling slower keeps the return soft and
+        // pleasant, matching "rise quickly enough to be noticed, but settle
+        // softly" - and since both are pure SmoothDamp continuations of the
+        // same _foodArrivedCurrent/_foodArrivedVelocity state (never reset
+        // between the two phases), switching which constant is passed
+        // in never causes a snap.
+        private const float FoodArrivedRiseSmoothTime = 0.03f;
+        private const float FoodArrivedSettleSmoothTime = 0.075f;
+
+        // Highlight: a brief, subtle brighten - implemented as a multiplier
+        // on each renderer's OWN already-baked _EmissionColor (the same
+        // per-species emission lift CharacterAssetBuilder already
+        // calibrates - see its own remarks), applied via a
+        // MaterialPropertyBlock rather than Renderer.material specifically
+        // so this NEVER instances a shared Material (CharacterVerification.
+        // CheckAllLiveCollectors asserts no collector renderer ever ends up
+        // on an instanced " (Instance)" material - a property block is the
+        // one Unity mechanism that overrides a per-renderer value without
+        // ever doing that, and multiple collectors sharing one baked
+        // Character_XX material - e.g. two queued collectors with the same
+        // Match ID - can therefore highlight independently without
+        // affecting each other). A plain multiplier on the material's own
+        // existing colour, never HDR-range values or emission enabled where
+        // it previously was not - "brighten", not "glow". 1.6x was picked
+        // as a peak that reads as a clear, brief brighten without looking
+        // like a colour-flash. 0.2s sits in the requested 0.15-0.25s
+        // window.
+        private const float FoodArrivedHighlightDuration = 0.2f;
+        private const float FoodArrivedHighlightPeakMultiplier = 1.6f;
+        private static readonly int EmissionColorId = Shader.PropertyToID("_EmissionColor");
+
         private static readonly Vector3 BaselinePosition = Vector3.zero;
 
         // The mesh's actual authored front, determined empirically rather
@@ -221,6 +290,32 @@ namespace Project001.Gameplay.Collectors
         private bool _terminal;
         private FacingMode _facingMode = FacingMode.Away;
 
+        // Highlight's own coroutine slot, deliberately separate from
+        // _activeRoutine: bounce (scale, on VisualMotion) and highlight
+        // (material colour, on the renderers) are visually orthogonal and
+        // meant to play at the same time for the same food-arrived moment,
+        // so they must never stop each other the way two scale reactions
+        // sharing _activeRoutine intentionally do.
+        private Coroutine _activeHighlightRoutine;
+        private MaterialPropertyBlock _highlightPropertyBlock;
+
+        // Food-arrived bounce state - deliberately NOT part of
+        // _activeRoutine/StartRoutine (see FoodArrivedPeakScaleBump's own
+        // remarks for why): a persistent, retriggerable, per-frame damped
+        // value driven from Update() instead of a fixed-duration coroutine.
+        // _foodArrivedActive gates UpdateFoodArrivedReaction so it costs
+        // nothing per frame once fully settled - the same "no lingering
+        // per-frame cost while idle" contract every other reaction here
+        // already keeps. ResetToBaseline (called by StartRoutine before
+        // every OTHER VisualMotion-touching reaction starts) also cancels
+        // this state, which is what guarantees the two systems never fight
+        // over VisualMotion on the same frame - see ResetToBaseline's own
+        // remarks.
+        private float _foodArrivedTimeSinceTrigger = float.MaxValue;
+        private float _foodArrivedCurrent;
+        private float _foodArrivedVelocity;
+        private bool _foodArrivedActive;
+
         // Per-collector breathing individuality, all three drawn once in
         // Awake so collectors created together neither start from the same
         // phase, nor breathe at exactly the same speed, nor with exactly
@@ -298,6 +393,8 @@ namespace Project001.Gameplay.Collectors
                 : Quaternion.Euler(0f, WaitingAwayYawDegrees, 0f);
 
             _visual.localRotation = Quaternion.RotateTowards(_visual.localRotation, target, YawDegreesPerSecond * Time.deltaTime);
+
+            UpdateFoodArrivedReaction();
         }
 
         /// <summary>
@@ -357,6 +454,72 @@ namespace Project001.Gameplay.Collectors
 
         public void PlaySatisfiedPunch(Action onComplete = null) =>
             StartRoutine(SatisfiedPunchRoutine(onComplete));
+
+        /// <summary>
+        /// Requests the food-arrived "received it" pop (see class remarks
+        /// for the redesign this replaced). Never restarts, snaps, or
+        /// stacks anything - simply refreshes _foodArrivedTimeSinceTrigger
+        /// to 0 and marks the reaction active; UpdateFoodArrivedReaction
+        /// (called from Update() every frame) is what actually drives
+        /// VisualMotion toward, and back from, its target. Calling this
+        /// again while a previous pop is still rising/holding/settling just
+        /// keeps the target at its peak a little longer - the exact
+        /// "coalesce into one continuous response" behaviour a staggered
+        /// packet sequence needs. No onComplete callback: unlike the
+        /// fixed-duration reactions above, there is no single well-defined
+        /// "this specific call finished" moment once repeated calls can
+        /// extend the same in-flight reaction - nothing currently needs one
+        /// (CollectorPresentation's HandleFoodPacketArrived is fire-and-
+        /// forget), and CurrentPose-style polling (see CharacterPosePresentation)
+        /// is the established pattern here for anything that eventually
+        /// does.
+        /// </summary>
+        public void PlayFoodArrivedBounce()
+        {
+            if (_terminal)
+                return;
+
+            if (EnsureVisual() == null)
+                return;
+
+            _foodArrivedTimeSinceTrigger = 0f;
+            _foodArrivedActive = true;
+        }
+
+        /// <summary>
+        /// The material half of the food-arrived reaction (see class
+        /// remarks) - a brief renderer brighten via MaterialPropertyBlock,
+        /// on its own coroutine slot (_activeHighlightRoutine) so it can run
+        /// alongside PlayFoodArrivedBounce rather than competing with it for
+        /// _activeRoutine. Interrupting an in-flight highlight (a second
+        /// packet arriving before the first highlight finishes) stops the
+        /// old coroutine and immediately clears every renderer's property
+        /// block back to the material's own authored baseline before
+        /// starting fresh - never a partially-boosted colour left behind,
+        /// and never two boosts multiplying together.
+        /// </summary>
+        public void PlayFoodArrivedHighlight()
+        {
+            if (_terminal)
+                return;
+
+            if (EnsureVisual() == null)
+                return;
+
+            if (_activeHighlightRoutine != null)
+            {
+                StopCoroutine(_activeHighlightRoutine);
+                _activeHighlightRoutine = null;
+            }
+
+            List<Renderer> renderers = CollectHighlightableRenderers();
+            ClearHighlight(renderers);
+
+            if (renderers.Count == 0)
+                return;
+
+            _activeHighlightRoutine = StartCoroutine(FoodArrivedHighlightRoutine(renderers));
+        }
 
         /// <summary>
         /// Terminal: one heart pulse, then a collapse to nothing. No
@@ -672,11 +835,29 @@ namespace Project001.Gameplay.Collectors
         /// component's baseline any more (see the class remarks); Visual's
         /// facing is Update()'s concern exclusively, untouched by every
         /// reaction this resets.
+        ///
+        /// Also cancels any in-flight food-arrived reaction
+        /// (UpdateFoodArrivedReaction): every OTHER VisualMotion-touching
+        /// reaction (idle breathing, eating/satisfied punch, heart pulse,
+        /// boarding bounce) already funnels through this exact method via
+        /// StartRoutine before it starts its own coroutine, so this is the
+        /// one guaranteed chokepoint that keeps the food-arrived reaction
+        /// from ever fighting one of them over VisualMotion on a later
+        /// frame - regardless of which one happens to still be active when
+        /// the other is asked to start. Since this method already sets
+        /// scale/position to exact baseline synchronously, the terminal
+        /// sequence's own first frame IS that handoff - no separate
+        /// "un-bounce" step, and nothing left to snap away from afterward.
         /// </summary>
         private void ResetToBaseline()
         {
             _visualMotion.localScale = _baselineScale;
             _visualMotion.localPosition = BaselinePosition;
+
+            _foodArrivedActive = false;
+            _foodArrivedCurrent = 0f;
+            _foodArrivedVelocity = 0f;
+            _foodArrivedTimeSinceTrigger = float.MaxValue;
         }
 
         /// <summary>
@@ -775,6 +956,172 @@ namespace Project001.Gameplay.Collectors
             _visualMotion.localScale = _baselineScale;
             _visualMotion.localPosition = BaselinePosition;
             onComplete?.Invoke();
+        }
+
+        /// <summary>
+        /// Drives _foodArrivedCurrent toward a retriggerable target every
+        /// frame via Mathf.SmoothDamp, then applies it to VisualMotion as a
+        /// small, mostly-uniform scale pop plus a slight upward lift - the
+        /// entire redesigned food-arrived reaction (see class remarks).
+        /// Early-outs the instant _foodArrivedActive is false, so an idle
+        /// collector (no recent arrival) costs nothing here.
+        ///
+        /// The target is a simple step function of
+        /// _foodArrivedTimeSinceTrigger: 1 for FoodArrivedHoldSeconds after
+        /// the MOST RECENT PlayFoodArrivedBounce call, then 0. Because
+        /// PlayFoodArrivedBounce only ever resets that timer (never
+        /// _foodArrivedCurrent itself), a retrigger during the hold window
+        /// just keeps the target at 1 a little longer - SmoothDamp keeps
+        /// approaching the SAME target it was already approaching, so nothing
+        /// snaps, restarts from zero, or stacks past the single peak
+        /// FoodArrivedPeakScaleBump/FoodArrivedPeakLift define. Once no
+        /// retrigger arrives before the hold window elapses, the target
+        /// drops to 0 and this eases _foodArrivedCurrent smoothly back down;
+        /// once both the value and its SmoothDamp velocity are
+        /// indistinguishable from zero, this snaps them exactly to zero,
+        /// writes exact baseline scale/position one last time, and clears
+        /// _foodArrivedActive - guaranteeing baseline is reached exactly,
+        /// never asymptotically approached forever.
+        ///
+        /// Stops immediately (without writing anything) the instant
+        /// _terminal becomes true or VisualMotion is unavailable - the
+        /// terminal Satisfied/Heart sequence (via StartRoutine/
+        /// ResetToBaseline) already takes over VisualMotion synchronously
+        /// at that point; see ResetToBaseline's own remarks for the other,
+        /// complementary half of this handoff.
+        /// </summary>
+        private void UpdateFoodArrivedReaction()
+        {
+            if (!_foodArrivedActive)
+                return;
+
+            if (_terminal || _visualMotion == null)
+            {
+                _foodArrivedActive = false;
+                _foodArrivedCurrent = 0f;
+                _foodArrivedVelocity = 0f;
+                return;
+            }
+
+            _foodArrivedTimeSinceTrigger += Time.deltaTime;
+            float target = _foodArrivedTimeSinceTrigger < FoodArrivedHoldSeconds ? 1f : 0f;
+            float smoothTime = target > 0f ? FoodArrivedRiseSmoothTime : FoodArrivedSettleSmoothTime;
+            _foodArrivedCurrent = Mathf.SmoothDamp(_foodArrivedCurrent, target, ref _foodArrivedVelocity, smoothTime);
+
+            bool settled = target == 0f && _foodArrivedCurrent < 0.001f && Mathf.Abs(_foodArrivedVelocity) < 0.001f;
+            if (settled)
+            {
+                _foodArrivedCurrent = 0f;
+                _foodArrivedVelocity = 0f;
+                _foodArrivedActive = false;
+            }
+
+            _visualMotion.localScale = _baselineScale * (1f + _foodArrivedCurrent * FoodArrivedPeakScaleBump);
+            _visualMotion.localPosition = BaselinePosition + Vector3.up * (_foodArrivedCurrent * FoodArrivedPeakLift);
+        }
+
+        /// <summary>
+        /// Every renderer under VisualMotion whose own sharedMaterial
+        /// exposes _EmissionColor - the same walk ComputeLocalRendererBounds
+        /// already does for bounds, reused here for renderers instead.
+        /// Species/sub-material combinations without that property (seen in
+        /// practice: some vendor face/eye materials) are silently skipped
+        /// rather than logged - a missing property is an expected, harmless
+        /// difference between sub-materials, not an error condition.
+        /// </summary>
+        private List<Renderer> CollectHighlightableRenderers()
+        {
+            var result = new List<Renderer>();
+            if (_visualMotion == null)
+                return result;
+
+            foreach (Renderer renderer in _visualMotion.GetComponentsInChildren<Renderer>())
+            {
+                Material material = renderer.sharedMaterial;
+                if (material != null && material.HasProperty(EmissionColorId))
+                    result.Add(renderer);
+            }
+
+            return result;
+        }
+
+        /// <summary>
+        /// Brightens every renderer's own _EmissionColor by a multiplier
+        /// (never an additive flat colour, so each species/material's own
+        /// authored emission tint and per-species intensity - see
+        /// CharacterAssetBuilder.EmissionIntensityBySpecies - are preserved,
+        /// just scaled up) that ramps intensity01 from 1x (no change) up to
+        /// FoodArrivedHighlightPeakMultiplier and back down again across the
+        /// highlight's own duration (see FoodArrivedHighlightRoutine).
+        /// Reads sharedMaterial.GetColor fresh every call rather than
+        /// caching a baseline - a plain, non-allocating read (see
+        /// MaterialPropertyBlock's own remarks on why this never instances
+        /// the shared Material), and always exactly correct even if the
+        /// baseline itself were ever changed at runtime elsewhere.
+        /// </summary>
+        private void ApplyHighlight(List<Renderer> renderers, float intensity01)
+        {
+            _highlightPropertyBlock ??= new MaterialPropertyBlock();
+
+            float multiplier = Mathf.Lerp(1f, FoodArrivedHighlightPeakMultiplier, intensity01);
+
+            foreach (Renderer renderer in renderers)
+            {
+                if (renderer == null)
+                    continue;
+
+                Color baseline = renderer.sharedMaterial.GetColor(EmissionColorId);
+
+                _highlightPropertyBlock.Clear();
+                _highlightPropertyBlock.SetColor(EmissionColorId, baseline * multiplier);
+                renderer.SetPropertyBlock(_highlightPropertyBlock);
+            }
+        }
+
+        /// <summary>
+        /// Removes every property block override this class ever applied,
+        /// falling back to each renderer's own sharedMaterial baseline
+        /// exactly - never a re-computed/re-lerped "baseline" value that
+        /// could drift from the real one. Called both to cancel a
+        /// still-boosted in-flight highlight before a new one starts
+        /// (PlayFoodArrivedHighlight) and at a completed highlight's own
+        /// natural end (FoodArrivedHighlightRoutine), so a renderer is never
+        /// left boosted for longer than intended either way.
+        /// </summary>
+        private static void ClearHighlight(List<Renderer> renderers)
+        {
+            foreach (Renderer renderer in renderers)
+            {
+                if (renderer != null)
+                    renderer.SetPropertyBlock(null);
+            }
+        }
+
+        /// <summary>
+        /// Ramps intensity 0 -&gt; 1 -&gt; 0 (a triangle wave, not a sudden flash
+        /// or a hold-then-drop) across FoodArrivedHighlightDuration, so the
+        /// brighten reads as one smooth pulse - "no blinking" per the task's
+        /// own requirement. Clears to the exact material baseline
+        /// (ClearHighlight) at the end and nulls _activeHighlightRoutine, so
+        /// a collector with no highlight in flight costs nothing per frame,
+        /// the same "ends cleanly, no lingering per-frame cost" contract
+        /// FoodFlightController's own launch coroutine already keeps.
+        /// </summary>
+        private IEnumerator FoodArrivedHighlightRoutine(List<Renderer> renderers)
+        {
+            float elapsed = 0f;
+            while (elapsed < FoodArrivedHighlightDuration)
+            {
+                elapsed += Time.deltaTime;
+                float t = Mathf.Clamp01(elapsed / FoodArrivedHighlightDuration);
+                float intensity = t < 0.5f ? t / 0.5f : 1f - (t - 0.5f) / 0.5f;
+
+                ApplyHighlight(renderers, intensity);
+                yield return null;
+            }
+
+            ClearHighlight(renderers);
+            _activeHighlightRoutine = null;
         }
 
         /// <summary>

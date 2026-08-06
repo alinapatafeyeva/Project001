@@ -221,8 +221,25 @@ namespace Project001.Gameplay.Pixels
         /// already be consumed) and must be aligned with the position along
         /// the perpendicular axis, within alignmentTolerance world units.
         /// Returns false if no matching pixel currently satisfies both.
+        ///
+        /// consumedWorldPosition/consumedColor report the consumed cell's own
+        /// world position (read BEFORE Consume() disables it - a disabled
+        /// GameObject's Transform.position stays valid and accurate, so this
+        /// is not a race) and colour, for the sole current caller
+        /// (PixelConsumer) to spawn a FoodPacket that starts exactly where
+        /// the pixel visually was. Both are default/unset when this returns
+        /// false - callers must not read them on failure.
+        ///
+        /// This consume is the sole moment a pixel is reserved: Consume()
+        /// deactivates the cell and _remainingPixelCount decrements
+        /// immediately, synchronously, right here - never deferred to
+        /// whenever the resulting FoodPacket happens to arrive. That
+        /// arrival-side delay is entirely a hunger-timing concern (see
+        /// FoodFlightController), not a grid-state one; a consumed pixel can
+        /// never be matched by this method again from this call onward,
+        /// regardless of how long its FoodPacket then takes to fly.
         /// </summary>
-        public bool TryConsumeNearestExposed(Vector3 worldPosition, MatchTypeId matchTypeId, float alignmentTolerance)
+        public bool TryConsumeNearestExposed(Vector3 worldPosition, MatchTypeId matchTypeId, float alignmentTolerance, out Vector3 consumedWorldPosition, out Color consumedColor)
         {
             Vector3 localPosition = transform.InverseTransformPoint(worldPosition);
             Side side = DetermineSide(localPosition);
@@ -257,7 +274,18 @@ namespace Project001.Gameplay.Pixels
             }
 
             if (best == null)
+            {
+                consumedWorldPosition = default;
+                consumedColor = default;
                 return false;
+            }
+
+            // Read before Consume() (which only deactivates the GameObject,
+            // never moves it) so callers always get the pixel's real launch
+            // position even though the cell itself is inactive by the time
+            // they use it.
+            consumedWorldPosition = best.transform.position;
+            consumedColor = best.PixelColor;
 
             // best was filtered to IsActive above, so Consume() here always
             // performs a real, first-time consumption — safe to decrement

@@ -1,4 +1,5 @@
 using Project001.Gameplay.Conveyor;
+using Project001.Gameplay.Feeding;
 using Project001.Gameplay.Presentation;
 using UnityEngine;
 
@@ -119,6 +120,7 @@ namespace Project001.Gameplay.Collectors
         private ConveyorRider _conveyorRider;
         private CollectorPresentation _presentation;
         private CharacterPosePresentation _posePresentation;
+        private FeedTarget _feedTarget;
         private TextMesh _hungerText;
 
         /// <summary>
@@ -168,6 +170,16 @@ namespace Project001.Gameplay.Collectors
         /// no adapter is unaffected by every pose request.
         /// </summary>
         public CharacterPosePresentation PosePresentation => _posePresentation;
+
+        /// <summary>
+        /// This collector's FeedTarget, resolved from the instantiated
+        /// CharacterVisual by Initialize() - the world position a FoodPacket
+        /// flies to (see Project001.Gameplay.Feeding.FoodFlightController).
+        /// Null for any species whose visualPrefab was not built with one
+        /// (see CharacterAssetBuilder.CreateFeedTarget); FoodFlightController
+        /// falls back to this collector's own root transform when it is.
+        /// </summary>
+        public FeedTarget FeedTarget => _feedTarget;
 
         /// <summary>
         /// Currently displayed RemainingHunger text. Read-only — this view
@@ -256,6 +268,7 @@ namespace Project001.Gameplay.Collectors
             _visual = visualWrapper.transform;
             _visualMotion = visualMotion.transform;
             _posePresentation = modelInstance.GetComponentInChildren<CharacterPosePresentation>(true);
+            _feedTarget = modelInstance.GetComponentInChildren<FeedTarget>(true);
         }
 
         /// <summary>

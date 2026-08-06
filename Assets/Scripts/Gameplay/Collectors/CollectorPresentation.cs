@@ -1,5 +1,6 @@
 using System;
 using System.Collections;
+using Project001.Gameplay.Feeding;
 using Project001.Gameplay.Presentation;
 using UnityEngine;
 
@@ -41,22 +42,80 @@ namespace Project001.Gameplay.Collectors
     /// other public method here becomes a no-op: Satisfied/Heart is
     /// terminal, matching CollectorAnimation's own terminal Play* guard.
     ///
-    /// PixelConsumer is the only caller of PlayNormalBiteReaction/
-    /// PlayFinalBiteSequence, and calls exactly one of the two per
-    /// successfully consumed pixel, never both — see PixelConsumer.
-    /// CollectorLifecycle also calls PlayFinalBiteSequence, purely as a
-    /// safety net for a collector reaching RemainingHunger zero without
-    /// PixelConsumer ever having triggered it (e.g. zero hunger capacity);
-    /// the call is idempotent, so whichever caller reaches it first is the
-    /// one that actually starts the sequence — the two can never compete.
+    /// As of the Pixel Feed Flow pipeline (see Project001.Gameplay.Feeding),
+    /// PixelConsumer no longer calls PlayNormalBiteReaction/
+    /// PlayFinalBiteSequence directly — a consumed pixel now becomes a
+    /// FoodPacket, and RemainingHunger only decreases once that packet
+    /// reaches the collector's FeedTarget (FoodFlightController), not at
+    /// consume time. Phase 1 of that pipeline deliberately does not
+    /// reconnect either bite reaction to FoodPacket's arrival — that
+    /// reconnection (a future task, subscribing to FoodPacket.
+    /// OnFoodPacketArrived) is explicitly out of this class's scope for now,
+    /// so PlayNormalBiteReaction currently has no caller at all.
+    /// CollectorLifecycle still calls PlayFinalBiteSequence on its own —
+    /// its own Update loop already polls rider.IsSatisfied every frame
+    /// rather than reacting to a specific consume, so it needed no change:
+    /// it simply now observes RemainingHunger reaching zero slightly later
+    /// (whenever the final packet arrives) than before, and still starts
+    /// the terminal Satisfied/Heart sequence at that point either way.
+    ///
+    /// Phase 2 of the Pixel Feed Flow adds the actual "collector reacts"
+    /// step: HandleFoodPacketArrived subscribes to FoodPacket.
+    /// OnFoodPacketArrived (a static event - see Awake/OnDestroy), at the
+    /// exact instant a packet reports arrival, for every packet bound for
+    /// THIS collector. Deliberately a NEW reaction
+    /// (CollectorAnimation.PlayFoodArrivedBounce/PlayFoodArrivedHighlight),
+    /// not a reconnection of the pre-existing PlayNormalBiteReaction/
+    /// PlayEatingPunch — the task that introduced this pipeline explicitly
+    /// scoped "collector reacts" as its own new bounce/highlight pair, so
+    /// PlayNormalBiteReaction still has no caller.
+    ///
+    /// Bounce is ON by default (enableFoodArrivedBounce below);
+    /// highlight remains OFF (enableFoodArrivedHighlight). Both flags, and
+    /// this class's own gated call sites for them, are unchanged from when
+    /// both were off - only CollectorAnimation.PlayFoodArrivedBounce's OWN
+    /// internal implementation was redesigned (see its own remarks): a real
+    /// Play Mode staggered-sequence test of a fixed-duration squash/
+    /// overshoot coroutine, restarted via StartRoutine on every single
+    /// arrival, read as twitching/repeated spasms - each packet snapped
+    /// VisualMotion back to baseline and restarted the curve at phase zero,
+    /// so several packets close together produced several complete,
+    /// independent squash cycles rather than one motion. The replacement is
+    /// a persistent, retriggerable, target-driven damped value (never a
+    /// coroutine restarted from zero), so a burst of arrivals now coalesces
+    /// into one continuous soft "received it" pop instead. Highlight stays
+    /// off for the same original reason (a highlight per packet read as
+    /// unpleasant flickering) and its own implementation remains fully
+    /// intact and untouched - only whether HandleFoodPacketArrived actually
+    /// invokes it is gated, so a different pacing (once per feeding burst,
+    /// final packet only, ...) can still be designed and tried later by
+    /// changing HandleFoodPacketArrived's own trigger condition, without
+    /// needing to resurrect any deleted or commented-out code.
     /// </summary>
     [RequireComponent(typeof(CollectorAnimation))]
     public class CollectorPresentation : MonoBehaviour
     {
+        [Header("Food-arrived reaction (Pixel Feed Flow) - see class remarks")]
+        [SerializeField, Tooltip("Whether HandleFoodPacketArrived plays CollectorAnimation.PlayFoodArrivedBounce on every FoodPacket arrival. On by default: PlayFoodArrivedBounce was redesigned as a persistent, retriggerable, target-driven damped pop (see its own remarks) specifically so this can stay on during a staggered multi-packet sequence without reading as twitching - a fixed-duration coroutine restarted per-arrival read as twitching, which is why this used to default to off.")]
+        private bool enableFoodArrivedBounce = true;
+
+        [SerializeField, Tooltip("Whether HandleFoodPacketArrived plays CollectorAnimation.PlayFoodArrivedHighlight on every FoodPacket arrival. Off by default: a highlight per packet during a staggered sequence reads as unpleasant flickering in real Play Mode testing. The highlight implementation itself is untouched - enable here to restore the old per-arrival behaviour, or leave off while a better-paced trigger is designed elsewhere.")]
+        private bool enableFoodArrivedHighlight = false;
+
         private CollectorView _view;
         private CollectorAnimation _animation;
         private Coroutine _activeSequence;
         private bool _terminalStarted;
+
+        private void Awake()
+        {
+            FoodPacket.OnFoodPacketArrived += HandleFoodPacketArrived;
+        }
+
+        private void OnDestroy()
+        {
+            FoodPacket.OnFoodPacketArrived -= HandleFoodPacketArrived;
+        }
 
         private CollectorView View => _view != null ? _view : _view = GetComponent<CollectorView>();
 
@@ -207,6 +266,43 @@ namespace Project001.Gameplay.Collectors
             StopActiveSequence();
             _activeSequence = StartCoroutine(FinalBiteSequence());
             return true;
+        }
+
+        /// <summary>
+        /// The single subscriber every CollectorPresentation instance
+        /// installs on the shared static FoodPacket.OnFoodPacketArrived
+        /// event (see Awake) - filters to packets bound for THIS collector
+        /// (packet.Collector == View) so a scene with many collectors and
+        /// many simultaneously-arriving packets never mixes up whose
+        /// reaction plays where; every other collector's own subscription
+        /// runs the exact same check and reacts on its own instance only.
+        /// Deliberately not routed through StartSequence/_activeSequence:
+        /// the bounce/highlight reaction must never interrupt or be
+        /// interrupted by the boarding/bite/final sequences those manage
+        /// (both can legitimately be in flight on the same frame a packet
+        /// arrives), and both CollectorAnimation methods already guard
+        /// themselves independently against stacking/terminal state - see
+        /// their own remarks.
+        ///
+        /// enableFoodArrivedBounce/enableFoodArrivedHighlight (bounce on,
+        /// highlight off by default - see class remarks) gate whether this
+        /// actually calls into CollectorAnimation at all: with highlight
+        /// off, PlayFoodArrivedHighlight is never called for this arrival,
+        /// so no coroutine starts and no MaterialPropertyBlock is ever
+        /// touched - not merely played and then hidden. This method remains
+        /// the single, permanent trigger point for both reactions; only
+        /// which ones it currently fires is configurable.
+        /// </summary>
+        private void HandleFoodPacketArrived(FoodPacket packet)
+        {
+            if (_terminalStarted || packet.Collector != View)
+                return;
+
+            if (enableFoodArrivedBounce)
+                Animation.PlayFoodArrivedBounce();
+
+            if (enableFoodArrivedHighlight)
+                Animation.PlayFoodArrivedHighlight();
         }
 
         private void StartSequence(IEnumerator routine)

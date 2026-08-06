@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using Project001.Gameplay.Collectors;
+using Project001.Gameplay.Feeding;
 using Project001.Gameplay.Presentation;
 using UnityEditor;
 using UnityEngine;
@@ -66,6 +67,11 @@ namespace Project001.EditorTools
     /// CollectorVisibleWidthRatio's own remarks for the measured value and
     /// how it was derived) - the queue adapts to the roster, not the other
     /// way around.
+    ///
+    /// Every assembled model also gets a FeedTarget child (see
+    /// CreateFeedTarget) - the world position a FoodPacket flies to under
+    /// the Pixel Feed Flow pipeline (Project001.Gameplay.Feeding). Added
+    /// for all four species here, not per-species by hand.
     /// </summary>
     public static class CharacterAssetBuilder
     {
@@ -307,6 +313,13 @@ namespace Project001.EditorTools
                 return false;
             }
 
+            // Every species gets a FeedTarget (not just Crab - see
+            // CreateFeedTarget), placed from this same bounds measurement
+            // before root's own scale is applied below, so it ends up as an
+            // ordinary child transform that scales with the rest of the
+            // model automatically.
+            CreateFeedTarget(root, combined.Value);
+
             Vector3 size = combined.Value.size;
 
             // Shared-height-only: every species is scaled so its own height
@@ -332,6 +345,42 @@ namespace Project001.EditorTools
             float scaledMaxVisualWidth = Mathf.Max(size.x, size.z) * rootScale;
             Debug.Log($"CharacterAssetBuilder: Match ID {idLabel} ({species}) -> '{prefabPath}' (root scale {rootScale:F3}, unscaled bounds size=({size.x:F3},{size.y:F3},{size.z:F3}), scaled height={scaledHeight:F3}, scaled body width(x)={scaledBodyWidth:F3}, scaled max visual width(any facing)={scaledMaxVisualWidth:F3}, material '{materialPath}').");
             return true;
+        }
+
+        // How far up from bounds' vertical center a FeedTarget sits,
+        // expressed as a fraction of the model's own half-height
+        // (localBounds.extents.y) - 1.0 would sit exactly at the model's
+        // topmost point (the very top of the head/antennae/shell), 0.0 at
+        // its vertical center. 0.7 was picked as a reasonable first pass at
+        // "approximately the mouth/upper face" (see class remarks on
+        // Phase 1 of the Pixel Feed Flow pipeline) without measuring each
+        // species' actual face geometry - a single shared fraction applied
+        // to each species' own measured bounds already produces a
+        // species-appropriate absolute offset (a taller model's FeedTarget
+        // sits proportionally higher too), and this one constant is the
+        // only thing a future pass needs to retune if it reads wrong for a
+        // particular species once actually seen in Play Mode.
+        private const float FeedTargetHeightFraction = 0.7f;
+
+        /// <summary>
+        /// Adds a FeedTarget child to every species' assembled model (never
+        /// gated on species, unlike the Crab-only pose adapter above) at a
+        /// position derived purely from this model's own measured bounds -
+        /// never a hand-placed or screen-space position. Added as a child of
+        /// root itself (not body, unlike CharacterPosePresentation) so its
+        /// position is unaffected by which vendor body sub-hierarchy a
+        /// future species swap might restructure; root's own later
+        /// localScale assignment (see BuildCharacter, right after this call)
+        /// scales this child along with everything else automatically, so
+        /// localBounds - measured here in root's own PRE-scale local space -
+        /// is exactly the right space to compute this position in.
+        /// </summary>
+        private static void CreateFeedTarget(GameObject root, Bounds localBounds)
+        {
+            var feedTargetObject = new GameObject("FeedTarget", typeof(FeedTarget));
+            feedTargetObject.transform.SetParent(root.transform, false);
+            feedTargetObject.transform.localPosition =
+                localBounds.center + Vector3.up * (localBounds.extents.y * FeedTargetHeightFraction);
         }
 
         /// <summary>
