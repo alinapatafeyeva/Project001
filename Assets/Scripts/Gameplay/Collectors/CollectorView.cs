@@ -18,7 +18,7 @@ namespace Project001.Gameplay.Collectors
     ///           collapse are the only things that ever touch its
     ///           localScale/localPosition, and never its localRotation
     ///           (always identity)
-    ///           └── MofuModel — the resolved Character_XX prefab instance
+    ///           └── CharacterVisual — the resolved Character_XX prefab instance
     ///               (injected via Initialize(), pivot-corrected against its
     ///               own mesh bounds), already carrying its own baked
     ///               Character_XX material on its renderer(s)
@@ -46,7 +46,7 @@ namespace Project001.Gameplay.Collectors
     /// Visual, never a descendant of it), which is scaled by
     /// GameplayLayout.CollectorSpriteScale (see
     /// CollectorQueueBoard.GenerateBoard) — without correction the label
-    /// would inherit that scale and grow right along with Mofu. Instead the
+    /// would inherit that scale and grow right along with the character. Instead the
     /// label's own local scale is set to the inverse of
     /// CollectorSpriteScale, so its rendered size always equals
     /// GameplayLayout.HungerLabelWorldSize regardless of how big the
@@ -71,8 +71,8 @@ namespace Project001.Gameplay.Collectors
         // any more), so an offset that only cleared the model's front face
         // at one angle would clip through it at another. The mesh's own
         // roughly circular footprint (local X/Z extents both ~0.89, from
-        // Mofu.fbx) keeps its camera-facing half-depth about the same at
-        // every rotation angle, ~0.35 at MofuModel's authored scale (0.88
+        // the vendor body mesh) keeps its camera-facing half-depth about the
+        // same at every rotation angle, ~0.35 at CharacterVisual's authored scale (0.88
         // mesh depth x 0.79 PrefabRootScale x 0.5), plus a small margin for
         // breathing's scale wobble — 0.5 clears that with room to spare
         // regardless of facing angle.
@@ -185,7 +185,7 @@ namespace Project001.Gameplay.Collectors
         }
 
         /// <summary>
-        /// Builds the Visual/VisualMotion/MofuModel hierarchy (see the class
+        /// Builds the Visual/VisualMotion/CharacterVisual hierarchy (see the class
         /// remarks). Must be called exactly once, by CollectorQueueBoard
         /// right after this collector is constructed and before
         /// CollectorPresentation.ShowWaitingBackIdle() — there is no
@@ -199,10 +199,10 @@ namespace Project001.Gameplay.Collectors
         /// never the prefab instance itself — left at local position zero,
         /// rotation identity, scale one. Neither carries the model's own
         /// authored scale or any pivot correction; both live one level
-        /// deeper, on MofuModel, so they are never disturbed by whichever of
+        /// deeper, on CharacterVisual, so they are never disturbed by whichever of
         /// the two pivots above them is currently being animated.
         ///
-        /// MofuModel (VisualMotion's child) is the actual visualPrefab
+        /// CharacterVisual (VisualMotion's child) is the actual visualPrefab
         /// instance, carrying its own authored localScale (derived by
         /// CharacterAssetBuilder, preserved by leaving it untouched after
         /// Instantiate) plus a derived localPosition correction: an imported
@@ -212,7 +212,7 @@ namespace Project001.Gameplay.Collectors
         /// the old, center-pivoted sprite (see GameplayLayout's symmetric
         /// CollectorVisibleHeight*0.5 usage). Left uncorrected, every queued
         /// or riding character would render shifted upward by roughly half
-        /// its own visible height. The correction below re-centers MofuModel
+        /// its own visible height. The correction below re-centers CharacterVisual
         /// by reading its own combined mesh bounds (CollectorAnimation.
         /// ComputeLocalRendererBounds, shared rather than duplicated) and
         /// offsetting by the negative of that bounds center — derived from
@@ -233,7 +233,7 @@ namespace Project001.Gameplay.Collectors
             visualMotion.transform.SetParent(visualWrapper.transform, false);
 
             var modelInstance = Instantiate(visualPrefab, visualMotion.transform, false);
-            modelInstance.name = "MofuModel";
+            modelInstance.name = "CharacterVisual";
             modelInstance.transform.localRotation = Quaternion.identity;
 
             Bounds? localBounds = CollectorAnimation.ComputeLocalRendererBounds(modelInstance.transform);

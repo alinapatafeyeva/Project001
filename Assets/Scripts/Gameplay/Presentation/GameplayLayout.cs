@@ -21,7 +21,7 @@ namespace Project001.Gameplay.Presentation
     /// (WaitingSlotSize), and the vertical rhythm of CollectorQueueBoard's
     /// rows (QueueRowStep) are four different visual concerns that happen to
     /// have shared one number before — coupling them meant a change aimed at
-    /// one (e.g. making Mofu bigger) silently distorted the other three
+    /// one (e.g. making the character bigger) silently distorted the other three
     /// (giant WaitingLine squares, an oversized hunger label, an
     /// unnecessarily tall board).
     ///
@@ -59,7 +59,7 @@ namespace Project001.Gameplay.Presentation
         // NOT mean the visible character occupies a square of that size: at
         // scale 1 a character only covers CollectorVisibleWidthRatio x
         // CollectorVisibleHeightRatio world units (originally derived from
-        // the imported Mofu sprite rect, 575x632px at 800 PPU = 0.71875 x
+        // the imported sprite rect, 575x632px at 800 PPU = 0.71875 x
         // 0.79 - the height ratio is unchanged from that original value, see
         // CollectorVisibleHeightRatio's own remarks; the width ratio no
         // longer is, see CollectorVisibleWidthRatio's), so at
@@ -73,8 +73,8 @@ namespace Project001.Gameplay.Presentation
 
         // CollectorVisibleHeightRatio is the single shared body-height
         // target CharacterAssetBuilder scales every species to (see its own
-        // remarks) - originally derived from the imported Mofu sprite rect
-        // (632/800), kept unchanged since Mofu's height was never the
+        // remarks) - originally derived from the imported sprite rect
+        // (632/800), kept unchanged since the character's height was never the
         // problem (only its narrow width, see CollectorVisibleWidthRatio
         // below) and every other vertical composition value below
         // (QueueRowStep, WaitingLine/RecoveryRow placement, conveyor rider
@@ -145,7 +145,7 @@ namespace Project001.Gameplay.Presentation
         // for the shared-height-scaling change this accompanies. Worth
         // flagging honestly rather than silently: this was originally sized
         // assuming a "close to circular" mesh footprint (true for the old
-        // Mofu placeholder, no longer true for Turtle specifically -
+        // single-species placeholder, no longer true for Turtle specifically -
         // measured scaled width 1.037 vs the height this spacing is keyed
         // to, 0.79, an aspect ratio of ~1.31), so on a conveyor edge whose
         // fixed facing angle happens to align a Turtle rider's wide axis
@@ -178,8 +178,8 @@ namespace Project001.Gameplay.Presentation
         // QueueRowStep is the vertical distance between consecutive
         // CollectorQueueBoard row centers, built from the collector's actual
         // visible height (not CollectorSpriteScale) plus an explicit,
-        // authored visible gap — so the gap between two rendered Mofu
-        // sprites is exactly QueueVisibleGap, regardless of how much empty
+        // authored visible gap — so the gap between two rendered characters
+        // is exactly QueueVisibleGap, regardless of how much empty
         // margin CollectorSpriteScale's square itself has.
         //
         // All queue rows stay on the single shared gameplay plane (Z=0), the
@@ -308,7 +308,7 @@ namespace Project001.Gameplay.Presentation
         // The world-space size a collector's RemainingHunger label renders
         // at, regardless of CollectorSpriteScale. CollectorView applies this
         // via an inverse-scale compensation on the label's own child
-        // transform, so a bigger Mofu never produces a bigger hunger number.
+        // transform, so a bigger character never produces a bigger hunger number.
         public const float HungerLabelWorldSize = 0.12f;
 
         // ----- Hunger label sorting safety margin -----------------------------

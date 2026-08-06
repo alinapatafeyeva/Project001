@@ -90,7 +90,7 @@ namespace Project001.Gameplay.Collectors
         // variance only affects collectors spawned after the change (e.g.
         // the next Play Mode run).
         //
-        // Deliberately no independent vertical-float field: a waiting Mofu
+        // Deliberately no independent vertical-float field: a waiting character
         // must read as planted and breathing, not floating or rocking — see
         // IdleBreathingRoutine for the grounded-expansion approach that
         // replaced them.
@@ -98,7 +98,7 @@ namespace Project001.Gameplay.Collectors
         // Calibrated final defaults: quick enough to read clearly at the
         // real portrait Game view scale, but well below the exaggerated
         // diagnostic values (0.8 / 0.10 / 0.12) used to confirm the motion
-        // was actually reaching Visual — those made Mofus look like slowly
+        // was actually reaching Visual — those made characters look like slowly
         // inflating balloons, which these are tuned to avoid.
         [Header("Waiting Idle (Back Idle only: Queue / WaitingLine / RecoveryRow)")]
         [SerializeField, Tooltip("Cycles-per-second speed of the shared waiting-idle breathing wave, before this collector's own random speed variance below is applied. Lower = calmer, slower breathing.")]
@@ -145,9 +145,9 @@ namespace Project001.Gameplay.Collectors
         // shows the back — no face at all; the face is centered on yaw 180,
         // clearly visible there and faintly visible at 135/225. This is the
         // OPPOSITE of the previous "identity = front" assumption, which
-        // predated the Visual/MofuModel wrapper and pivot correction and was
+        // predated the Visual/CharacterVisual wrapper and pivot correction and was
         // never re-verified against them — that stale assumption, not the
-        // wrapper or the pivot fix, is why queued Mofus were showing their
+        // wrapper or the pivot fix, is why queued characters were showing their
         // face to the camera instead of their back. At yaw 0 the mesh's face
         // points world +Z (away from the camera, deeper into the scene); at
         // yaw 180 it points -Z (toward the camera) — see
@@ -178,10 +178,10 @@ namespace Project001.Gameplay.Collectors
 
         // How far Visual is pulled toward the camera once the terminal
         // Satisfied/Heart sequence begins, so the depth buffer places this
-        // collector's model in front of an ordinary riding Mofu that happens
+        // collector's model in front of an ordinary riding character that happens
         // to occupy the same screen position for the brief remainder of this
-        // collector's life. 1 world unit clears a full Mofu body's own depth
-        // extent (~0.7 world units at MofuModel's authored scale — see
+        // collector's life. 1 world unit clears a full character body's own depth
+        // extent (~0.7 world units at CharacterVisual's authored scale — see
         // CollectorView.HungerTextLocalOffset's remarks for how that figure
         // was measured) with margin, so the depth test wins regardless of
         // the other rider's exact facing or breathing wobble.
@@ -236,13 +236,14 @@ namespace Project001.Gameplay.Collectors
         private float _idleAmplitudeFactor;
 
         // VisualMotion's own authored scale, captured once the first time it
-        // is resolved (see EnsureVisual/CaptureBaseline) — the Mofu prefab's
-        // root carries its own non-unit scale (tuned so the model's rendered
-        // footprint matches the old sprite's visible size; see
-        // Mofu3DSetup.PrefabRootScale), so "baseline" here is that captured
-        // scale, never a hardcoded Vector3.one. Every routine below scales
-        // relative to this, the same way they used to scale relative to a
-        // flat Vector3.one when Visual held a SpriteRenderer directly.
+        // is resolved (see EnsureVisual/CaptureBaseline) — the Character_XX
+        // prefab's root carries its own non-unit scale (see
+        // CharacterAssetBuilder.BuildCharacter's rootScale derivation, tuned
+        // so every species shares the same visible height), so "baseline"
+        // here is that captured scale, never a hardcoded Vector3.one. Every
+        // routine below scales relative to this, the same way they used to
+        // scale relative to a flat Vector3.one when Visual held a
+        // SpriteRenderer directly.
         private Vector3 _baselineScale = Vector3.one;
 
         // VisualMotion's mesh bounds height in its own local space (a fixed
@@ -368,7 +369,7 @@ namespace Project001.Gameplay.Collectors
         /// <summary>
         /// Pulls Visual toward the camera (see TerminalForegroundPullDistance)
         /// so the terminal Satisfied/Heart sequence renders in front of an
-        /// ordinary riding Mofu sharing its screen position, instead of the
+        /// ordinary riding character sharing its screen position, instead of the
         /// two 3D models depth-fighting or merging. Called exactly once, by
         /// CollectorPresentation right as its terminal sequence begins —
         /// never reset, since this collector is destroyed shortly after that
@@ -533,7 +534,7 @@ namespace Project001.Gameplay.Collectors
         /// child transform, as an FBX import typically does).
         ///
         /// Public rather than private: CollectorView.Initialize reuses this
-        /// same bounds computation to derive MofuModel's pivot correction
+        /// same bounds computation to derive CharacterVisual's pivot correction
         /// from the imported model's own mesh bounds (its pivot sits at the
         /// model's feet, not its center — see CollectorView), rather than
         /// duplicating this matrix math there. Also called from the Editor
@@ -544,7 +545,7 @@ namespace Project001.Gameplay.Collectors
         ///
         /// Walks every Renderer, not just MeshFilter/MeshRenderer pairs: a
         /// rigged visual prefab (e.g. a vendor character swapped in via
-        /// CollectorQueueBoard.mofuVisualPrefab) carries its body mesh on a
+        /// CharacterDatabase) carries its body mesh on a
         /// SkinnedMeshRenderer, which has no MeshFilter sibling at all — a
         /// MeshFilter-only walk would silently see none of it and either
         /// mis-center on an unrelated static child mesh or fall back to no

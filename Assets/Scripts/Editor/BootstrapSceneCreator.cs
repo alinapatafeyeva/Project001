@@ -138,15 +138,14 @@ public static class BootstrapSceneCreator
 
     /// <summary>
     /// Overrides just this camera to render through the Universal Renderer
-    /// registered on UniversalRP.asset (added by the renderer-compatibility
-    /// spike alongside the project's existing, still-default 2D Renderer —
-    /// see UniversalRP.asset's m_RendererDataList and
-    /// Mofu3DRendererSpike). Without this override the camera falls back to
+    /// registered on UniversalRP.asset (added alongside the project's
+    /// existing, still-default 2D Renderer — see UniversalRP.asset's
+    /// m_RendererDataList). Without this override the camera falls back to
     /// the pipeline's default (the 2D Renderer), which does not shade URP
-    /// Lit materials against a Directional Light at all — every 3D Mofu
+    /// Lit materials against a Directional Light at all — every 3D character
     /// would render flat/unlit regardless of the key light's own settings.
     /// Every other 2D visual (SpriteRenderers, UI, PixelGrid) renders
-    /// identically under either renderer, so this only ever affects Mofu.
+    /// identically under either renderer, so this only ever affects the character model.
     /// Looks the Universal Renderer's index up on the pipeline asset rather
     /// than hardcoding it, so this keeps working if the renderer list is
     /// ever reordered.
@@ -157,7 +156,7 @@ public static class BootstrapSceneCreator
         var rendererData = AssetDatabase.LoadAssetAtPath<UniversalRendererData>(UniversalRendererDataPath);
         if (pipelineAsset == null || rendererData == null)
         {
-            Debug.LogError($"BootstrapSceneCreator: could not load '{UniversalPipelineAssetPath}' and/or '{UniversalRendererDataPath}'; Main Camera will fall back to the pipeline's default renderer and Mofu will render unlit.");
+            Debug.LogError($"BootstrapSceneCreator: could not load '{UniversalPipelineAssetPath}' and/or '{UniversalRendererDataPath}'; Main Camera will fall back to the pipeline's default renderer and the character will render unlit.");
             return;
         }
 
@@ -176,7 +175,7 @@ public static class BootstrapSceneCreator
 
         if (rendererIndex < 0)
         {
-            Debug.LogError($"BootstrapSceneCreator: '{rendererData.name}' is not registered in '{pipelineAsset.name}''s renderer list; Main Camera will fall back to the pipeline's default renderer and Mofu will render unlit.");
+            Debug.LogError($"BootstrapSceneCreator: '{rendererData.name}' is not registered in '{pipelineAsset.name}''s renderer list; Main Camera will fall back to the pipeline's default renderer and the character will render unlit.");
             return;
         }
 
@@ -189,7 +188,7 @@ public static class BootstrapSceneCreator
     /// white, and neutral (default intensity/shadow settings) but no longer
     /// Unity's own standard default rotation for a new light (50, -30, 0) —
     /// that angle's travel direction sits close enough to the camera's own
-    /// forward axis (both facing mostly +Z) that a camera-facing Mofu's
+    /// forward axis (both facing mostly +Z) that a camera-facing character's
     /// visible hemisphere was lit almost head-on, which read as flat/
     /// marker-filled instead of showing the model's actual sculpted
     /// surface relief. (40, -55, 0) keeps the same general "high and to one
@@ -197,7 +196,7 @@ public static class BootstrapSceneCreator
     /// eases pitch back slightly (40 vs 50), producing a more oblique,
     /// raking angle across the model — still a simple single-light setup,
     /// not a production lighting rig, just aimed so the geometry is
-    /// actually readable. Added for the 3D Mofu presentation spike so the
+    /// actually readable. Added for the 3D character presentation spike so the
     /// model's volume, silhouette, and materials are actually visible (the
     /// URP Lit materials render flat/unlit without any light in scene).
     /// </summary>
@@ -217,9 +216,9 @@ public static class BootstrapSceneCreator
     /// whatever dim, cool-tinted values a freshly created scene otherwise
     /// defaults to (a new URP scene's own defaults, never previously set by
     /// this class). Alongside CreateKeyLight's single Directional Light,
-    /// this is the entire lighting rig Mofu renders under: with no fill
-    /// light and only that dim/cool default ambient, the side of a rounded
-    /// Mofu facing away from the key light read as dark and grayish-blue
+    /// this is the entire lighting rig the character renders under: with no
+    /// fill light and only that dim/cool default ambient, the side of a
+    /// rounded character facing away from the key light read as dark and grayish-blue
     /// rather than a shaded version of its own fur colour. A stronger,
     /// colour-neutral ambient keeps that far side readable and saturated
     /// (a "bright stylized character" look) without washing out the key
@@ -277,7 +276,7 @@ public static class BootstrapSceneCreator
         serializedSystem.FindProperty("conveyorPath").objectReferenceValue = conveyorPath;
         serializedSystem.FindProperty("boardingProgress").floatValue = 0.55f;
         // GameplayLayout.ConveyorRiderMinimumSpacing, not a bare literal —
-        // this must safely exceed the rendered Mofu footprint (see its own
+        // this must safely exceed the rendered character footprint (see its own
         // derivation comment) or riders that board close together end up
         // permanently overlapping, since every rider moves at the same
         // fixed speed and never closes or opens that gap afterward.

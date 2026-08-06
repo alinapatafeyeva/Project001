@@ -314,7 +314,7 @@ namespace Project001.EditorTools
 
         /// <summary>
         /// Walks every live CollectorView in the scene and checks its
-        /// instantiated MofuModel: at least one renderer, no null
+        /// instantiated CharacterVisual: at least one renderer, no null
         /// sharedMaterial, no magenta error-shader material, and no
         /// runtime-instanced material (Unity suffixes an instanced
         /// Material's name with " (Instance)" the first time
@@ -330,7 +330,7 @@ namespace Project001.EditorTools
             {
                 if (view.VisualMotion == null || view.VisualMotion.childCount == 0)
                 {
-                    Debug.LogError($"CharacterVerification: LIVE FAIL ({phaseLabel}) - '{view.name}' has no MofuModel instance under VisualMotion.");
+                    Debug.LogError($"CharacterVerification: LIVE FAIL ({phaseLabel}) - '{view.name}' has no CharacterVisual instance under VisualMotion.");
                     _liveCheckOk = false;
                     continue;
                 }
@@ -339,7 +339,7 @@ namespace Project001.EditorTools
                 var renderers = model.GetComponentsInChildren<Renderer>(true);
                 if (renderers.Length == 0)
                 {
-                    Debug.LogError($"CharacterVerification: LIVE FAIL ({phaseLabel}) - '{view.name}' MofuModel has no renderers.");
+                    Debug.LogError($"CharacterVerification: LIVE FAIL ({phaseLabel}) - '{view.name}' CharacterVisual has no renderers.");
                     _liveCheckOk = false;
                     continue;
                 }
@@ -418,7 +418,7 @@ namespace Project001.EditorTools
         /// Measures and checks the board BeginAllTwentyOverlapCheck built.
         /// Deliberately does NOT read live bounds off the board's own
         /// deeply-nested collector hierarchy (collectorRoot -&gt; Visual -&gt;
-        /// VisualMotion -&gt; MofuModel -&gt; nested vendor body prefab): confirmed
+        /// VisualMotion -&gt; CharacterVisual -&gt; nested vendor body prefab): confirmed
         /// empirically (per-species-consistent but wrong inflation - e.g.
         /// Crab +9%, Octopus +17%, Turtle +26%, Fish +34% over the known
         /// build-time size, reproducible across every instance of the same
@@ -554,7 +554,7 @@ namespace Project001.EditorTools
         /// CollectorView.Initialize's own remarks); real gameplay only ends
         /// up centered at the collector's Transform position because
         /// CollectorView.Initialize explicitly cancels that raw pivot
-        /// offset (offsetting MofuModel by -bounds.center). This method
+        /// offset (offsetting CharacterVisual by -bounds.center). This method
         /// must replicate that same cancellation - treating worldPosition
         /// as the corrected geometric center, not adding the raw,
         /// uncorrected local.center offset on top of it - or it reports a
