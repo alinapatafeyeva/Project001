@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using Project001.Gameplay.Collectors;
+using Project001.Gameplay.Conveyor;
 using Project001.Gameplay.Levels;
 using Project001.Gameplay.Pixels;
 using Project001.Gameplay.Presentation;
@@ -608,6 +609,435 @@ namespace Project001.EditorTools
             int exitCode = overallOk ? 0 : 1;
 
             Debug.Log($"CharacterVerification: DONE - assetLevelPass={_assetPassOk} ({_assetPassCount}/20), livePass={_liveCheckOk}, overall={(overallOk ? "PASS" : "FAIL")}, exit code {exitCode}.");
+            EditorApplication.Exit(exitCode);
+        }
+
+        // =====================================================================
+        // Queue row depth-architecture diagnostic
+        // =====================================================================
+        //
+        // Verifies the genuine-presentation-depth replacement for the
+        // earlier, reverted QueueVisibleGap-widening attempt: queue rows are
+        // allowed to overlap in world Y again (QueueVisibleGap back to its
+        // pre-attempt 0.5), and instead get real per-row separation along
+        // the camera's own forward axis (GameplayLayout.QueueRowDepthStep,
+        // applied via CollectorAnimation.SetPresentationDepth) - a genuine
+        // Z-test outcome an opaque renderer always respects, unlike
+        // sortingOrder. Because this only ever moves things along the
+        // orthographic camera's own forward axis, it changes depth without
+        // changing apparent size or screen position at all - so unlike the
+        // reverted attempt, this needs no wider row spacing and no camera
+        // zoom-out, and every species keeps the exact same restored,
+        // unshrunk CollectorSpriteScale/CollectorVisibleHeightRatio.
+        //
+        // Checks, at portrait 1080x1920, on one synthetic queue of all four
+        // species (Crab/Turtle/Fish/Octopus - Match IDs 1/3/6/7):
+        //   - restored composition: orthographic size and each species'
+        //     actual prefab root scale, to confirm nothing shrank;
+        //   - collector root and its CircleCollider2D stay at world Z=0 for
+        //     every row;
+        //   - each row's Visual sits at the expected depth
+        //     (rowIndex * QueueRowDepthStep toward the camera), and depth
+        //     strictly increases with row index (later rows genuinely
+        //     closer to the camera than earlier ones);
+        //   - Camera.WorldToScreenPoint reports IDENTICAL screen X/Y for the
+        //     collector root (Z=0, no depth pull) and its own Visual (after
+        //     the depth pull) - the orthographic screen-position-invariance
+        //     guarantee this whole approach depends on;
+        //   - each row's hunger label sits further toward the camera than
+        //     its own character's Visual, so it can never end up hidden
+        //     behind its own body;
+        //   - adjacent rows' real Renderer.bounds actually overlap in
+        //     screen Y (confirming this is genuine controlled overlap, not
+        //     rows that just happen to still be far enough apart that depth
+        //     ordering is moot).
+        //
+        // Then, on the real scene's own CollectorQueueBoard/
+        // CollectorSelectionController (matching Run()'s own LIVE-check
+        // pattern): confirms ShiftQueueUp reapplies depth to the new row 0,
+        // and that boarding clears queue-row depth back to 0 the instant a
+        // collector becomes a Conveyor rider.
+        private static GameObject _depthDiagnosticBoardObject;
+        private static double _depthDiagnosticElapsedStart = -1;
+        private static bool _depthDiagnosticBoardBuilt;
+        private static int _depthDiagnosticSettleFrames;
+        private static bool _depthDiagnosticStaticChecksDone;
+        private static bool _depthDiagnosticSelected;
+        private static bool _depthDiagnosticFinishing;
+        private static bool _depthDiagnosticOk = true;
+
+        private static readonly int[] DepthDiagnosticMatchIds = { 1, 3, 6, 7 }; // Crab, Turtle, Fish, Octopus
+        private static readonly string[] DepthDiagnosticSpeciesNames = { "Crab", "Turtle", "Fish", "Octopus" };
+        private const float DepthDiagnosticScreenWidth = 1080f;
+        private const float DepthDiagnosticScreenHeight = 1920f;
+        private const float DepthEpsilon = 0.001f;
+        private const float ScreenPixelEpsilon = 0.05f;
+
+        [MenuItem("Tools/Characters/Run Queue Row Depth Diagnostic")]
+        public static void RunRowDepthDiagnostic()
+        {
+            _depthDiagnosticBoardObject = null;
+            _depthDiagnosticElapsedStart = -1;
+            _depthDiagnosticBoardBuilt = false;
+            _depthDiagnosticSettleFrames = 0;
+            _depthDiagnosticStaticChecksDone = false;
+            _depthDiagnosticSelected = false;
+            _depthDiagnosticFinishing = false;
+            _depthDiagnosticOk = true;
+
+            EditorSceneManager.OpenScene(ScenePath);
+            EditorApplication.update += DepthDiagnosticUpdate;
+            EditorApplication.isPlaying = true;
+        }
+
+        private static void DepthDiagnosticUpdate()
+        {
+            try
+            {
+                DepthDiagnosticStep();
+            }
+            catch (Exception exception)
+            {
+                Debug.LogError($"CharacterVerification: DEPTH DIAGNOSTIC aborting after exception - {exception}");
+                _depthDiagnosticOk = false;
+                DepthDiagnosticFinish();
+            }
+        }
+
+        private static void DepthDiagnosticStep()
+        {
+            if (!EditorApplication.isPlaying)
+                return;
+
+            if (_depthDiagnosticElapsedStart < 0)
+                _depthDiagnosticElapsedStart = EditorApplication.timeSinceStartup;
+
+            double elapsed = EditorApplication.timeSinceStartup - _depthDiagnosticElapsedStart;
+
+            var characterDatabase = UnityEngine.Object.FindAnyObjectByType<CharacterDatabase>();
+            var portraitCameraFitter = UnityEngine.Object.FindAnyObjectByType<PortraitCameraFitter>();
+            var camera = Camera.main;
+
+            if (characterDatabase == null || portraitCameraFitter == null || camera == null)
+            {
+                if (elapsed > 5.0)
+                {
+                    Debug.LogError("CharacterVerification: DEPTH DIAGNOSTIC FAIL - CharacterDatabase/PortraitCameraFitter/Main Camera never appeared after 5s.");
+                    _depthDiagnosticOk = false;
+                    DepthDiagnosticFinish();
+                }
+                return;
+            }
+
+            if (!_depthDiagnosticBoardBuilt)
+            {
+                // Forces the exact composition/orthographic size a real
+                // 1080x1920 portrait device would use, regardless of the
+                // batch-mode Game View's own actual surface size.
+                portraitCameraFitter.Fit(DepthDiagnosticScreenWidth, DepthDiagnosticScreenHeight);
+
+                _depthDiagnosticBoardObject = BuildDepthDiagnosticBoard(characterDatabase);
+                _depthDiagnosticBoardBuilt = true;
+                _depthDiagnosticSettleFrames = 5;
+                return;
+            }
+
+            if (_depthDiagnosticSettleFrames > 0)
+            {
+                _depthDiagnosticSettleFrames--;
+                return;
+            }
+
+            if (!_depthDiagnosticStaticChecksDone)
+            {
+                RunStaticDepthChecks(characterDatabase, camera);
+                _depthDiagnosticStaticChecksDone = true;
+                return;
+            }
+
+            // Live checks on the real scene board, matching Run()'s own
+            // pattern: a real CollectorSelectionController.Select() call to
+            // exercise ShiftQueueUp/boarding through the same production
+            // code path a real tap uses.
+            var board = UnityEngine.Object.FindAnyObjectByType<CollectorQueueBoard>();
+            var selectionController = UnityEngine.Object.FindAnyObjectByType<CollectorSelectionController>();
+
+            if (board == null || selectionController == null)
+            {
+                if (elapsed > 8.0)
+                {
+                    Debug.LogError("CharacterVerification: DEPTH DIAGNOSTIC FAIL - real scene CollectorQueueBoard/CollectorSelectionController never appeared.");
+                    _depthDiagnosticOk = false;
+                    DepthDiagnosticFinish();
+                }
+                return;
+            }
+
+            if (!_depthDiagnosticSelected && elapsed >= 6.5)
+            {
+                CheckRealBoardBeforeSelection(board);
+
+                CollectorView firstSelectable = null;
+                foreach (CollectorView view in UnityEngine.Object.FindObjectsByType<CollectorView>(FindObjectsInactive.Exclude, FindObjectsSortMode.None))
+                {
+                    if (board.CanSelect(view))
+                    {
+                        firstSelectable = view;
+                        break;
+                    }
+                }
+
+                if (firstSelectable == null)
+                {
+                    Debug.LogError("CharacterVerification: DEPTH DIAGNOSTIC FAIL - no selectable collector found on the real scene board.");
+                    _depthDiagnosticOk = false;
+                }
+                else
+                {
+                    Debug.Log($"CharacterVerification: DEPTH DIAGNOSTIC selecting '{firstSelectable.name}' via CollectorSelectionController.Select (real gameplay API) to exercise ShiftQueueUp/boarding depth handling.");
+                    selectionController.Select(firstSelectable);
+                }
+
+                _depthDiagnosticSelected = true;
+                return;
+            }
+
+            if (_depthDiagnosticSelected && elapsed >= 7.0 && !_depthDiagnosticFinishing)
+            {
+                CheckRealBoardAfterSelection(board);
+                _depthDiagnosticFinishing = true;
+                DepthDiagnosticFinish();
+            }
+        }
+
+        private static GameObject BuildDepthDiagnosticBoard(CharacterDatabase characterDatabase)
+        {
+            var boardObject = new GameObject("DiagnosticDepthBoard", typeof(CollectorQueueBoard));
+            var board = boardObject.GetComponent<CollectorQueueBoard>();
+            var serializedBoard = new SerializedObject(board);
+            serializedBoard.FindProperty("characterDatabase").objectReferenceValue = characterDatabase;
+            serializedBoard.ApplyModifiedPropertiesWithoutUndo();
+
+            var matchTypeId = new MatchTypeId("row_depth_diagnostic");
+            var collectors = new List<CollectorDefinition>();
+            foreach (int matchId in DepthDiagnosticMatchIds)
+                collectors.Add(new CollectorDefinition(matchTypeId, 1, matchId));
+
+            var queues = new List<CollectorQueueDefinition> { new CollectorQueueDefinition(collectors) };
+            board.Initialize(queues);
+            return boardObject;
+        }
+
+        private static void RunStaticDepthChecks(CharacterDatabase characterDatabase, Camera camera)
+        {
+            float orthoSize = GameplayLayout.ComputeOrthographicSize(DepthDiagnosticScreenWidth, DepthDiagnosticScreenHeight);
+            Debug.Log($"CharacterVerification: DEPTH DIAGNOSTIC composition - orthographicSize={orthoSize:F4} at {DepthDiagnosticScreenWidth}x{DepthDiagnosticScreenHeight}, "
+                + $"CollectorSpriteScale={GameplayLayout.CollectorSpriteScale:F4}, CollectorVisibleHeightRatio={GameplayLayout.CollectorVisibleHeightRatio:F4}, "
+                + $"CollectorVisibleHeight={GameplayLayout.CollectorVisibleHeight:F4}, QueueRowStep={GameplayLayout.QueueRowStep:F4}, QueueVisibleGap={GameplayLayout.QueueVisibleGap:F4}, "
+                + $"QueueRowDepthStep={GameplayLayout.QueueRowDepthStep:F4}.");
+
+            for (int i = 0; i < DepthDiagnosticMatchIds.Length; i++)
+            {
+                GameObject prefab = characterDatabase.GetPrefab(DepthDiagnosticMatchIds[i]);
+                Vector3 rootScale = prefab != null ? prefab.transform.localScale : Vector3.zero;
+                Debug.Log($"CharacterVerification: DEPTH DIAGNOSTIC restored scale - {DepthDiagnosticSpeciesNames[i]} (Match ID {DepthDiagnosticMatchIds[i]:D2}) prefab root scale={rootScale.x:F4} (uniform).");
+            }
+
+            Vector3 cameraForward = GameplayLayout.CameraForward;
+            Transform queueTransform = _depthDiagnosticBoardObject.transform.GetChild(0);
+            int rowCount = DepthDiagnosticMatchIds.Length;
+
+            var rootWorldZ = new float[rowCount];
+            var visualDistanceFromCamera = new float[rowCount];
+            var rootScreenPoint = new Vector2[rowCount];
+            var visualScreenPoint = new Vector2[rowCount];
+            var combinedBounds = new Bounds[rowCount];
+            var hasBounds = new bool[rowCount];
+
+            for (int row = 0; row < rowCount && row < queueTransform.childCount; row++)
+            {
+                Transform collectorTransform = queueTransform.GetChild(row);
+                CollectorView view = collectorTransform.GetComponent<CollectorView>();
+                CircleCollider2D collider = collectorTransform.GetComponent<CircleCollider2D>();
+
+                rootWorldZ[row] = collectorTransform.position.z;
+                bool colliderOnPlane = collider != null && Mathf.Abs(collider.transform.position.z) < DepthEpsilon;
+
+                Vector3 visualWorldPosition = view.Visual.position;
+                float distanceFromBaseline = Vector3.Dot(visualWorldPosition - collectorTransform.position, -cameraForward);
+                visualDistanceFromCamera[row] = distanceFromBaseline;
+
+                // Visual is a direct child of the collector root, which
+                // itself carries CollectorSpriteScale (see
+                // CollectorQueueBoard.GenerateBoard) - Unity applies a
+                // parent's scale to a child's local position when computing
+                // world position, so the REAL world-space distance
+                // SetPresentationDepth(rowIndex * QueueRowDepthStep)
+                // produces is that value times CollectorSpriteScale, the
+                // same scaling every existing camera-forward pull on this
+                // hierarchy already has (EnterTerminalForeground,
+                // HungerTextLocalOffset's own pull).
+                float expectedDepth = row * GameplayLayout.QueueRowDepthStep * GameplayLayout.CollectorSpriteScale;
+                bool depthCorrect = Mathf.Abs(distanceFromBaseline - expectedDepth) < DepthEpsilon;
+
+                Vector3 rootScreen = camera.WorldToScreenPoint(collectorTransform.position);
+                Vector3 visualScreen = camera.WorldToScreenPoint(visualWorldPosition);
+                rootScreenPoint[row] = rootScreen;
+                visualScreenPoint[row] = visualScreen;
+                bool screenPositionPreserved = Mathf.Abs(rootScreen.x - visualScreen.x) < ScreenPixelEpsilon
+                    && Mathf.Abs(rootScreen.y - visualScreen.y) < ScreenPixelEpsilon;
+
+                Vector3 hungerTextWorldPosition = collectorTransform.Find("HungerText").position;
+                float hungerDistanceFromBaseline = Vector3.Dot(hungerTextWorldPosition - collectorTransform.position, -cameraForward);
+                bool labelAheadOfCharacter = hungerDistanceFromBaseline > distanceFromBaseline;
+
+                bool rowOk = colliderOnPlane && Mathf.Abs(rootWorldZ[row]) < DepthEpsilon && depthCorrect && screenPositionPreserved && labelAheadOfCharacter;
+                _depthDiagnosticOk &= rowOk;
+
+                Debug.Log($"CharacterVerification: DEPTH DIAGNOSTIC row {row} ({DepthDiagnosticSpeciesNames[row]}) - "
+                    + $"rootZ={rootWorldZ[row]:F5} colliderOnPlane={colliderOnPlane}, "
+                    + $"visualDepth={distanceFromBaseline:F4} (expected {expectedDepth:F4}, match={depthCorrect}), "
+                    + $"rootScreen=({rootScreen.x:F2},{rootScreen.y:F2}) visualScreen=({visualScreen.x:F2},{visualScreen.y:F2}) screenPreserved={screenPositionPreserved}, "
+                    + $"hungerLabelDepth={hungerDistanceFromBaseline:F4} aheadOfCharacter={labelAheadOfCharacter} -> {(rowOk ? "PASS" : "FAIL")}.");
+
+                Renderer[] renderers = collectorTransform.GetComponentsInChildren<Renderer>();
+                bool any = false;
+                Bounds combined = default;
+                foreach (Renderer renderer in renderers)
+                {
+                    if (!any) { combined = renderer.bounds; any = true; }
+                    else combined.Encapsulate(renderer.bounds);
+                }
+                combinedBounds[row] = combined;
+                hasBounds[row] = any;
+            }
+
+            for (int row = 1; row < rowCount; row++)
+            {
+                bool strictlyCloser = visualDistanceFromCamera[row] > visualDistanceFromCamera[row - 1] + DepthEpsilon;
+                if (!strictlyCloser)
+                {
+                    Debug.LogError($"CharacterVerification: DEPTH DIAGNOSTIC FAIL - row {row} ({DepthDiagnosticSpeciesNames[row]}) is not genuinely closer to the camera than row {row - 1} ({DepthDiagnosticSpeciesNames[row - 1]}) - depths {visualDistanceFromCamera[row]:F4} vs {visualDistanceFromCamera[row - 1]:F4}.");
+                    _depthDiagnosticOk = false;
+                }
+
+                if (hasBounds[row] && hasBounds[row - 1])
+                {
+                    Vector3 up = GameplayLayout.CameraRotation * Vector3.up;
+                    float rowTop = ProjectMax(combinedBounds[row], up);
+                    float prevBottom = ProjectMin(combinedBounds[row - 1], up);
+                    bool overlaps = rowTop > prevBottom;
+                    Debug.Log($"CharacterVerification: DEPTH DIAGNOSTIC pair {DepthDiagnosticSpeciesNames[row - 1]}(row{row - 1})/{DepthDiagnosticSpeciesNames[row]}(row{row}) - real silhouettes overlap on screen = {overlaps} (this is the EXPECTED, intended controlled overlap, resolved by depth order not by Y separation).");
+                }
+            }
+        }
+
+        private static float ProjectMax(Bounds bounds, Vector3 axis)
+        {
+            Vector3 min = bounds.min;
+            Vector3 max = bounds.max;
+            float result = float.MinValue;
+            for (int corner = 0; corner < 8; corner++)
+            {
+                var point = new Vector3((corner & 1) == 0 ? min.x : max.x, (corner & 2) == 0 ? min.y : max.y, (corner & 4) == 0 ? min.z : max.z);
+                result = Mathf.Max(result, Vector3.Dot(point, axis));
+            }
+            return result;
+        }
+
+        private static float ProjectMin(Bounds bounds, Vector3 axis)
+        {
+            Vector3 min = bounds.min;
+            Vector3 max = bounds.max;
+            float result = float.MaxValue;
+            for (int corner = 0; corner < 8; corner++)
+            {
+                var point = new Vector3((corner & 1) == 0 ? min.x : max.x, (corner & 2) == 0 ? min.y : max.y, (corner & 4) == 0 ? min.z : max.z);
+                result = Mathf.Min(result, Vector3.Dot(point, axis));
+            }
+            return result;
+        }
+
+        private static void CheckRealBoardBeforeSelection(CollectorQueueBoard board)
+        {
+            foreach (CollectorView view in UnityEngine.Object.FindObjectsByType<CollectorView>(FindObjectsInactive.Exclude, FindObjectsSortMode.None))
+            {
+                if (Mathf.Abs(view.transform.position.z) > DepthEpsilon)
+                {
+                    Debug.LogError($"CharacterVerification: DEPTH DIAGNOSTIC FAIL - real board collector '{view.name}' root is not at Z=0 (z={view.transform.position.z:F5}).");
+                    _depthDiagnosticOk = false;
+                }
+            }
+
+            Debug.Log("CharacterVerification: DEPTH DIAGNOSTIC real-scene pre-selection collider/root Z=0 check complete.");
+        }
+
+        /// <summary>
+        /// After CollectorSelectionController.Select boards the front
+        /// collector of its queue: the boarded rider must show
+        /// presentation depth 0 (queue-row depth cleared, per requirement),
+        /// and the new row 0 (formerly row 1) must have been reassigned
+        /// depth 0 by ShiftQueueUp - i.e. no row keeps a stale depth from
+        /// its old position.
+        /// </summary>
+        private static void CheckRealBoardAfterSelection(CollectorQueueBoard board)
+        {
+            Vector3 cameraForward = GameplayLayout.CameraForward;
+            bool anyRiderChecked = false;
+            bool anyQueueRowChecked = false;
+
+            foreach (ConveyorRider rider in UnityEngine.Object.FindObjectsByType<ConveyorRider>(FindObjectsInactive.Exclude, FindObjectsSortMode.None))
+            {
+                if (!rider.IsRiding)
+                    continue;
+
+                anyRiderChecked = true;
+                CollectorView view = rider.GetComponent<CollectorView>();
+                float depth = Vector3.Dot(view.Visual.position - view.transform.position, -cameraForward);
+                bool cleared = Mathf.Abs(depth) < DepthEpsilon;
+                Debug.Log($"CharacterVerification: DEPTH DIAGNOSTIC boarded rider '{view.name}' - presentation depth={depth:F4} (expected 0, cleared={cleared}).");
+                if (!cleared)
+                    _depthDiagnosticOk = false;
+            }
+
+            if (!anyRiderChecked)
+            {
+                Debug.LogError("CharacterVerification: DEPTH DIAGNOSTIC FAIL - no riding collector found after Select(); boarding did not happen.");
+                _depthDiagnosticOk = false;
+            }
+
+            foreach (CollectorView view in UnityEngine.Object.FindObjectsByType<CollectorView>(FindObjectsInactive.Exclude, FindObjectsSortMode.None))
+            {
+                if (view.GetComponent<ConveyorRider>().IsRiding)
+                    continue;
+
+                if (!board.CanSelect(view))
+                    continue;
+
+                anyQueueRowChecked = true;
+                float depth = Vector3.Dot(view.Visual.position - view.transform.position, -cameraForward);
+                bool isRowZero = Mathf.Abs(depth) < DepthEpsilon;
+                Debug.Log($"CharacterVerification: DEPTH DIAGNOSTIC ShiftQueueUp - new front-of-queue collector '{view.name}' presentation depth={depth:F4} (expected 0 for row 0, correct={isRowZero}).");
+                if (!isRowZero)
+                    _depthDiagnosticOk = false;
+            }
+
+            if (!anyQueueRowChecked)
+                Debug.LogError("CharacterVerification: DEPTH DIAGNOSTIC FAIL - no front-of-queue collector found to verify ShiftQueueUp depth reassignment.");
+        }
+
+        private static void DepthDiagnosticFinish()
+        {
+            EditorApplication.update -= DepthDiagnosticUpdate;
+
+            if (_depthDiagnosticBoardObject != null)
+                UnityEngine.Object.DestroyImmediate(_depthDiagnosticBoardObject);
+
+            if (EditorApplication.isPlaying)
+                EditorApplication.isPlaying = false;
+
+            int exitCode = _depthDiagnosticOk ? 0 : 1;
+            Debug.Log($"CharacterVerification: DEPTH DIAGNOSTIC DONE - overall={(_depthDiagnosticOk ? "PASS" : "FAIL")}, exit code {exitCode}.");
             EditorApplication.Exit(exitCode);
         }
 

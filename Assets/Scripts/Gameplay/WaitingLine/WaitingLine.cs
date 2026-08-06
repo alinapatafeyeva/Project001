@@ -215,6 +215,13 @@ namespace Project001.Gameplay.WaitingLine
 
         bool ICollectorSource.ReleaseCollector(CollectorView collectorView) => ClearSlotContaining(collectorView);
 
+        /// <summary>
+        /// Reapplies this line's own neutral (baseline) presentation depth —
+        /// used only when CollectorSelectionController rolls back a
+        /// boarding attempt (this line never actually released the view).
+        /// </summary>
+        void ICollectorSource.RestorePresentationDepth(CollectorView collectorView) => collectorView?.Presentation.ClearPresentationDepth();
+
         private void OnDestroy()
         {
             if (_sharedSprite != null)

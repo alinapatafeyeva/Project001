@@ -1,6 +1,7 @@
 using System;
 using System.Collections;
 using Project001.Gameplay.Conveyor;
+using Project001.Gameplay.Presentation;
 using UnityEngine;
 
 namespace Project001.Gameplay.Collectors
@@ -175,22 +176,36 @@ namespace Project001.Gameplay.Collectors
         // rather than a matter of calling it correctly.
         private const float YawDegreesPerSecond = 900f;
 
-        // How far Visual is pulled toward the camera (world -Z, since the
-        // orthographic camera sits at Z=-10 looking down +Z — see
-        // BootstrapSceneCreator.CreateCamera) once the terminal Satisfied/
-        // Heart sequence begins, so the depth buffer places this collector's
-        // model in front of an ordinary riding Mofu that happens to occupy
-        // the same screen position for the brief remainder of this
-        // collector's life. -1 world unit clears a full Mofu body's own
-        // depth extent (~0.7 world units at MofuModel's authored scale — see
+        // How far Visual is pulled toward the camera once the terminal
+        // Satisfied/Heart sequence begins, so the depth buffer places this
+        // collector's model in front of an ordinary riding Mofu that happens
+        // to occupy the same screen position for the brief remainder of this
+        // collector's life. 1 world unit clears a full Mofu body's own depth
+        // extent (~0.7 world units at MofuModel's authored scale — see
         // CollectorView.HungerTextLocalOffset's remarks for how that figure
         // was measured) with margin, so the depth test wins regardless of
-        // the other rider's exact facing or breathing wobble. This is a
-        // one-way move, never reset: Visual's localPosition is otherwise
-        // always zero and nothing else ever writes it (see CollectorView),
-        // and CollectorLifecycle destroys this collector shortly after the
+        // the other rider's exact facing or breathing wobble.
+        //
+        // Pulled along -GameplayLayout.CameraForward, not a raw local/world
+        // -Z axis: this used to be a plain Vector3(0,0,-1) local offset, back
+        // when the camera looked straight down world +Z and a pure Z move
+        // had zero effect on screen position. Once the camera gained its
+        // downward tilt (GameplayLayout.CameraTiltDegrees), that same raw
+        // -Z move also shifted the projected screen Y (the tilted camera's
+        // own up axis has a nonzero Z component) — proven via direct Play
+        // Mode logging of Visual's world position immediately before/after
+        // this assignment: a discrete, one-frame snap in world Z (scaled up
+        // to -1.9 by the collector root's own CollectorSpriteScale) that
+        // read as a visible downward jump on screen for both species tested
+        // (Crab, Octopus). Moving along -CameraForward instead can never do
+        // this, by construction of an orthonormal camera basis (forward is
+        // always perpendicular to up and right, at any tilt angle), so it
+        // only ever changes depth, never screen position. This is a one-way
+        // move, never reset: Visual's localPosition is otherwise always zero
+        // and nothing else ever writes it (see CollectorView), and
+        // CollectorLifecycle destroys this collector shortly after the
         // terminal sequence completes, so there is nothing to restore.
-        private const float TerminalForegroundZOffset = -1f;
+        private const float TerminalForegroundPullDistance = 1f;
 
         private enum FacingMode
         {
@@ -351,23 +366,58 @@ namespace Project001.Gameplay.Collectors
             StartRoutine(HeartPulseAndCollapseRoutine(onComplete), forceTerminal: true);
 
         /// <summary>
-        /// Pulls Visual toward the camera (see TerminalForegroundZOffset) so
-        /// the terminal Satisfied/Heart sequence renders in front of an
+        /// Pulls Visual toward the camera (see TerminalForegroundPullDistance)
+        /// so the terminal Satisfied/Heart sequence renders in front of an
         /// ordinary riding Mofu sharing its screen position, instead of the
         /// two 3D models depth-fighting or merging. Called exactly once, by
         /// CollectorPresentation right as its terminal sequence begins —
         /// never reset, since this collector is destroyed shortly after that
-        /// sequence completes (see TerminalForegroundZOffset's remarks).
-        /// Touches only Visual's localPosition, never the collector root, so
-        /// gameplay position and conveyor rider spacing are unaffected;
-        /// harmless no-op if Visual cannot be resolved.
+        /// sequence completes (see TerminalForegroundPullDistance's remarks).
+        /// Just SetPresentationDepth at a fixed distance; kept as its own
+        /// named method since "entering terminal foreground" is a distinct,
+        /// one-way gameplay event, not a per-row value a caller picks.
         /// </summary>
-        public void EnterTerminalForeground()
+        public void EnterTerminalForeground() => SetPresentationDepth(TerminalForegroundPullDistance);
+
+        /// <summary>
+        /// Moves Visual (and only Visual — never the collector root or its
+        /// CircleCollider2D, which both stay on the shared Z=0 gameplay
+        /// plane for gameplay/selection purposes) along -CameraForward by
+        /// depthWorldUnits, toward the camera. Under the orthographic
+        /// camera this changes only depth (which of two overlapping
+        /// silhouettes wins the real Z-test), never a rendered point's
+        /// screen X/Y — the same guarantee EnterTerminalForeground already
+        /// relied on before this was pulled out as its own reusable method
+        /// (see its own historical remarks: a raw local/world -Z move does
+        /// NOT have this property once the camera is tilted, only a move
+        /// along the camera's own forward axis does). The single shared
+        /// primitive every presentation-depth caller (queue row placement,
+        /// WaitingLine/RecoveryRow's own neutral depth, terminal foreground)
+        /// goes through, so "how do I make something render in front of
+        /// something else" only has one real implementation. Setting
+        /// depthWorldUnits back to 0 fully restores Visual's authored
+        /// baseline position — this is not a one-way move, unlike
+        /// EnterTerminalForeground's own usage of it. Harmless no-op if
+        /// Visual cannot be resolved.
+        ///
+        /// depthWorldUnits is expressed in Visual's own LOCAL space, same as
+        /// TerminalForegroundPullDistance and HungerTextForegroundPullDistance
+        /// already were before this method existed — Visual is a direct
+        /// child of the collector root, which carries CollectorSpriteScale,
+        /// so the REAL world-space distance this actually moves Visual is
+        /// depthWorldUnits * CollectorSpriteScale. Every caller (see
+        /// GameplayLayout.QueueRowDepthStep's own remarks) already accounts
+        /// for this; kept as a genuine local-space value rather than
+        /// compensating for CollectorSpriteScale here specifically so
+        /// EnterTerminalForeground's own already-verified real-world pull
+        /// distance is unchanged by this refactor.
+        /// </summary>
+        public void SetPresentationDepth(float depthWorldUnits)
         {
             if (EnsureVisual() == null)
                 return;
 
-            _visual.localPosition = new Vector3(0f, 0f, TerminalForegroundZOffset);
+            _visual.localPosition = -GameplayLayout.CameraForward * depthWorldUnits;
         }
 
         private Transform EnsureVisual()

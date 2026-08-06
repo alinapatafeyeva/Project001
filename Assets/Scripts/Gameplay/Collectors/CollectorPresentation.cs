@@ -1,5 +1,6 @@
 using System;
 using System.Collections;
+using Project001.Gameplay.Presentation;
 using UnityEngine;
 
 namespace Project001.Gameplay.Collectors
@@ -88,6 +89,51 @@ namespace Project001.Gameplay.Collectors
             Animation.SetFacingImmediate(faceAway: true);
             StopActiveSequence();
             Animation.PlayIdleBreathing();
+        }
+
+        /// <summary>
+        /// Sets this collector's presentation depth for its current queue
+        /// row — the single call site every CollectorQueueBoard placement
+        /// (initial placement and ShiftQueueUp) goes through, so a row's
+        /// depth can never drift out of sync with its actual row index.
+        /// Row 0 stays at the authored baseline depth (furthest back); each
+        /// following row is pulled GameplayLayout.QueueRowDepthStep closer
+        /// to the camera, so later rows genuinely render in front of
+        /// earlier ones (a real Z-test outcome, not a sortingOrder guess —
+        /// see GameplayLayout.QueueRowDepthStep's own remarks). Applies to
+        /// both the character (CollectorAnimation) and its own hunger label
+        /// (CollectorView) together, so the label never falls behind its
+        /// own character once that character is pulled toward the camera.
+        /// </summary>
+        public void SetQueueRowDepth(int rowIndex)
+        {
+            if (_terminalStarted)
+                return;
+
+            ApplyPresentationDepth(rowIndex * GameplayLayout.QueueRowDepthStep);
+        }
+
+        /// <summary>
+        /// Resets this collector's presentation depth to its authored
+        /// baseline (no camera-forward pull) — the neutral depth every
+        /// waiting source other than the queue itself uses: WaitingLine
+        /// (CollectorLifecycle.ResolveLap), Recovery Row
+        /// (RecoveryRowController.ReceiveCollectors), a rolled-back boarding
+        /// restored to either, and boarding itself (CollectorSelectionController,
+        /// so no stale queue-row depth ever survives onto the Conveyor).
+        /// </summary>
+        public void ClearPresentationDepth()
+        {
+            if (_terminalStarted)
+                return;
+
+            ApplyPresentationDepth(0f);
+        }
+
+        private void ApplyPresentationDepth(float depthWorldUnits)
+        {
+            Animation.SetPresentationDepth(depthWorldUnits);
+            View.SetHungerTextPresentationDepth(depthWorldUnits);
         }
 
         /// <summary>

@@ -62,11 +62,10 @@ namespace Project001.Gameplay.Collectors
     [RequireComponent(typeof(CollectorPresentation))]
     public class CollectorView : MonoBehaviour
     {
-        // Positioned slightly below the model's own center and toward the
-        // camera (negative Z, in this root's own local space, before
-        // CollectorSpriteScale is applied) so it renders in front of the
-        // model regardless of which way Visual is currently rotated to face
-        // (see CollectorAnimation's facing rotation) — Visual can sit at any
+        // Positioned slightly below the model's own center, and pulled
+        // toward the camera so it renders in front of the model regardless
+        // of which way Visual is currently rotated to face (see
+        // CollectorAnimation's facing rotation) — Visual can sit at any
         // Y-axis angle while riding (facing the pixel grid from wherever the
         // conveyor loop has carried it, not just a fixed toward/away flip
         // any more), so an offset that only cleared the model's front face
@@ -75,12 +74,36 @@ namespace Project001.Gameplay.Collectors
         // Mofu.fbx) keeps its camera-facing half-depth about the same at
         // every rotation angle, ~0.35 at MofuModel's authored scale (0.88
         // mesh depth x 0.79 PrefabRootScale x 0.5), plus a small margin for
-        // breathing's scale wobble — -0.5 clears that with room to spare
-        // regardless of facing angle. A physical Z offset is a
-        // spike-appropriate fix, not a production one; a camera-facing
-        // billboard/canvas label would be more robust against rotation and
-        // is called out as a follow-up in the spike's evaluation notes.
-        private static readonly Vector3 HungerTextLocalOffset = new Vector3(0f, -0.15f, -0.5f);
+        // breathing's scale wobble — 0.5 clears that with room to spare
+        // regardless of facing angle.
+        //
+        // The camera-toward pull is along -GameplayLayout.CameraForward, not
+        // a raw local/world -Z axis (this used to be a plain -0.5 Z
+        // component, back when the camera looked straight down world +Z and
+        // a pure Z move had zero effect on screen position — see
+        // CollectorAnimation.TerminalForegroundPullDistance's own remarks
+        // for the identical issue proven there, once the camera gained its
+        // downward tilt, GameplayLayout.CameraTiltDegrees). Only the
+        // vertical "below center" component stays a plain local Y offset,
+        // since that one is genuinely about vertical placement, not depth.
+        // A physical depth offset at all is a spike-appropriate fix, not a
+        // production one; a camera-facing billboard/canvas label would be
+        // more robust against rotation and is called out as a follow-up in
+        // the spike's evaluation notes.
+        private const float HungerTextVerticalOffset = -0.15f;
+        private const float HungerTextForegroundPullDistance = 0.5f;
+
+        private static Vector3 HungerTextLocalOffset =>
+            new Vector3(0f, HungerTextVerticalOffset, 0f) + (-GameplayLayout.CameraForward) * HungerTextForegroundPullDistance;
+
+        // Recomputed by SetHungerTextPresentationDepth whenever this
+        // collector's own row/state presentation depth changes: the label's
+        // own foreground pull above is a small, FIXED amount ahead of
+        // wherever the character itself currently sits, so it must move
+        // forward by that same additional depthWorldUnits whenever
+        // CollectorAnimation.SetPresentationDepth does — otherwise a deeper
+        // queue row's own character (pulled further toward the camera than
+        // the label's fixed offset) would render in FRONT of its own label.
 
         [SerializeField, Tooltip("Font size, in font-import units, of the RemainingHunger text.")]
         [Min(1)]
@@ -115,11 +138,12 @@ namespace Project001.Gameplay.Collectors
         /// GameObject's own transform), never Visual's. Ordinarily only
         /// localRotation changes here — see VisualMotion for scale/position
         /// — with one deliberate exception: CollectorAnimation.
-        /// EnterTerminalForeground offsets localPosition toward the camera,
-        /// once, when the terminal Satisfied/Heart sequence begins, so it
-        /// cannot visually merge with an ordinary rider sharing its screen
-        /// position; never reset, since this collector is destroyed shortly
-        /// after. Null until Initialize() has run.
+        /// SetPresentationDepth offsets localPosition toward the camera
+        /// (queue row depth while queued, a waiting source's neutral depth,
+        /// or — via its own EnterTerminalForeground caller, once and never
+        /// reset — the terminal Satisfied/Heart sequence), so a nearer row
+        /// or the terminal sequence never visually merges with whatever
+        /// shares its screen position. Null until Initialize() has run.
         /// </summary>
         public Transform Visual => _visual;
 
@@ -235,6 +259,27 @@ namespace Project001.Gameplay.Collectors
             _hungerText.gameObject.SetActive(false);
         }
 
+        /// <summary>
+        /// Keeps the RemainingHunger label's own genuine camera-depth pull
+        /// (HungerTextLocalOffset) in sync with this collector's current
+        /// presentation depth (see CollectorAnimation.SetPresentationDepth)
+        /// — called by CollectorPresentation alongside every call into
+        /// Animation.SetPresentationDepth, with the exact same
+        /// depthWorldUnits, so the label always renders exactly
+        /// HungerTextForegroundPullDistance further toward the camera than
+        /// wherever this collector's own character currently sits, whether
+        /// that's queue row depth, a waiting source's neutral depth, or
+        /// (implicitly, since HideHungerText already ran first) never during
+        /// the terminal sequence. The label is a sibling of Visual under
+        /// this root, not a Visual descendant, so it never inherits
+        /// CollectorAnimation's own per-row depth automatically — this is
+        /// what keeps the two in sync instead.
+        /// </summary>
+        public void SetHungerTextPresentationDepth(float depthWorldUnits)
+        {
+            _hungerText.transform.localPosition = HungerTextLocalOffset + (-GameplayLayout.CameraForward) * depthWorldUnits;
+        }
+
         private void OnRemainingHungerChanged(int remainingHunger)
         {
             _hungerText.text = remainingHunger.ToString();
@@ -262,14 +307,13 @@ namespace Project001.Gameplay.Collectors
             textMesh.characterSize = GameplayLayout.HungerLabelWorldSize;
             textMesh.fontSize = hungerTextFontSize;
 
-            // No SpriteRenderer to inherit a sorting layer/order from now —
-            // HungerTextLocalOffset's own negative Z already guarantees this
-            // renders in front of the model, so the default sorting layer is
-            // sufficient; sortingOrder 1 is kept only as a harmless safety
-            // margin over the model's own renderers.
+            // HungerTextLocalOffset's own camera-toward pull already
+            // guarantees this renders in front of the model via genuine
+            // depth; GameplayLayout.HungerLabelSortingOffset is only a
+            // small, harmless backup sortingOrder on top of that.
             var meshRenderer = textObject.GetComponent<MeshRenderer>();
             meshRenderer.sharedMaterial = SharedFont.material;
-            meshRenderer.sortingOrder = 1;
+            meshRenderer.sortingOrder = GameplayLayout.HungerLabelSortingOffset;
 
             return textMesh;
         }

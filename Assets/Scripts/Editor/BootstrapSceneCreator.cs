@@ -125,7 +125,8 @@ public static class BootstrapSceneCreator
         // is simply that framing evaluated once, up front, at one reference
         // aspect, so the saved scene isn't left at Unity's arbitrary default.
         camera.orthographicSize = GameplayLayout.ComputeOrthographicSize(9f, 16f);
-        cameraObject.transform.position = new Vector3(0f, GameplayLayout.CameraVerticalCenter, -10f);
+        cameraObject.transform.position = GameplayLayout.CameraPosition;
+        cameraObject.transform.rotation = GameplayLayout.CameraRotation;
 
         AssignUniversalRenderer(cameraObject);
 

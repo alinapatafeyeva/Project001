@@ -88,7 +88,10 @@ namespace Project001.Gameplay.Recovery
 
                 CollectorPresentation presentation = collector.GetComponent<CollectorPresentation>();
                 if (presentation != null)
+                {
                     presentation.ShowWaitingBackIdle();
+                    presentation.ClearPresentationDepth();
+                }
             }
 
             if (added)
@@ -108,6 +111,13 @@ namespace Project001.Gameplay.Recovery
         }
 
         bool ICollectorSource.CanSelect(CollectorView collectorView) => Contains(collectorView);
+
+        /// <summary>
+        /// Reapplies this row's own neutral (baseline) presentation depth —
+        /// used only when CollectorSelectionController rolls back a
+        /// boarding attempt (this row never actually released the view).
+        /// </summary>
+        void ICollectorSource.RestorePresentationDepth(CollectorView collectorView) => collectorView?.Presentation.ClearPresentationDepth();
 
         /// <summary>
         /// Finalizes removal after the collector has already successfully

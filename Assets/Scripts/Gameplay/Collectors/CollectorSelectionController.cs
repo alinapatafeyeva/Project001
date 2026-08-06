@@ -157,6 +157,13 @@ namespace Project001.Gameplay.Collectors
             // Eating transition, never a no-op repeat.
             next.View.Presentation.ShowConveyorFrontEating();
 
+            // Same moment: clear whatever queue-row/waiting-source
+            // presentation depth this collector previously had, so no stale
+            // depth survives onto the Conveyor (a rider that boarded from a
+            // deep queue row must not keep rendering pulled toward the
+            // camera once it's an ordinary Conveyor rider).
+            next.View.Presentation.ClearPresentationDepth();
+
             // ConveyorSystem now owns the rider's position; only release the
             // source side. If release fails, the source still logically holds
             // the collector while it is now also riding the conveyor — that
@@ -171,8 +178,12 @@ namespace Project001.Gameplay.Collectors
                 next.View.transform.localPosition = next.OriginalLocalPosition;
 
                 // All waiting sources show Back Idle, so a collector rolled
-                // back to one must be restored to it too.
+                // back to one must be restored to it too — and its
+                // presentation depth along with it, so it doesn't stay
+                // stuck at the Conveyor's neutral depth
+                // ClearPresentationDepth just gave it above.
                 next.View.Presentation.ShowWaitingBackIdle();
+                next.Source.RestorePresentationDepth(next.View);
             }
 
             Debug.LogError(
@@ -207,10 +218,43 @@ namespace Project001.Gameplay.Collectors
             return null;
         }
 
+        /// <summary>
+        /// Reverse-projects a screen tap onto the world Z=0 plane — the
+        /// single shared gameplay plane every collector lives on regardless
+        /// of state (queued, in WaitingLine, in RecoveryRow, or riding the
+        /// Conveyor — see CollectorQueueBoard.RowLocalPosition's own
+        /// remarks), then finds whichever 2D collider occupies that X/Y
+        /// (Physics2D compares only X/Y, never Z). There is exactly one
+        /// target plane here, never a per-row or per-state plane — an
+        /// earlier version placed queue rows at different Z depths, which
+        /// made this reverse-projection ambiguous (a tap resolved against
+        /// the wrong row) and was removed for exactly that reason.
+        ///
+        /// This still can't be the simple "screenPoint.z = -camera.position.z"
+        /// calculation a non-tilted camera would allow, purely because the
+        /// camera itself is tilted (GameplayLayout.CameraTiltDegrees), not
+        /// because of anything about the queue: under that downward tilt
+        /// the camera's own up axis has a nonzero Z component, so "distance
+        /// along forward to reach Z=0" is not a single constant independent
+        /// of screen position the way it is at zero tilt — it depends on the
+        /// tap's screen Y too (a tap higher on screen carries more of that
+        /// up-axis Z with it). Rather than reasoning about orthographicSize/
+        /// aspect to solve for that directly, this asks ScreenToWorldPoint
+        /// for any one point on the tap's ray (at the near clip plane), then
+        /// walks the remaining, purely orthographic (parallel-rays) distance
+        /// along the camera's forward direction to reach Z=0. At zero tilt
+        /// (forward == (0,0,1)) this reduces to exactly the straight-on
+        /// calculation it replaced: the walk only changes Z, never X/Y.
+        /// </summary>
         private CollectorView FindCollectorAt(Vector2 screenPosition)
         {
-            Vector3 screenPoint = new Vector3(screenPosition.x, screenPosition.y, -selectionCamera.transform.position.z);
-            Vector3 worldPoint = selectionCamera.ScreenToWorldPoint(screenPoint);
+            Transform cameraTransform = selectionCamera.transform;
+            Vector3 referencePoint = selectionCamera.ScreenToWorldPoint(
+                new Vector3(screenPosition.x, screenPosition.y, selectionCamera.nearClipPlane));
+
+            Vector3 forward = cameraTransform.forward;
+            float distanceToZeroPlane = -referencePoint.z / forward.z;
+            Vector3 worldPoint = referencePoint + forward * distanceToZeroPlane;
 
             Collider2D collider = Physics2D.OverlapPoint(worldPoint);
             return collider != null ? collider.GetComponent<CollectorView>() : null;

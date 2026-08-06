@@ -46,7 +46,6 @@ namespace Project001.Gameplay.Collectors
         private FailureController failureController;
 
         private CollectorQueue[] _queues;
-        private float _rowStepY;
         private bool _isInitialized;
 
         /// <summary>
@@ -111,7 +110,6 @@ namespace Project001.Gameplay.Collectors
             // QueueRowStep, which already derives from CollectorVisibleHeight
             // for exactly this reason, just vertically.
             float stepX = GameplayLayout.CollectorVisibleWidth + horizontalSpacing;
-            _rowStepY = GameplayLayout.QueueRowStep;
             float offsetX = (collectorQueues.Count - 1) * stepX * 0.5f;
 
             for (int queueIndex = 0; queueIndex < collectorQueues.Count; queueIndex++)
@@ -158,6 +156,7 @@ namespace Project001.Gameplay.Collectors
 
                     var collectorPresentation = collectorObject.GetComponent<CollectorPresentation>();
                     collectorPresentation.ShowWaitingBackIdle();
+                    collectorPresentation.SetQueueRowDepth(rowIndex);
 
                     var conveyorRider = collectorObject.GetComponent<ConveyorRider>();
                     conveyorRider.Initialize(collectorDefinition.MatchTypeId, collectorDefinition.HungerCapacity);
@@ -241,27 +240,67 @@ namespace Project001.Gameplay.Collectors
         /// </summary>
         bool ICollectorSource.ReleaseCollector(CollectorView collectorView) => TryRemoveSelected(collectorView);
 
+        /// <summary>
+        /// Re-derives the given view's current row index from whichever
+        /// queue actually holds it and reapplies that row's genuine
+        /// presentation depth — used only when CollectorSelectionController
+        /// rolls back a boarding attempt (this board never actually
+        /// released the view, so it is still exactly where
+        /// TryRemoveSelected would have found it).
+        /// </summary>
+        void ICollectorSource.RestorePresentationDepth(CollectorView collectorView)
+        {
+            if (collectorView == null || _queues == null)
+                return;
+
+            foreach (CollectorQueue queue in _queues)
+            {
+                IReadOnlyList<CollectorView> views = queue.Views;
+                for (int rowIndex = 0; rowIndex < views.Count; rowIndex++)
+                {
+                    if (views[rowIndex] != collectorView)
+                        continue;
+
+                    collectorView.Presentation.SetQueueRowDepth(rowIndex);
+                    return;
+                }
+            }
+        }
+
         private void ShiftQueueUp(CollectorQueue queue)
         {
             IReadOnlyList<CollectorView> views = queue.Views;
 
             for (int rowIndex = 0; rowIndex < views.Count; rowIndex++)
+            {
                 views[rowIndex].transform.localPosition = RowLocalPosition(rowIndex);
+                views[rowIndex].Presentation.SetQueueRowDepth(rowIndex);
+            }
         }
 
         /// <summary>
-        /// Row rowIndex's local position within its queue. GameplayLayout.
-        /// CollectorQueueBoardPositionY is this board's region TOP edge, not
-        /// a center, so row 0's own center sits half a CollectorVisibleHeight
-        /// below local y = 0 — using the sprite's actual visible height, not
-        /// CollectorSpriteScale, so row 0's rendered sprite (not an imaginary
-        /// scale-square) has its true visible top edge at the region's top
-        /// edge, rather than intruding into whatever sits directly above
-        /// this board.
+        /// Row rowIndex's local position within its queue. Every row stays on
+        /// the single shared gameplay plane (Z=0) — the same plane every
+        /// ConveyorRider, WaitingLine slot, and RecoveryRow slot lives on —
+        /// so a collector's world/local Z never needs to change across its
+        /// entire lifecycle (queue -> selected -> boarding -> riding).
+        /// GameplayLayout.CollectorQueueBoardPositionY is this board's region
+        /// TOP edge, not a center, and GameplayLayout.QueueUpwardPresentationOffset
+        /// lifts every row uniformly closer to that edge (a pure presentation
+        /// offset, not a change to the region boundary itself) so the queue
+        /// reads a little higher on screen under the tilted camera — see both
+        /// constants' own remarks for why depth separation is Y-only here
+        /// (an earlier Z-per-row version broke Physics2D tap selection and
+        /// boarding, since a collector no longer started clean at Z=0).
+        /// A pure function of rowIndex alone, so ShiftQueueUp keeps working
+        /// unmodified — reapplying this per remaining index never reflows a
+        /// draining queue.
         /// </summary>
         private Vector3 RowLocalPosition(int rowIndex)
         {
-            float y = -GameplayLayout.CollectorVisibleHeight * 0.5f - rowIndex * _rowStepY;
+            float y = -GameplayLayout.CollectorVisibleHeight * 0.5f
+                - rowIndex * GameplayLayout.QueueRowStep
+                + GameplayLayout.QueueUpwardPresentationOffset;
             return new Vector3(0f, y, 0f);
         }
     }
