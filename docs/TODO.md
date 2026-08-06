@@ -1,206 +1,208 @@
 # Technical and Product TODO
 
-This document contains planned improvements that are intentionally not part of
-the current implementation.
+This is the actionable backlog — concrete, implementation-level items not
+yet done. **`docs/ROADMAP.md` is the authoritative ordering**; this document
+only groups backlog items under that ordering and adds implementation detail
+the roadmap deliberately keeps brief. If an item here ever seems to
+contradict `docs/ROADMAP.md`, the roadmap wins and this file is wrong.
+
+Completed items are not listed here — see `docs/DECISION_LOG.md` and
+`docs/ARCHITECTURE_NOTES.md` for what already exists.
 
 ---
 
-## Responsive Layout
+## Phase 1 — Feeding Flow
 
-- Make the gameplay layout adaptive for different phone and tablet aspect
-  ratios.
-- Position gameplay elements relative to PixelGrid and camera bounds instead
-  of permanent prototype coordinates.
+See `docs/ROADMAP.md` Phase 1 for the full task list and
+`docs/GAMEPLAY_CONTRACTS.md` for the approved contract this must satisfy.
+Implementation reminders not already spelled out there:
+
+- Restore Crab's natural claw pose specifically on the Conveyor — the
+  current compact queue pose (claws rotated in, see
+  `CharacterAssetBuilder.ApplyCrabClawPoseAdjustment`) must stay unchanged
+  for queue/waiting presentation.
+- `FeedTarget` position should be authored per `Character_XX` (near the
+  face) but read through one shared API — no per-species branching in
+  gameplay code.
+- Reservation bookkeeping belongs on `ConveyorRider` (or a new component it
+  owns), not on `PixelConsumer` — `PixelConsumer` already only reacts to a
+  successful grid consume, and reservation must persist across multiple
+  in-flight pixels per collector.
+- **Post-MVP / experimental:** a simple Turtle mouth. Only build this if
+  visual testing of the universal reaction (highlight + squash/bounce +
+  dissolve) shows it specifically reads poorly on Turtle. Do not build it
+  speculatively, and never make any other species depend on it existing.
+
+---
+
+## Phase 2 — Pixel Grid Visuals and Large Grid Technical Spike
+
+- Define the source format for pixel-art images and food-type-to-MatchTypeId
+  mapping, so representative image-based levels can be authored at all.
+- Profile CPU, memory, GC, rendering, loading, and battery use at target
+  grid sizes on a real lower-end Android device, not just the Editor.
+- Avoid unnecessary complete-grid scans as dimensions grow —
+  `PixelGrid.TryConsumeNearestExposed` is currently a full double loop over
+  every cell per consumption attempt; re-check whether this still holds up
+  at ~30×40+.
+- Decide the practical GameObject-per-pixel limit before Phase 5 content
+  production locks in a target grid size.
+
+---
+
+## Phase 3 — Full Level Visual Design
+
+- Replace `CollectorView`'s prototype `TextMesh` hunger display with
+  production UI.
+- Add a departure animation into the Waiting Line (currently an instant
+  reparent + snap — see `CollectorLifecycle.ResolveLap`, which explicitly
+  never animates this transfer today).
+- Define whether Failure happens immediately or after a short visual
+  warning once a full Waiting Line is detected.
+- Define how production collectors visually communicate "waiting" vs.
+  "satisfied" beyond the current facing-away/idle-breathing pose.
+- Add an in-game Help (ⓘ) screen explaining hunger-bar colours and gameplay
+  rules (extend later, in Phase 7, to cover boosters once they exist).
+- Replace `Physics2D.OverlapPoint()` selection with a deterministic
+  multi-collider strategy once selectable colliders may overlap (VFX, UI,
+  and production visuals are likely to introduce this).
+- Introduce object pooling before production animations/VFX create frequent
+  object creation/destruction — not before, per
+  `docs/DECISION_LOG.md` decision 012 (no premature optimisation).
+- Lock the production colour palette in `Assets/Art/ColorPalette.md` (the
+  current table is approved and stable, but treated as provisional pending
+  final art direction).
+- Add a configurable gameplay-speed multiplier (including ×2 speed), shared
+  by conveyor movement, animations, effects, and timers — see
+  `GameplayConstants`'s own remarks on `BaseConveyorMoveSpeed` for where
+  this hooks in. Re-check pixel-consumption alignment sampling at ×2 speed
+  so a fast-moving rider cannot skip a row/column.
+
+---
+
+## Phase 4 — Responsive Layout
+
+- Position gameplay elements relative to `PixelGrid`/camera bounds instead
+  of `GameplayLayout`'s current fixed prototype constants.
 - Support safe areas, display cutouts, rounded corners, and system bars.
-- Define the intended tablet layout strategy.
+- Define the intended tablet layout strategy explicitly (not just "scale
+  down the phone layout") — see `docs/UI_REFERENCE.md`'s tablet lessons.
+- Recalculate Conveyor/RecoveryRow/WaitingLine positions per aspect ratio,
+  not just camera orthographic size.
 
 ---
 
-## Selection
+## Phase 5 — Level System and Content
 
-- Replace `Physics2D.OverlapPoint()` with a deterministic multi-collider
-  selection strategy once selectable colliders may overlap.
-- Consider selection layers or `OverlapPointAll()` when VFX, UI, and production
-  monster visuals are introduced.
-
----
-
-## Conveyor
-
-- Add a configurable gameplay-speed multiplier, including x2 speed.
-- Add a boarding animation from a queue or Waiting Line to the conveyor entry.
-- Add a departure animation into the Waiting Line.
-- Add a satisfied-monster exit animation.
-- Review consumption sampling at x2 speed so rows and columns cannot be skipped.
-
----
-
-## Monsters
-
-- Replace prototype circles with production monster visuals.
-- Replace prototype TextMesh hunger display with production UI.
-- Add food-themed monster identities:
-  - Strawberry Monster
-  - Chocolate Monster
-  - Blueberry Monster
-  - Lemon Monster
-  - Grape Monster
-- Define how production monsters visually communicate satisfaction and waiting.
-- Move prototype hunger capacity into level data.
-
----
-
-## UI
-
-- Replace temporary hunger number with the production hunger bar.
-- Add an in-game Help (ⓘ) screen explaining:
-  - hunger bar colours;
-  - gameplay rules;
-  - bonuses and power-ups;
-  - other mechanics introduced later.
-
----
-
-## Feedback
-
-- Add haptic feedback on supported mobile devices.
-- Tune different haptic patterns for:
-  - eating a pixel;
-  - satisfying a Mofu;
-  - victory;
-  - failure;
-  - important UI interactions.
-
----
-
-## Pixel Grid and Levels
-
-- Replace the temporary 6×6 generated pattern with level-defined pixel data.
-- Support variable grid width and height in level configuration.
-- Define the source format for pixel-art images and food-type mapping.
-- Add victory detection when every edible pixel has been consumed.
-- Validate that total monster hunger matches the pixels required by a level.
-
----
-
-## Waiting Line and Failure
-
-- Implement the final failure rule when an unsatisfied monster needs to leave
-  the conveyor but every Waiting Line slot is occupied.
-- Define whether failure happens immediately or after a short visual warning.
-- Add production Waiting Line visuals and occupancy feedback.
-
----
-
-## Bonuses
-
-- Increase conveyor capacity.
-- Add an extra monster queue.
-- Add extra Waiting Line slots.
-- Shuffle a selected queue.
-- Activate a random eligible monster.
-- Add the Super Hungry Monster:
-  - consumes all pixels of its food type;
-  - removes queued monsters of the same type.
-- Define whether bonuses apply for one level, one action, or a limited duration.
-
----
-
-## Performance
-
-- Define the minimum supported mobile-device tier before release.
-- Add regular profiling checkpoints on a lower-end Android device.
-- Profile CPU, memory, garbage collection, rendering, loading, and battery use.
-- Avoid runtime allocations inside frequent `Update` loops.
-- Avoid unnecessary complete-grid scans as level dimensions grow.
-- Introduce object pooling before production animations and VFX create frequent
-  object creation/destruction.
-- Reuse sprites, textures, materials, and temporary collections.
-- Test real-device performance with production art before final optimisation.
-
----
-
-## Testing
-
-- Add EditMode tests for:
-  - exposed pixel detection;
-  - side and alignment selection;
-  - hunger reduction;
-  - boarding-relative lap completion;
-  - conveyor capacity;
-  - queue first-item removal;
-  - Waiting Line transfer rollback.
-- Add PlayMode tests for the complete prototype loop.
-
----
-
-## Debug & QA Tools
-
-- Add configurable game speed.
-- Add optional 2x gameplay speed.
-- Ensure all gameplay systems respect one shared speed multiplier.
-
-- Add developer cheat/debug panel.
-- Allow enabling unlimited boosters for testing.
-- Allow granting any booster in unlimited quantity.
-- Allow skipping directly to any level.
-- Allow instantly completing the current level.
-- Allow instantly triggering Failure.
-- Allow resetting the current level.
-- Toggle Failure Test Mode
-
----
-
-## Level Shape System
-
-- support inactive/empty cells inside a rectangular grid
-- define levels by shape masks
-- generate MatchTypeId distribution inside the active mask
-- preserve exact per-MatchTypeId collector capacity
-- support controlled cluster/pattern generation
-- preview and validate generated levels
-
----
-
-## Documentation
-
-- Update `ColorPalette.md` once the final production palette is locked.
-
----
-
-## Chapters and Themes
-
-- Define the first chapter theme and content pool.
-- Define the provisional chapter length (~30 levels).
-- Measure average completion time per level and per chapter.
-- Avoid chapters that are completed too quickly or feel repetitive.
-- Define criteria for when a theme has overstayed its welcome.
-- Create a repeatable process for adding a new chapter.
+- Replace `LevelCatalog`'s two hand-authored levels with a real
+  level-authoring workflow/tool.
+- Extend `LevelDefinitionValidator`'s existing pixel/HungerCapacity/Match ID
+  checks with static solvability checks.
+- Measure average completion time per level and per chapter; avoid chapters
+  that finish too quickly or feel repetitive.
+- Define the provisional chapter length (currently ~30 levels, per
+  `docs/DECISION_LOG.md` decision 014) and a repeatable process for adding a
+  new chapter.
 - Keep chapter ranges editable until production content is locked.
 
-----
+---
 
-## Monetisation
+## Phase 6 — Save Progress and Level Map
 
-- Add level-completion coin rewards.
+- Save progress: current unlocked level, completed levels, settings.
+- Resume directly into the current `LevelId` instead of
+  `LevelBootstrapper`'s configured `startingLevelId`.
+- Path-style level map: completed / current / locked level states, themed
+  map segments per chapter.
+- Victory UI: add a Map button that returns to the level map instead of
+  always advancing to the next level.
+- Handle the last currently available level gracefully (a "more levels
+  coming soon" state) rather than erroring when `LevelProgressionController`
+  has nowhere left to advance to.
 
-- Add optional rewarded ad to double level rewards.
+---
 
-- Introduce IRewardedAdService with a fake development implementation.
+## Phase 7 — Boosters
 
-- Integrate a real mediation SDK before beta/release.
+Design only after Phase 5 balancing is understood — see
+`docs/ROADMAP.md` Phase 7.
 
-- Handle ad unavailable, cancelled, failed, and rewarded outcomes.
+Candidate boosters (not yet approved individually, listed for design
+reference):
 
-- Add privacy consent and app-ads.txt/store readiness setup.
+- Increase conveyor capacity.
+- Add an extra collector queue.
+- Add extra Waiting Line slots.
+- Shuffle a selected queue.
+- Activate a random eligible collector.
+- A "consumes an entire MatchTypeId at once" booster (previously named
+  "Super Hungry Monster" — needs a current, non-Mofu-era name before
+  implementation).
+- Define whether a booster applies for one level, one action, or a limited
+  duration.
 
+---
+
+## Phase 8 — Developer Infrastructure
+
+Named feature-level tests (`Test_EndgameCleanup`, `Test_Recovery`,
+`Test_Hunger`, `Test_PixelFlight`, `Test_MatchIdConsistency`,
+`Test_LevelValidation`, `Test_SaveProgress`, `Test_ResponsiveLayout`,
+`Test_Performance`) are listed in `docs/ROADMAP.md` Phase 8 and are not
+repeated here. Lower-level unit coverage to add alongside them:
+
+- EditMode tests: exposed-pixel detection, side/alignment selection, hunger
+  reduction, boarding-relative lap completion, conveyor capacity, queue
+  first-item removal, Waiting Line transfer rollback.
+- PlayMode tests: the complete gameplay loop end to end.
+- Debug/cheat panel: configurable game speed (including the ×2 toggle from
+  Phase 3), unlimited boosters for testing, skip directly to any level,
+  instantly complete/fail the current level, reset the current level. Note:
+  `LevelBootstrapper.enableFailureTestSetup` already provides a
+  deterministic Inspector-only Failure trigger for one specific case — the
+  general debug panel is still open.
+
+---
+
+## Phase 9 — Advanced Level Mechanics
+
+See `docs/ROADMAP.md` Phase 9 for the task list. No additional
+implementation notes yet — detailed design should happen closer to when
+this phase starts, informed by Phase 5's real level content.
+
+---
+
+## Phase 10 — Closed Beta and Full MVP Polish
+
+- Haptic feedback, with distinct patterns for: eating a pixel, satisfying a
+  collector, victory, failure, and important UI interactions.
+- Monetisation is not part of the approved phase ordering yet — see "Not
+  yet scheduled" below.
+
+---
+
+## Not yet scheduled in `docs/ROADMAP.md`
+
+These are real backlog items with no approved phase yet. Listed here rather
+than silently dropped, but deliberately **not** attached to a phase number —
+doing so without an actual roadmap decision would make this file a second,
+competing roadmap. Assign a phase before starting work on any of these.
+
+**Monetisation:**
+
+- Level-completion coin rewards.
+- Optional rewarded ad to double level rewards.
+- `IRewardedAdService` with a fake development implementation, then a real
+  mediation SDK before beta/release.
+- Handle ad unavailable/cancelled/failed/rewarded outcomes.
+- Privacy consent and app-ads.txt/store readiness setup.
 - Never block normal reward collection behind an ad.
 
-----
+**Shape-based level generation** (previously its own roadmap section):
 
-## Victory Flow
-- Add a Map button to Victory UI.
-- Allow returning to the level map instead of starting the next level.
-- Handle the last currently available level.
-- Show a “More levels coming soon” state.
-- Optionally support a release countdown later.
+- Shape masks (heart, butterfly, flower, star, animals, etc.) with
+  active/inactive cells inside the rectangular grid.
+- `MatchTypeId` distribution generation inside the active shape
+  (clusters/stripes/gradients/symmetry/controlled noise instead of pure
+  randomness).
+- Preview and validate generated levels before approval.
