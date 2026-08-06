@@ -124,6 +124,7 @@ namespace Project001.Gameplay.Conveyor
                 _riderCompletedLaps[i] += lapsCompletedThisFrame;
 
                 rider.SetPosition(GetWorldPosition(_riderProgress[i]));
+                rider.SetRidingOrientation(conveyorPath.SampleOrientation(_riderProgress[i]));
             }
         }
 
@@ -162,6 +163,7 @@ namespace Project001.Gameplay.Conveyor
 
             rider.transform.SetParent(transform, true);
             rider.SetPosition(GetWorldPosition(boardingProgress));
+            rider.SetRidingOrientation(conveyorPath.SampleOrientation(boardingProgress));
             rider.EnterRiding();
 
             return true;

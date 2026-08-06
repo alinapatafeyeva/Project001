@@ -16,6 +16,8 @@ using UnityEditor.SceneManagement;
 using UnityEngine;
 using UnityEngine.EventSystems;
 using UnityEngine.InputSystem.UI;
+using UnityEngine.Rendering;
+using UnityEngine.Rendering.Universal;
 using UnityEngine.SceneManagement;
 using UnityEngine.UI;
 
@@ -49,13 +51,15 @@ public static class BootstrapSceneCreator
         Scene scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
 
         Camera mainCamera = CreateCamera();
+        CreateKeyLight();
+        ConfigureEnvironmentLighting();
         PixelGrid pixelGrid = CreatePixelGrid();
         ConveyorSystem conveyorSystem = CreateConveyor();
         RecoveryRowController recoveryRowController = CreateRecoveryRow();
         Project001.Gameplay.WaitingLine.WaitingLine waitingLine = CreateWaitingLine();
         FailureController failureController = CreateFailureController(pixelGrid);
-        MonsterSkinDatabase monsterSkinDatabase = CreateMonsterSkinDatabase();
-        CollectorQueueBoard collectorQueueBoard = CreateCollectorQueueBoard(pixelGrid, conveyorSystem, waitingLine, failureController, monsterSkinDatabase);
+        CharacterDatabase characterDatabase = CreateCharacterDatabase();
+        CollectorQueueBoard collectorQueueBoard = CreateCollectorQueueBoard(pixelGrid, conveyorSystem, waitingLine, failureController, characterDatabase);
         CollectorSelectionController collectorSelectionController = CreateCollectorSelectionController(mainCamera, collectorQueueBoard, waitingLine, recoveryRowController, conveyorSystem);
         VictoryController victoryController = CreateVictoryController(pixelGrid);
         GameplayFlowController gameplayFlowController = CreateGameplayFlowController(victoryController, failureController, collectorSelectionController);
@@ -121,9 +125,113 @@ public static class BootstrapSceneCreator
         // is simply that framing evaluated once, up front, at one reference
         // aspect, so the saved scene isn't left at Unity's arbitrary default.
         camera.orthographicSize = GameplayLayout.ComputeOrthographicSize(9f, 16f);
-        cameraObject.transform.position = new Vector3(0f, GameplayLayout.CameraVerticalCenter, -10f);
+        cameraObject.transform.position = GameplayLayout.CameraPosition;
+        cameraObject.transform.rotation = GameplayLayout.CameraRotation;
+
+        AssignUniversalRenderer(cameraObject);
 
         return camera;
+    }
+
+    private const string UniversalPipelineAssetPath = "Assets/Settings/UniversalRP.asset";
+    private const string UniversalRendererDataPath = "Assets/Settings/UniversalRenderer.asset";
+
+    /// <summary>
+    /// Overrides just this camera to render through the Universal Renderer
+    /// registered on UniversalRP.asset (added alongside the project's
+    /// existing, still-default 2D Renderer — see UniversalRP.asset's
+    /// m_RendererDataList). Without this override the camera falls back to
+    /// the pipeline's default (the 2D Renderer), which does not shade URP
+    /// Lit materials against a Directional Light at all — every 3D character
+    /// would render flat/unlit regardless of the key light's own settings.
+    /// Every other 2D visual (SpriteRenderers, UI, PixelGrid) renders
+    /// identically under either renderer, so this only ever affects the character model.
+    /// Looks the Universal Renderer's index up on the pipeline asset rather
+    /// than hardcoding it, so this keeps working if the renderer list is
+    /// ever reordered.
+    /// </summary>
+    private static void AssignUniversalRenderer(GameObject cameraObject)
+    {
+        var pipelineAsset = AssetDatabase.LoadAssetAtPath<UniversalRenderPipelineAsset>(UniversalPipelineAssetPath);
+        var rendererData = AssetDatabase.LoadAssetAtPath<UniversalRendererData>(UniversalRendererDataPath);
+        if (pipelineAsset == null || rendererData == null)
+        {
+            Debug.LogError($"BootstrapSceneCreator: could not load '{UniversalPipelineAssetPath}' and/or '{UniversalRendererDataPath}'; Main Camera will fall back to the pipeline's default renderer and the character will render unlit.");
+            return;
+        }
+
+        var serializedPipelineAsset = new SerializedObject(pipelineAsset);
+        SerializedProperty rendererDataList = serializedPipelineAsset.FindProperty("m_RendererDataList");
+
+        int rendererIndex = -1;
+        for (int i = 0; i < rendererDataList.arraySize; i++)
+        {
+            if (rendererDataList.GetArrayElementAtIndex(i).objectReferenceValue == rendererData)
+            {
+                rendererIndex = i;
+                break;
+            }
+        }
+
+        if (rendererIndex < 0)
+        {
+            Debug.LogError($"BootstrapSceneCreator: '{rendererData.name}' is not registered in '{pipelineAsset.name}''s renderer list; Main Camera will fall back to the pipeline's default renderer and the character will render unlit.");
+            return;
+        }
+
+        var cameraData = cameraObject.AddComponent<UniversalAdditionalCameraData>();
+        cameraData.SetRenderer(rendererIndex);
+    }
+
+    /// <summary>
+    /// The only light in the scene: one Directional Light, still simple,
+    /// white, and neutral (default intensity/shadow settings) but no longer
+    /// Unity's own standard default rotation for a new light (50, -30, 0) —
+    /// that angle's travel direction sits close enough to the camera's own
+    /// forward axis (both facing mostly +Z) that a camera-facing character's
+    /// visible hemisphere was lit almost head-on, which read as flat/
+    /// marker-filled instead of showing the model's actual sculpted
+    /// surface relief. (40, -55, 0) keeps the same general "high and to one
+    /// side" key-light feel but swings yaw further around (-55 vs -30) and
+    /// eases pitch back slightly (40 vs 50), producing a more oblique,
+    /// raking angle across the model — still a simple single-light setup,
+    /// not a production lighting rig, just aimed so the geometry is
+    /// actually readable. Added for the 3D character presentation spike so the
+    /// model's volume, silhouette, and materials are actually visible (the
+    /// URP Lit materials render flat/unlit without any light in scene).
+    /// </summary>
+    private static void CreateKeyLight()
+    {
+        var lightObject = new GameObject("Directional Light", typeof(Light));
+        lightObject.transform.rotation = Quaternion.Euler(40f, -55f, 0f);
+
+        var light = lightObject.GetComponent<Light>();
+        light.type = LightType.Directional;
+        light.color = Color.white;
+        light.intensity = 1f;
+    }
+
+    /// <summary>
+    /// Sets a flat, neutral-white ambient fill (RenderSettings), replacing
+    /// whatever dim, cool-tinted values a freshly created scene otherwise
+    /// defaults to (a new URP scene's own defaults, never previously set by
+    /// this class). Alongside CreateKeyLight's single Directional Light,
+    /// this is the entire lighting rig the character renders under: with no
+    /// fill light and only that dim/cool default ambient, the side of a
+    /// rounded character facing away from the key light read as dark and grayish-blue
+    /// rather than a shaded version of its own fur colour. A stronger,
+    /// colour-neutral ambient keeps that far side readable and saturated
+    /// (a "bright stylized character" look) without washing out the key
+    /// light's own shading, which is what still gives the fur its relief.
+    /// Deliberately Flat (a single ambient colour), not Skybox/Trilight -
+    /// there is no skybox in this scene for either of those modes to derive
+    /// gradient/reflection values from.
+    /// </summary>
+    private static void ConfigureEnvironmentLighting()
+    {
+        RenderSettings.ambientMode = AmbientMode.Flat;
+        RenderSettings.ambientLight = new Color(0.45f, 0.45f, 0.45f, 1f);
+        RenderSettings.ambientIntensity = 1f;
     }
 
     private static PixelGrid CreatePixelGrid()
@@ -167,7 +275,12 @@ public static class BootstrapSceneCreator
         var serializedSystem = new SerializedObject(conveyorSystem);
         serializedSystem.FindProperty("conveyorPath").objectReferenceValue = conveyorPath;
         serializedSystem.FindProperty("boardingProgress").floatValue = 0.55f;
-        serializedSystem.FindProperty("boardingClearance").floatValue = 1f;
+        // GameplayLayout.ConveyorRiderMinimumSpacing, not a bare literal —
+        // this must safely exceed the rendered character footprint (see its own
+        // derivation comment) or riders that board close together end up
+        // permanently overlapping, since every rider moves at the same
+        // fixed speed and never closes or opens that gap afterward.
+        serializedSystem.FindProperty("boardingClearance").floatValue = GameplayLayout.ConveyorRiderMinimumSpacing;
         serializedSystem.ApplyModifiedPropertiesWithoutUndo();
 
         return conveyorSystem;
@@ -218,14 +331,14 @@ public static class BootstrapSceneCreator
         ConveyorSystem conveyorSystem,
         Project001.Gameplay.WaitingLine.WaitingLine waitingLine,
         FailureController failureController,
-        MonsterSkinDatabase monsterSkinDatabase)
+        CharacterDatabase characterDatabase)
     {
         var boardObject = new GameObject("CollectorQueueBoard", typeof(CollectorQueueBoard));
         boardObject.transform.position = new Vector3(0f, GameplayLayout.CollectorQueueBoardPositionY, 0f);
 
         var collectorQueueBoard = boardObject.GetComponent<CollectorQueueBoard>();
         var serializedBoard = new SerializedObject(collectorQueueBoard);
-        serializedBoard.FindProperty("monsterSkinDatabase").objectReferenceValue = monsterSkinDatabase;
+        serializedBoard.FindProperty("characterDatabase").objectReferenceValue = characterDatabase;
         serializedBoard.FindProperty("pixelGrid").objectReferenceValue = pixelGrid;
         serializedBoard.FindProperty("conveyorSystem").objectReferenceValue = conveyorSystem;
         serializedBoard.FindProperty("waitingLine").objectReferenceValue = waitingLine;
@@ -235,67 +348,44 @@ public static class BootstrapSceneCreator
         return collectorQueueBoard;
     }
 
-    private const string ClassicCharactersRoot = "Assets/Art/Sprites/Themes/Classic/Characters";
+    private const string CharacterRoot = "Assets/Art/Themes/Classic/Character";
 
     /// <summary>
-    /// Which Classic/Characters/Character_XX folder backs each MonsterColor.
-    /// Character IDs are stable per the approved Themes migration; this map
-    /// is the only place a MonsterColor resolves to one.
+    /// Builds the CharacterDatabase scene object and populates one entry per
+    /// Match ID (1-20, see Assets/Art/ColorPalette.md) by loading that id's
+    /// Character_XX.prefab (built by CharacterAssetBuilder) via
+    /// AssetDatabase — editor-only, one-time wiring, exactly like every
+    /// other cross-reference this class sets up. Runtime code never loads
+    /// prefabs this way: CharacterDatabase only ever reads the serialized
+    /// entries this produces. Logs an error, rather than throwing, for any
+    /// Match ID whose prefab has not been built yet, so a partial checkout
+    /// still produces a scene instead of failing scene creation outright.
     /// </summary>
-    private static readonly Dictionary<MonsterColor, string> MonsterColorToCharacterFolder = new Dictionary<MonsterColor, string>
+    private static CharacterDatabase CreateCharacterDatabase()
     {
-        { MonsterColor.Purple, "Character_11" },
-        { MonsterColor.Green, "Character_05" },
-        { MonsterColor.Orange, "Character_02" },
-    };
-
-    /// <summary>
-    /// Builds the MonsterSkinDatabase scene object and populates one entry
-    /// per MonsterColor (Purple, Green, Orange) by loading each color's five
-    /// sprites from its Classic/Characters/Character_XX folder via
-    /// AssetDatabase — editor-only, one-time wiring, exactly like every other
-    /// cross-reference this class sets up. Runtime code never loads sprites
-    /// this way: MonsterSkinDatabase only ever reads the serialized entries
-    /// this produces.
-    /// </summary>
-    private static MonsterSkinDatabase CreateMonsterSkinDatabase()
-    {
-        var databaseObject = new GameObject("MonsterSkinDatabase", typeof(MonsterSkinDatabase));
-        var database = databaseObject.GetComponent<MonsterSkinDatabase>();
-
-        var monsterColors = new[] { MonsterColor.Purple, MonsterColor.Green, MonsterColor.Orange };
+        var databaseObject = new GameObject("CharacterDatabase", typeof(CharacterDatabase));
+        var database = databaseObject.GetComponent<CharacterDatabase>();
 
         var serializedDatabase = new SerializedObject(database);
-        SerializedProperty skinsProperty = serializedDatabase.FindProperty("skins");
-        skinsProperty.arraySize = monsterColors.Length;
+        SerializedProperty charactersProperty = serializedDatabase.FindProperty("characters");
+        charactersProperty.arraySize = 20;
 
-        for (int i = 0; i < monsterColors.Length; i++)
+        for (int matchId = 1; matchId <= 20; matchId++)
         {
-            MonsterColor monsterColor = monsterColors[i];
-            SerializedProperty entryProperty = skinsProperty.GetArrayElementAtIndex(i);
-            entryProperty.FindPropertyRelative("color").enumValueIndex = (int)monsterColor;
+            string idLabel = matchId.ToString("D2");
+            string prefabPath = $"{CharacterRoot}/Character_{idLabel}/Character_{idLabel}.prefab";
+            var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(prefabPath);
+            if (prefab == null)
+                Debug.LogError($"BootstrapSceneCreator: could not load Character prefab at '{prefabPath}'; CharacterDatabase will have no prefab for Match ID {idLabel}.");
 
-            SerializedProperty skinProperty = entryProperty.FindPropertyRelative("skin");
-            string folder = $"{ClassicCharactersRoot}/{MonsterColorToCharacterFolder[monsterColor]}";
-            AssignSkinSprite(skinProperty, "backIdle", $"{folder}/Mofu_Back_Idle.png");
-            AssignSkinSprite(skinProperty, "frontIdle", $"{folder}/Mofu_Front_Idle.png");
-            AssignSkinSprite(skinProperty, "frontEating", $"{folder}/Mofu_Front_Eating.png");
-            AssignSkinSprite(skinProperty, "frontSatisfied", $"{folder}/Mofu_Front_Satisfied.png");
-            AssignSkinSprite(skinProperty, "heart", $"{folder}/Mofu_Heart.png");
+            SerializedProperty entryProperty = charactersProperty.GetArrayElementAtIndex(matchId - 1);
+            entryProperty.FindPropertyRelative("matchId").intValue = matchId;
+            entryProperty.FindPropertyRelative("prefab").objectReferenceValue = prefab;
         }
 
         serializedDatabase.ApplyModifiedPropertiesWithoutUndo();
 
         return database;
-    }
-
-    private static void AssignSkinSprite(SerializedProperty skinProperty, string fieldName, string assetPath)
-    {
-        var sprite = AssetDatabase.LoadAssetAtPath<Sprite>(assetPath);
-        if (sprite == null)
-            Debug.LogError($"BootstrapSceneCreator: could not load sprite at '{assetPath}'; MonsterSkinDatabase will have no {fieldName} sprite there.");
-
-        skinProperty.FindPropertyRelative(fieldName).objectReferenceValue = sprite;
     }
 
     private static CollectorSelectionController CreateCollectorSelectionController(

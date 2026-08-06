@@ -49,6 +49,57 @@ namespace Project001.Gameplay.Levels
                         $"LevelDefinitionValidator: level '{level.Id}' has collector(s) of MatchTypeId '{collectorEntry.Key}' (total HungerCapacity {collectorEntry.Value}) but the pixel layout has no pixels of that MatchTypeId.");
                 }
             }
+
+            ValidateMatchIdConsistency(level);
+        }
+
+        /// <summary>
+        /// Every pixel and every collector sharing one MatchTypeId must
+        /// resolve the exact same presentation Match ID — a MatchTypeId's
+        /// pixels are consumed interchangeably by any collector carrying
+        /// that MatchTypeId (see PixelGrid.TryConsumeNearestExposed), so if
+        /// two collectors of the same MatchTypeId carried different MatchIds
+        /// there would be no single "matching colour" for that MatchTypeId's
+        /// pixels to agree with in the first place. Catches authoring drift
+        /// at the same data boundary the pixel/HungerCapacity balance check
+        /// above does, rather than letting a mismatched Match ID reach a
+        /// running scene silently.
+        /// </summary>
+        private static void ValidateMatchIdConsistency(LevelDefinition level)
+        {
+            var matchIdByMatchType = new Dictionary<MatchTypeId, int>();
+
+            for (int y = 0; y < level.PixelLayout.Height; y++)
+            {
+                for (int x = 0; x < level.PixelLayout.Width; x++)
+                {
+                    MatchTypeId matchTypeId = level.PixelLayout.GetMatchTypeId(x, y);
+                    int matchId = level.PixelLayout.GetMatchId(x, y);
+                    CheckMatchIdConsistent(matchIdByMatchType, level.Id, matchTypeId, matchId, $"pixel ({x},{y})");
+                }
+            }
+
+            foreach (CollectorQueueDefinition queue in level.CollectorQueues)
+            {
+                foreach (CollectorDefinition collector in queue.Collectors)
+                    CheckMatchIdConsistent(matchIdByMatchType, level.Id, collector.MatchTypeId, collector.MatchId, "collector");
+            }
+        }
+
+        private static void CheckMatchIdConsistent(Dictionary<MatchTypeId, int> matchIdByMatchType, LevelId levelId, MatchTypeId matchTypeId, int matchId, string source)
+        {
+            if (matchIdByMatchType.TryGetValue(matchTypeId, out int existingMatchId))
+            {
+                if (existingMatchId != matchId)
+                {
+                    throw new InvalidOperationException(
+                        $"LevelDefinitionValidator: level '{levelId}' has MatchTypeId '{matchTypeId}' resolved to Match ID {existingMatchId} elsewhere, but {source} resolves it to Match ID {matchId}; every pixel and collector sharing a MatchTypeId must agree on one Match ID.");
+                }
+            }
+            else
+            {
+                matchIdByMatchType[matchTypeId] = matchId;
+            }
         }
 
         private static Dictionary<MatchTypeId, int> CountPixelsByMatchType(PixelLayoutDefinition layout)

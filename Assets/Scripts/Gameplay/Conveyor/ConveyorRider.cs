@@ -28,6 +28,17 @@ namespace Project001.Gameplay.Conveyor
         public bool IsRiding { get; private set; }
 
         /// <summary>
+        /// This rider's current position along the conveyor loop, expressed
+        /// as which straight edge(s) it currently faces toward — see
+        /// ConveyorOrientationSample. Set every frame by ConveyorSystem
+        /// alongside SetPosition, from the same path progress; read by
+        /// CollectorAnimation as the sole input to Visual's yaw while
+        /// riding, replacing a former continuous "aim at the grid center"
+        /// computation that rotated even along straight edges.
+        /// </summary>
+        public ConveyorOrientationSample RidingOrientation { get; private set; }
+
+        /// <summary>
         /// Raised whenever RemainingHunger is set — once with the starting
         /// value from Initialize, and once per RegisterConsumedPixel call
         /// afterwards. The sole notification channel presentation (e.g.
@@ -46,6 +57,11 @@ namespace Project001.Gameplay.Conveyor
         public void SetPosition(Vector3 worldPosition)
         {
             transform.position = worldPosition;
+        }
+
+        internal void SetRidingOrientation(ConveyorOrientationSample orientation)
+        {
+            RidingOrientation = orientation;
         }
 
         /// <summary>

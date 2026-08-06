@@ -1,5 +1,6 @@
 using System;
 using Project001.Gameplay.Levels;
+using Project001.Gameplay.Presentation;
 using UnityEngine;
 
 namespace Project001.Gameplay.Pixels
@@ -7,8 +8,14 @@ namespace Project001.Gameplay.Pixels
     /// <summary>
     /// Generates a centred grid of PixelCell objects from a PixelLayoutDefinition,
     /// using a single shared runtime-generated 1x1 sprite. Dimensions and per-cell
-    /// MatchTypeId come entirely from the injected layout; visual colour comes
-    /// from the caller-supplied MatchTypeId-to-Color mapping, never inferred here.
+    /// MatchTypeId/MatchId come entirely from the injected layout; visual colour
+    /// is resolved directly from each cell's own MatchId via
+    /// ColorPalette.TryGetByMatchId — the same permanent Match ID -&gt;
+    /// canonical colour source CharacterDatabase resolves a collector's
+    /// Character_XX prefab from, so a pixel and the collector meant to eat it
+    /// always agree on colour by construction. No injected/caller-supplied
+    /// colour mapping any more (see MatchTypePresentation's removal) — there
+    /// is exactly one presentation colour source in the project now.
     /// </summary>
     public class PixelGrid : MonoBehaviour
     {
@@ -59,13 +66,10 @@ namespace Project001.Gameplay.Pixels
         /// children, is refused (logged) rather than generating duplicate
         /// cells. Existing children are never deleted.
         /// </summary>
-        public void Initialize(PixelLayoutDefinition layout, Func<MatchTypeId, Color> matchTypeToColor)
+        public void Initialize(PixelLayoutDefinition layout)
         {
             if (layout == null)
                 throw new ArgumentNullException(nameof(layout));
-
-            if (matchTypeToColor == null)
-                throw new ArgumentNullException(nameof(matchTypeToColor));
 
             if (_isInitialized)
             {
@@ -83,7 +87,7 @@ namespace Project001.Gameplay.Pixels
                 return;
 
             CreateSharedSprite();
-            GenerateGrid(layout, matchTypeToColor, cellSize);
+            GenerateGrid(layout, cellSize);
             _isInitialized = true;
         }
 
@@ -143,7 +147,7 @@ namespace Project001.Gameplay.Pixels
                 pixelsPerUnit: 1f);
         }
 
-        private void GenerateGrid(PixelLayoutDefinition layout, Func<MatchTypeId, Color> matchTypeToColor, float cellSize)
+        private void GenerateGrid(PixelLayoutDefinition layout, float cellSize)
         {
             Width = layout.Width;
             Height = layout.Height;
@@ -170,15 +174,35 @@ namespace Project001.Gameplay.Pixels
                     spriteRenderer.sprite = _sharedSprite;
 
                     MatchTypeId matchTypeId = layout.GetMatchTypeId(x, y);
-                    Color color = matchTypeToColor(matchTypeId);
+                    int matchId = layout.GetMatchId(x, y);
+                    Color color = ResolvePixelColor(matchId);
 
                     var cell = cellObject.GetComponent<PixelCell>();
-                    cell.Initialize(x, y, localPosition, matchTypeId, color);
+                    cell.Initialize(x, y, localPosition, matchTypeId, matchId, color);
 
                     _cells[x, y] = cell;
                     _remainingPixelCount++;
                 }
             }
+        }
+
+        /// <summary>
+        /// The single place a pixel's visible colour is ever resolved -
+        /// directly from ColorPalette, the same permanent Match ID table
+        /// CharacterDatabase resolves a collector's Character_XX prefab
+        /// from. Never returns a null/undefined result: falls back to
+        /// magenta with a logged error for any Match ID outside the
+        /// approved 1-20 table, the same fallback shape every other
+        /// resolver in this project uses (e.g. MonsterMaterialDatabase's
+        /// predecessor, CharacterDatabase.GetPrefab).
+        /// </summary>
+        private static Color ResolvePixelColor(int matchId)
+        {
+            if (ColorPalette.TryGetByMatchId(matchId, out Color color))
+                return color;
+
+            Debug.LogError($"PixelGrid: no ColorPalette entry for Match ID {matchId}; falling back to magenta.");
+            return Color.magenta;
         }
 
         private enum Side

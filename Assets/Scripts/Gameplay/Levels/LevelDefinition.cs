@@ -1,24 +1,32 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
-using Project001.Gameplay.Presentation;
 
 namespace Project001.Gameplay.Levels
 {
     /// <summary>
     /// Normalized, immutable pixel layout: exactly one MatchTypeId per cell of
-    /// a width x height grid. Exposes no mutable array — cells are read one at
-    /// a time by coordinate.
+    /// a width x height grid, each carrying its own Match ID (1-20, from
+    /// Assets/Art/ColorPalette.md's table) alongside it — the single source
+    /// of truth PixelGrid resolves that cell's visible colour from (via
+    /// ColorPalette), the same way CollectorDefinition.MatchId is the single
+    /// source of truth CollectorQueueBoard resolves a collector's
+    /// Character_XX prefab from. MatchTypeId remains the only thing pixel
+    /// consumption/matching logic (PixelGrid.TryConsumeNearestExposed,
+    /// PixelConsumer, ConveyorRider) ever compares — MatchId here is
+    /// presentation only, read by nothing else. Exposes no mutable array —
+    /// cells are read one at a time by coordinate.
     /// </summary>
     public sealed class PixelLayoutDefinition
     {
-        private readonly MatchTypeId[] _cells;
+        private readonly MatchTypeId[] _matchTypeIds;
+        private readonly int[] _matchIds;
 
         public int Width { get; }
 
         public int Height { get; }
 
-        public PixelLayoutDefinition(int width, int height, IReadOnlyList<MatchTypeId> cells)
+        public PixelLayoutDefinition(int width, int height, IReadOnlyList<MatchTypeId> matchTypeIds, IReadOnlyList<int> matchIds)
         {
             if (width <= 0)
                 throw new ArgumentOutOfRangeException(nameof(width), "Width must be positive.");
@@ -26,26 +34,41 @@ namespace Project001.Gameplay.Levels
             if (height <= 0)
                 throw new ArgumentOutOfRangeException(nameof(height), "Height must be positive.");
 
-            if (cells == null)
-                throw new ArgumentNullException(nameof(cells));
+            if (matchTypeIds == null)
+                throw new ArgumentNullException(nameof(matchTypeIds));
 
-            if (cells.Count != width * height)
+            if (matchIds == null)
+                throw new ArgumentNullException(nameof(matchIds));
+
+            if (matchTypeIds.Count != width * height)
             {
                 throw new ArgumentException(
-                    $"Expected {width * height} cells for a {width}x{height} layout, got {cells.Count}.",
-                    nameof(cells));
+                    $"Expected {width * height} cells for a {width}x{height} layout, got {matchTypeIds.Count}.",
+                    nameof(matchTypeIds));
+            }
+
+            if (matchIds.Count != matchTypeIds.Count)
+            {
+                throw new ArgumentException(
+                    $"matchIds must have exactly one entry per cell ({matchTypeIds.Count}), got {matchIds.Count}.",
+                    nameof(matchIds));
             }
 
             Width = width;
             Height = height;
 
-            _cells = new MatchTypeId[cells.Count];
-            for (int i = 0; i < cells.Count; i++)
-                _cells[i] = cells[i];
+            _matchTypeIds = new MatchTypeId[matchTypeIds.Count];
+            _matchIds = new int[matchIds.Count];
+            for (int i = 0; i < matchTypeIds.Count; i++)
+            {
+                _matchTypeIds[i] = matchTypeIds[i];
+                _matchIds[i] = matchIds[i];
+            }
         }
 
         /// <summary>
-        /// MatchTypeId of the cell at the given grid coordinate.
+        /// MatchTypeId of the cell at the given grid coordinate — gameplay
+        /// matching identity only, never a presentation colour source.
         /// </summary>
         public MatchTypeId GetMatchTypeId(int x, int y)
         {
@@ -55,18 +78,38 @@ namespace Project001.Gameplay.Levels
             if (y < 0 || y >= Height)
                 throw new ArgumentOutOfRangeException(nameof(y));
 
-            return _cells[y * Width + x];
+            return _matchTypeIds[y * Width + x];
+        }
+
+        /// <summary>
+        /// Match ID (1-20) of the cell at the given grid coordinate — the
+        /// same permanent id its matching collector(s) carry, and the only
+        /// thing PixelGrid resolves that cell's visible colour from (via
+        /// ColorPalette.TryGetByMatchId).
+        /// </summary>
+        public int GetMatchId(int x, int y)
+        {
+            if (x < 0 || x >= Width)
+                throw new ArgumentOutOfRangeException(nameof(x));
+
+            if (y < 0 || y >= Height)
+                throw new ArgumentOutOfRangeException(nameof(y));
+
+            return _matchIds[y * Width + x];
         }
     }
 
     /// <summary>
     /// One collector's immutable gameplay identity: which MatchTypeId it
-    /// accepts and how many matching pixels satisfy it. MonsterColor is
-    /// carried alongside this identity but is not part of it — it is the
-    /// collector's visual skin selection, entirely independent of
-    /// MatchTypeId. Defaults to MonsterColor.Purple so existing call sites
-    /// that predate MonsterColor keep compiling and behave the same as
-    /// before it existed.
+    /// accepts and how many matching pixels satisfy it. MatchId is carried
+    /// alongside this identity but is not part of it — it is the
+    /// collector's visual selection (which Character_XX prefab/material/
+    /// texture it resolves to via CharacterDatabase), entirely independent
+    /// of MatchTypeId. A permanent id, 1-20, from
+    /// Assets/Art/ColorPalette.md's Match ID table — gameplay code never
+    /// derives one from the other. Defaults to 1 so existing call sites
+    /// that predate MatchId keep compiling and behave the same as before it
+    /// existed.
     /// </summary>
     public sealed class CollectorDefinition
     {
@@ -74,16 +117,16 @@ namespace Project001.Gameplay.Levels
 
         public int HungerCapacity { get; }
 
-        public MonsterColor MonsterColor { get; }
+        public int MatchId { get; }
 
-        public CollectorDefinition(MatchTypeId matchTypeId, int hungerCapacity, MonsterColor monsterColor = MonsterColor.Purple)
+        public CollectorDefinition(MatchTypeId matchTypeId, int hungerCapacity, int matchId = 1)
         {
             if (hungerCapacity <= 0)
                 throw new ArgumentOutOfRangeException(nameof(hungerCapacity), "Hunger capacity must be positive.");
 
             MatchTypeId = matchTypeId;
             HungerCapacity = hungerCapacity;
-            MonsterColor = monsterColor;
+            MatchId = matchId;
         }
     }
 

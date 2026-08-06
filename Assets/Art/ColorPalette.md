@@ -25,26 +25,26 @@ Each gameplay Match ID is permanently assigned to one color.
 
 | Match ID | Color |
 |----------:|-------|
-| 01 | Red | #B82728
-| 02 | Orange | #D86B25
-| 03 | Yellow | #DEB322
-| 04 | Lime | #7AB80B
-| 05 | Green | #2D9A34
-| 06 | Mint | #2D9A34
-| 07 | Cyan | #21B1C3
-| 08 | Azure | #2378BB
-| 09 | Peach | #DD8F66
-| 10 | Navy | #0E2E52
-| 11 | Purple | #722BA9
-| 12 | Violet | #AF82C2
-| 13 | Pink | #DA3872
-| 14 | Coral | #E25039
-| 15 | Brown | #6D3213
-| 16 | Cream | #DFBB8D
-| 17 | Teal | #22908E
-| 18 | White | #D2CCC3
-| 19 | Gray | #8B8984
-| 20 | Black | #373736
+| 01 | Red | #f81718
+| 02 | Orange | #fe920b
+| 03 | Yellow | #ffe924
+| 04 | Lime | #a6f108
+| 05 | Green | #00c02d
+| 06 | Mint | #3af8cb
+| 07 | Cyan | #00d1ee
+| 08 | Azure | #014de0
+| 09 | Peach | #ffb98f
+| 10 | Navy | #0c3264
+| 11 | Purple | #8e1dfe
+| 12 | Violet | #e0b4e7
+| 13 | Pink | #fc4982
+| 14 | Coral | #fc4b2c
+| 15 | Brown | #7f300a
+| 16 | Cream | #ffe7c2
+| 17 | Teal | #189b99
+| 18 | White | #fbf4f0
+| 19 | Gray | #908781
+| 20 | Black | #212121
 
 These IDs are permanent.
 

@@ -1,5 +1,4 @@
 using System.Collections.Generic;
-using Project001.Gameplay.Presentation;
 
 namespace Project001.Gameplay.Levels
 {
@@ -20,6 +19,25 @@ namespace Project001.Gameplay.Levels
         private static readonly MatchTypeId MatchType2 = new MatchTypeId("m002");
         private static readonly MatchTypeId MatchType3 = new MatchTypeId("m003");
         private static readonly MatchTypeId MatchType4 = new MatchTypeId("m004");
+
+        // Which permanent Match ID (Assets/Art/ColorPalette.md) each
+        // MatchTypeId resolves to *within this level* - the single place
+        // that association is authored, reused by both this level's pixel
+        // layout and its collector queues below, so a MatchTypeId's pixels
+        // and the collectors that consume them can never drift onto
+        // different Match IDs (see LevelDefinitionValidator.
+        // ValidateMatchIdConsistency, which enforces this at construction
+        // time). A MatchTypeId's meaning - and therefore which Match ID it
+        // maps to - is level-scoped, not global: level_001 and level_002
+        // deliberately assign "m002" to different Match IDs below, which is
+        // legitimate precisely because MatchTypeId never carries colour or
+        // identity outside its own level.
+        private const int PrototypeMatchType1CharacterId = 1;  // Crab
+        private const int PrototypeMatchType2CharacterId = 7;  // Octopus
+        private const int PrototypeMatchType3CharacterId = 9;  // Turtle
+
+        private const int SecondTestMatchType2CharacterId = 6;  // Fish
+        private const int SecondTestMatchType4CharacterId = 20; // Crab
 
         private readonly Dictionary<LevelId, LevelDefinition> _levels;
 
@@ -74,15 +92,21 @@ namespace Project001.Gameplay.Levels
             const int height = 6;
 
             var matchTypes = new[] { MatchType1, MatchType2, MatchType3 };
+            var matchIds = new[] { PrototypeMatchType1CharacterId, PrototypeMatchType2CharacterId, PrototypeMatchType3CharacterId };
             var cells = new List<MatchTypeId>(width * height);
+            var cellMatchIds = new List<int>(width * height);
 
             for (int y = 0; y < height; y++)
             {
                 for (int x = 0; x < width; x++)
-                    cells.Add(matchTypes[(x + y) % matchTypes.Length]);
+                {
+                    int index = (x + y) % matchTypes.Length;
+                    cells.Add(matchTypes[index]);
+                    cellMatchIds.Add(matchIds[index]);
+                }
             }
 
-            return new PixelLayoutDefinition(width, height, cells);
+            return new PixelLayoutDefinition(width, height, cells, cellMatchIds);
         }
 
         /// <summary>
@@ -92,32 +116,40 @@ namespace Project001.Gameplay.Levels
         /// (12, matching its pixel count) is directly readable here while
         /// deliberately varying across that type's four collectors.
         ///
-        /// Each collector also carries an explicit, hand-authored
-        /// MonsterColor (MatchType1 -&gt; Purple, MatchType2 -&gt; Orange,
-        /// MatchType3 -&gt; Green) — a level-authoring choice for this
-        /// specific level, not a MatchTypeId-to-MonsterColor rule enforced
-        /// anywhere in code. Nothing stops a future level from assigning
-        /// MonsterColor differently, including inconsistently within a
-        /// single MatchTypeId.
+        /// Each collector also carries the same Match ID this level's pixel
+        /// layout assigns its MatchTypeId (PrototypeMatchType1CharacterId
+        /// etc. above: MatchType1 -&gt; 1/Crab, MatchType2 -&gt; 7/Octopus,
+        /// MatchType3 -&gt; 9/Turtle) — a level-authoring choice, not a
+        /// global MatchTypeId-to-MatchId rule (a different level is free to
+        /// assign a MatchTypeId to a different Match ID; see
+        /// SecondTestMatchType2CharacterId below for exactly that), but
+        /// every pixel and collector *within this level* sharing a
+        /// MatchTypeId must agree on one Match ID -
+        /// LevelDefinitionValidator.ValidateMatchIdConsistency enforces
+        /// this at construction time.
         /// </summary>
         private static IReadOnlyList<CollectorQueueDefinition> BuildPrototypeCollectorQueues()
         {
-            var queueSpecs = new (MatchTypeId matchTypeId, int hungerCapacity, MonsterColor monsterColor)[][]
+            const int crab = PrototypeMatchType1CharacterId;
+            const int octopus = PrototypeMatchType2CharacterId;
+            const int turtle = PrototypeMatchType3CharacterId;
+
+            var queueSpecs = new (MatchTypeId matchTypeId, int hungerCapacity, int matchId)[][]
             {
-                new[] { (MatchType1, 5, MonsterColor.Purple), (MatchType2, 4, MonsterColor.Orange), (MatchType3, 6, MonsterColor.Green) },
-                new[] { (MatchType2, 4, MonsterColor.Orange), (MatchType3, 2, MonsterColor.Green), (MatchType1, 3, MonsterColor.Purple) },
-                new[] { (MatchType3, 3, MonsterColor.Green), (MatchType1, 2, MonsterColor.Purple), (MatchType2, 3, MonsterColor.Orange) },
-                new[] { (MatchType1, 2, MonsterColor.Purple), (MatchType2, 1, MonsterColor.Orange), (MatchType3, 1, MonsterColor.Green) },
+                new[] { (MatchType1, 5, crab), (MatchType2, 4, octopus), (MatchType3, 6, turtle) },
+                new[] { (MatchType2, 4, octopus), (MatchType3, 2, turtle), (MatchType1, 3, crab) },
+                new[] { (MatchType3, 3, turtle), (MatchType1, 2, crab), (MatchType2, 3, octopus) },
+                new[] { (MatchType1, 2, crab), (MatchType2, 1, octopus), (MatchType3, 1, turtle) },
             };
 
             var queues = new List<CollectorQueueDefinition>(queueSpecs.Length);
 
-            foreach ((MatchTypeId matchTypeId, int hungerCapacity, MonsterColor monsterColor)[] spec in queueSpecs)
+            foreach ((MatchTypeId matchTypeId, int hungerCapacity, int matchId)[] spec in queueSpecs)
             {
                 var collectors = new List<CollectorDefinition>(spec.Length);
 
-                foreach ((MatchTypeId matchTypeId, int hungerCapacity, MonsterColor monsterColor) in spec)
-                    collectors.Add(new CollectorDefinition(matchTypeId, hungerCapacity, monsterColor));
+                foreach ((MatchTypeId matchTypeId, int hungerCapacity, int matchId) in spec)
+                    collectors.Add(new CollectorDefinition(matchTypeId, hungerCapacity, matchId));
 
                 queues.Add(new CollectorQueueDefinition(collectors));
             }
@@ -160,15 +192,21 @@ namespace Project001.Gameplay.Levels
             const int height = 8;
 
             var matchTypes = new[] { MatchType2, MatchType4 };
+            var matchIds = new[] { SecondTestMatchType2CharacterId, SecondTestMatchType4CharacterId };
             var cells = new List<MatchTypeId>(width * height);
+            var cellMatchIds = new List<int>(width * height);
 
             for (int y = 0; y < height; y++)
             {
                 for (int x = 0; x < width; x++)
-                    cells.Add(matchTypes[(x + y) % matchTypes.Length]);
+                {
+                    int index = (x + y) % matchTypes.Length;
+                    cells.Add(matchTypes[index]);
+                    cellMatchIds.Add(matchIds[index]);
+                }
             }
 
-            return new PixelLayoutDefinition(width, height, cells);
+            return new PixelLayoutDefinition(width, height, cells, cellMatchIds);
         }
 
         /// <summary>
@@ -177,25 +215,36 @@ namespace Project001.Gameplay.Levels
         /// verifiable here: each queue is dedicated entirely to one of the
         /// grid's two MatchTypeIds, alternating by queue index, with each
         /// queue's own 4 HungerCapacity values deliberately non-uniform.
+        /// Each queue also carries the same Match ID this level's pixel
+        /// layout assigns its MatchTypeId (SecondTestMatchType2CharacterId
+        /// etc. above: MatchType2 -&gt; 6/Fish, MatchType4 -&gt; 20/Crab) — a
+        /// level-authoring choice (note this level deliberately maps "m002"
+        /// to a different Match ID than the prototype level does, which is
+        /// legitimate since MatchTypeId is level-scoped), enforced
+        /// consistent within this level by
+        /// LevelDefinitionValidator.ValidateMatchIdConsistency.
         /// </summary>
         private static IReadOnlyList<CollectorQueueDefinition> BuildSecondTestCollectorQueues()
         {
-            var queueSpecs = new (MatchTypeId matchTypeId, int[] hungerCapacities)[]
+            const int fish = SecondTestMatchType2CharacterId;
+            const int crab = SecondTestMatchType4CharacterId;
+
+            var queueSpecs = new (MatchTypeId matchTypeId, int[] hungerCapacities, int matchId)[]
             {
-                (MatchType2, new[] { 3, 2, 2, 1 }),
-                (MatchType4, new[] { 3, 2, 1, 2 }),
-                (MatchType2, new[] { 1, 2, 3, 2 }),
-                (MatchType4, new[] { 2, 3, 2, 1 }),
+                (MatchType2, new[] { 3, 2, 2, 1 }, fish),
+                (MatchType4, new[] { 3, 2, 1, 2 }, crab),
+                (MatchType2, new[] { 1, 2, 3, 2 }, fish),
+                (MatchType4, new[] { 2, 3, 2, 1 }, crab),
             };
 
             var queues = new List<CollectorQueueDefinition>(queueSpecs.Length);
 
-            foreach ((MatchTypeId matchTypeId, int[] hungerCapacities) in queueSpecs)
+            foreach ((MatchTypeId matchTypeId, int[] hungerCapacities, int matchId) in queueSpecs)
             {
                 var collectors = new List<CollectorDefinition>(hungerCapacities.Length);
 
                 foreach (int hungerCapacity in hungerCapacities)
-                    collectors.Add(new CollectorDefinition(matchTypeId, hungerCapacity));
+                    collectors.Add(new CollectorDefinition(matchTypeId, hungerCapacity, matchId));
 
                 queues.Add(new CollectorQueueDefinition(collectors));
             }

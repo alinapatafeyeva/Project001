@@ -16,6 +16,18 @@ namespace Project001.Gameplay.Levels
     /// </summary>
     public static class FailureTestLevelFactory
     {
+        /// <summary>
+        /// Dedicated MatchTypeId for these Bootstrap-only debug collectors.
+        /// Never appears in any approved pixel layout, so a collector built
+        /// from it can never be satisfied by real gameplay. Formerly lived on
+        /// the now-deleted MatchTypePresentation (which only ever used it as
+        /// a colour-fallback key); this debug collector never appears on a
+        /// pixel grid and is never rendered as a pixel, so it needs no
+        /// colour mapping at all, only a MatchTypeId real gameplay can never
+        /// match.
+        /// </summary>
+        public static readonly MatchTypeId DebugUnmatchedMatchTypeId = new MatchTypeId("debug_unmatched");
+
         // Debug collectors stay permanently unsatisfied because their
         // MatchTypeId never appears on any pixel grid, not because of this
         // value. Deliberately large as an explicit debug signal that they
@@ -26,7 +38,7 @@ namespace Project001.Gameplay.Levels
         /// Returns a new LevelDefinition with the same Id and PixelLayout as
         /// approvedLevel, but with
         /// debugCollectorCount debug collectors (MatchTypeId
-        /// MatchTypePresentation.DebugUnmatchedMatchTypeId, HungerCapacity
+        /// DebugUnmatchedMatchTypeId, HungerCapacity
         /// DebugHungerCapacity) distributed round-robin across
         /// approvedLevel's existing queues and prepended to each queue's
         /// front — so debug collectors are selectable before any normal
@@ -52,7 +64,7 @@ namespace Project001.Gameplay.Levels
             {
                 int queueIndex = debugIndex % queueCount;
                 debugCollectorsPerQueue[queueIndex].Add(
-                    new CollectorDefinition(MatchTypePresentation.DebugUnmatchedMatchTypeId, DebugHungerCapacity));
+                    new CollectorDefinition(DebugUnmatchedMatchTypeId, DebugHungerCapacity));
             }
 
             var mergedQueues = new List<CollectorQueueDefinition>(queueCount);

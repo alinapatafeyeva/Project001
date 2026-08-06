@@ -8,9 +8,12 @@ namespace Project001.Gameplay.Presentation
     /// the same scene frames correctly on a 9:16 phone, a 9:19.5 phone, or
     /// any other portrait aspect, without per-device tuning. Composition
     /// itself never changes: this component only ever adapts orthographic
-    /// size (and the resulting vertical position) to the current aspect
-    /// ratio, never to how much content currently exists in the scene — it
-    /// reads no Renderer, no generated collector, and no level data.
+    /// size to the current aspect ratio, never to how much content currently
+    /// exists in the scene — it reads no Renderer, no generated collector,
+    /// and no level data. Position and rotation are also re-applied here
+    /// (from GameplayLayout.CameraPosition/CameraRotation, both fixed values
+    /// independent of aspect) purely so this and BootstrapSceneCreator can
+    /// never drift apart, not because either one varies per screen size.
     ///
     /// Safe to run in Awake: unlike a bounds-measuring approach, this has no
     /// dependency on anything else having generated content first, so it
@@ -35,9 +38,8 @@ namespace Project001.Gameplay.Presentation
             var orthoCamera = GetComponent<Camera>();
             orthoCamera.orthographicSize = GameplayLayout.ComputeOrthographicSize(screenWidth, screenHeight);
 
-            Vector3 position = transform.position;
-            position.y = GameplayLayout.CameraVerticalCenter;
-            transform.position = position;
+            transform.position = GameplayLayout.CameraPosition;
+            transform.rotation = GameplayLayout.CameraRotation;
         }
     }
 }

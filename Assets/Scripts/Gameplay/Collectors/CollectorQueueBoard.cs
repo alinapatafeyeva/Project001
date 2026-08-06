@@ -12,20 +12,22 @@ namespace Project001.Gameplay.Collectors
     /// <summary>
     /// Generates vertical queues of CollectorView objects on Initialize. Queue
     /// count, per-queue collector order, each collector's MatchTypeId,
-    /// MonsterColor, and hunger capacity all come from the injected level
+    /// MatchId, and hunger capacity all come from the injected level
     /// collector-queue data. Appearance is resolved here only as far as
-    /// picking each collector's MonsterSkin (via monsterSkinDatabase) and
-    /// showing its back-idle pose — CollectorPresentation and CollectorView
-    /// own everything about how that sprite is actually displayed. Queued
-    /// collectors show Back Idle until selected; CollectorSelectionController
-    /// switches a collector to Front Eating the moment it boards the Conveyor
-    /// (see CollectorSelectionController.TrySelect), so a collector never
-    /// remains back-facing once it leaves this board.
+    /// resolving each collector's MatchId to a Character_XX prefab (via
+    /// characterDatabase) and instantiating it as that collector's Visual,
+    /// then showing its facing-away idle pose — CollectorPresentation and
+    /// CollectorAnimation own everything about how that model is actually
+    /// posed/animated. Queued collectors face away until selected;
+    /// CollectorSelectionController switches a collector to facing toward
+    /// the moment it boards the Conveyor (see
+    /// CollectorSelectionController.TrySelect), so a collector never remains
+    /// facing away once it leaves this board.
     /// </summary>
     public class CollectorQueueBoard : MonoBehaviour, ICollectorSource
     {
-        [SerializeField, Tooltip("Resolves each collector's MonsterColor to the MonsterSkin (sprite set) it should display.")]
-        private MonsterSkinDatabase monsterSkinDatabase;
+        [SerializeField, Tooltip("Resolves each collector's MatchId to the Character_XX prefab it should display.")]
+        private CharacterDatabase characterDatabase;
 
         [SerializeField, Tooltip("Gap between neighbouring queues, in world units.")]
         [Min(0f)]
@@ -44,7 +46,6 @@ namespace Project001.Gameplay.Collectors
         private FailureController failureController;
 
         private CollectorQueue[] _queues;
-        private float _rowStepY;
         private bool _isInitialized;
 
         /// <summary>
@@ -76,24 +77,24 @@ namespace Project001.Gameplay.Collectors
         }
 
         /// <summary>
-        /// Resolves the MonsterSkin for the given MonsterColor via
-        /// monsterSkinDatabase. MonsterSkinDatabase.GetSkin never returns
-        /// null, so this never does either — if monsterSkinDatabase itself
-        /// is unassigned, logs a clear error and returns an empty MonsterSkin
-        /// (every sprite null) rather than throwing, so a collector simply
-        /// shows no sprite instead of failing to build. Beyond that, this
-        /// board never has to reason about a missing skin — that is entirely
-        /// MonsterSkinDatabase's responsibility.
+        /// Resolves the Visual prefab for the given MatchId via
+        /// characterDatabase. CharacterDatabase.GetPrefab never throws, so
+        /// this never does either — if characterDatabase itself is
+        /// unassigned, logs a clear error and returns null rather than
+        /// throwing, so a collector simply has no Visual instead of failing
+        /// to build. Beyond that, this board never has to reason about a
+        /// missing prefab — that is entirely CharacterDatabase's
+        /// responsibility.
         /// </summary>
-        private MonsterSkin ResolveSkin(MonsterColor monsterColor)
+        private GameObject ResolvePrefab(int matchId)
         {
-            if (monsterSkinDatabase == null)
+            if (characterDatabase == null)
             {
-                Debug.LogError($"CollectorQueueBoard: '{name}' has no MonsterSkinDatabase assigned; collectors will show no sprite.", this);
-                return new MonsterSkin();
+                Debug.LogError($"CollectorQueueBoard: '{name}' has no CharacterDatabase assigned; collectors will have no Visual.", this);
+                return null;
             }
 
-            return monsterSkinDatabase.GetSkin(monsterColor);
+            return characterDatabase.GetPrefab(matchId);
         }
 
         private void GenerateBoard(IReadOnlyList<CollectorQueueDefinition> collectorQueues)
@@ -109,7 +110,6 @@ namespace Project001.Gameplay.Collectors
             // QueueRowStep, which already derives from CollectorVisibleHeight
             // for exactly this reason, just vertically.
             float stepX = GameplayLayout.CollectorVisibleWidth + horizontalSpacing;
-            _rowStepY = GameplayLayout.QueueRowStep;
             float offsetX = (collectorQueues.Count - 1) * stepX * 0.5f;
 
             for (int queueIndex = 0; queueIndex < collectorQueues.Count; queueIndex++)
@@ -143,15 +143,20 @@ namespace Project001.Gameplay.Collectors
                         typeof(CollectorLifecycle));
                     collectorObject.transform.SetParent(queueObject.transform, false);
                     collectorObject.transform.localPosition = RowLocalPosition(rowIndex);
-                    collectorObject.transform.localScale = new Vector3(GameplayLayout.CollectorSpriteScale, GameplayLayout.CollectorSpriteScale, 1f);
+                    // Uniform scale, unlike the old (scale, scale, 1) used
+                    // for a flat sprite: a 3D model needs its depth (Z)
+                    // scaled along with width/height, or it renders stretched
+                    // relative to its authored proportions.
+                    collectorObject.transform.localScale = Vector3.one * GameplayLayout.CollectorSpriteScale;
 
-                    MonsterSkin skin = ResolveSkin(collectorDefinition.MonsterColor);
-
-                    var collectorPresentation = collectorObject.GetComponent<CollectorPresentation>();
-                    collectorPresentation.Initialize(skin.BackIdle, skin.FrontIdle, skin.FrontEating, skin.FrontSatisfied, skin.Heart);
-                    collectorPresentation.ShowWaitingBackIdle();
+                    GameObject visualPrefab = ResolvePrefab(collectorDefinition.MatchId);
 
                     var collectorView = collectorObject.GetComponent<CollectorView>();
+                    collectorView.Initialize(visualPrefab);
+
+                    var collectorPresentation = collectorObject.GetComponent<CollectorPresentation>();
+                    collectorPresentation.ShowWaitingBackIdle();
+                    collectorPresentation.SetQueueRowDepth(rowIndex);
 
                     var conveyorRider = collectorObject.GetComponent<ConveyorRider>();
                     conveyorRider.Initialize(collectorDefinition.MatchTypeId, collectorDefinition.HungerCapacity);
@@ -235,27 +240,67 @@ namespace Project001.Gameplay.Collectors
         /// </summary>
         bool ICollectorSource.ReleaseCollector(CollectorView collectorView) => TryRemoveSelected(collectorView);
 
+        /// <summary>
+        /// Re-derives the given view's current row index from whichever
+        /// queue actually holds it and reapplies that row's genuine
+        /// presentation depth — used only when CollectorSelectionController
+        /// rolls back a boarding attempt (this board never actually
+        /// released the view, so it is still exactly where
+        /// TryRemoveSelected would have found it).
+        /// </summary>
+        void ICollectorSource.RestorePresentationDepth(CollectorView collectorView)
+        {
+            if (collectorView == null || _queues == null)
+                return;
+
+            foreach (CollectorQueue queue in _queues)
+            {
+                IReadOnlyList<CollectorView> views = queue.Views;
+                for (int rowIndex = 0; rowIndex < views.Count; rowIndex++)
+                {
+                    if (views[rowIndex] != collectorView)
+                        continue;
+
+                    collectorView.Presentation.SetQueueRowDepth(rowIndex);
+                    return;
+                }
+            }
+        }
+
         private void ShiftQueueUp(CollectorQueue queue)
         {
             IReadOnlyList<CollectorView> views = queue.Views;
 
             for (int rowIndex = 0; rowIndex < views.Count; rowIndex++)
+            {
                 views[rowIndex].transform.localPosition = RowLocalPosition(rowIndex);
+                views[rowIndex].Presentation.SetQueueRowDepth(rowIndex);
+            }
         }
 
         /// <summary>
-        /// Row rowIndex's local position within its queue. GameplayLayout.
-        /// CollectorQueueBoardPositionY is this board's region TOP edge, not
-        /// a center, so row 0's own center sits half a CollectorVisibleHeight
-        /// below local y = 0 — using the sprite's actual visible height, not
-        /// CollectorSpriteScale, so row 0's rendered sprite (not an imaginary
-        /// scale-square) has its true visible top edge at the region's top
-        /// edge, rather than intruding into whatever sits directly above
-        /// this board.
+        /// Row rowIndex's local position within its queue. Every row stays on
+        /// the single shared gameplay plane (Z=0) — the same plane every
+        /// ConveyorRider, WaitingLine slot, and RecoveryRow slot lives on —
+        /// so a collector's world/local Z never needs to change across its
+        /// entire lifecycle (queue -> selected -> boarding -> riding).
+        /// GameplayLayout.CollectorQueueBoardPositionY is this board's region
+        /// TOP edge, not a center, and GameplayLayout.QueueUpwardPresentationOffset
+        /// lifts every row uniformly closer to that edge (a pure presentation
+        /// offset, not a change to the region boundary itself) so the queue
+        /// reads a little higher on screen under the tilted camera — see both
+        /// constants' own remarks for why depth separation is Y-only here
+        /// (an earlier Z-per-row version broke Physics2D tap selection and
+        /// boarding, since a collector no longer started clean at Z=0).
+        /// A pure function of rowIndex alone, so ShiftQueueUp keeps working
+        /// unmodified — reapplying this per remaining index never reflows a
+        /// draining queue.
         /// </summary>
         private Vector3 RowLocalPosition(int rowIndex)
         {
-            float y = -GameplayLayout.CollectorVisibleHeight * 0.5f - rowIndex * _rowStepY;
+            float y = -GameplayLayout.CollectorVisibleHeight * 0.5f
+                - rowIndex * GameplayLayout.QueueRowStep
+                + GameplayLayout.QueueUpwardPresentationOffset;
             return new Vector3(0f, y, 0f);
         }
     }

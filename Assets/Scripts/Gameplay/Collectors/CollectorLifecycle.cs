@@ -127,6 +127,7 @@ namespace Project001.Gameplay.Collectors
             transform.SetParent(slot.transform, true);
             transform.position = slot.transform.position;
             collectorView.Presentation.ShowWaitingBackIdle();
+            collectorView.Presentation.ClearPresentationDepth();
         }
 
         /// <summary>

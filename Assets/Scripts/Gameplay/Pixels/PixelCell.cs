@@ -26,16 +26,26 @@ namespace Project001.Gameplay.Pixels
 
         public MatchTypeId MatchTypeId { get; private set; }
 
+        /// <summary>
+        /// The Match ID (1-20) this cell's colour was resolved from (see
+        /// PixelGrid.GenerateGrid/ColorPalette.TryGetByMatchId) — presentation
+        /// only, exposed purely so tooling/logging can report it; consumption
+        /// matching (PixelGrid.TryConsumeNearestExposed) still compares
+        /// MatchTypeId exclusively, never this.
+        /// </summary>
+        public int MatchId { get; private set; }
+
         public Color PixelColor { get; private set; }
 
         public bool IsActive { get; private set; } = true;
 
-        public void Initialize(int gridX, int gridY, Vector2 localPosition, MatchTypeId matchTypeId, Color color)
+        public void Initialize(int gridX, int gridY, Vector2 localPosition, MatchTypeId matchTypeId, int matchId, Color color)
         {
             GridX = gridX;
             GridY = gridY;
             LocalPosition = localPosition;
             MatchTypeId = matchTypeId;
+            MatchId = matchId;
             PixelColor = color;
             SpriteRenderer.color = color;
         }
