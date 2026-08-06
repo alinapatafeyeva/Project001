@@ -118,6 +118,7 @@ namespace Project001.Gameplay.Collectors
         private Transform _visualMotion;
         private ConveyorRider _conveyorRider;
         private CollectorPresentation _presentation;
+        private CharacterPosePresentation _posePresentation;
         private TextMesh _hungerText;
 
         /// <summary>
@@ -156,6 +157,17 @@ namespace Project001.Gameplay.Collectors
         /// entirely. Null until Initialize() has run.
         /// </summary>
         public Transform VisualMotion => _visualMotion;
+
+        /// <summary>
+        /// This collector's claw/bone pose adapter, resolved from the
+        /// instantiated CharacterVisual by Initialize() - null for any
+        /// species whose visualPrefab was not configured with one (every
+        /// species besides Crab today; see CharacterPosePresentation and
+        /// CharacterAssetBuilder). CollectorPresentation always calls
+        /// through the null-conditional operator on this, so a species with
+        /// no adapter is unaffected by every pose request.
+        /// </summary>
+        public CharacterPosePresentation PosePresentation => _posePresentation;
 
         /// <summary>
         /// Currently displayed RemainingHunger text. Read-only — this view
@@ -243,6 +255,7 @@ namespace Project001.Gameplay.Collectors
 
             _visual = visualWrapper.transform;
             _visualMotion = visualMotion.transform;
+            _posePresentation = modelInstance.GetComponentInChildren<CharacterPosePresentation>(true);
         }
 
         /// <summary>

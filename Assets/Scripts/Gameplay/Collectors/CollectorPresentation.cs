@@ -79,7 +79,11 @@ namespace Project001.Gameplay.Collectors
         /// RecoveryRowController.ReceiveCollectors when a collector is
         /// transferred into the Recovery Row, and by
         /// CollectorSelectionController when a failed boarding attempt is
-        /// rolled back to its original source.
+        /// rolled back to its original source. Also requests the Waiting
+        /// claw pose (see CharacterPosePresentation) on whichever species
+        /// configured one — a no-op via the null-conditional operator for
+        /// every other species, so this call site needs no per-species
+        /// branching.
         /// </summary>
         public void ShowWaitingBackIdle()
         {
@@ -89,6 +93,7 @@ namespace Project001.Gameplay.Collectors
             Animation.SetFacingImmediate(faceAway: true);
             StopActiveSequence();
             Animation.PlayIdleBreathing();
+            View.PosePresentation?.SetPose(CharacterPresentationPose.Waiting);
         }
 
         /// <summary>
@@ -144,13 +149,21 @@ namespace Project001.Gameplay.Collectors
         /// rest of this collector's time actively riding the Conveyor.
         /// Called by CollectorSelectionController the moment this collector
         /// boards, regardless of which source (CollectorQueueBoard,
-        /// WaitingLine, or Recovery Row) it boarded from.
+        /// WaitingLine, or Recovery Row) it boarded from. Also requests the
+        /// Conveyor claw pose (see CharacterPosePresentation) — fired
+        /// immediately on boarding, in parallel with the bounce/turn below,
+        /// and left in place for the rest of the ride: nothing here or in
+        /// PlayNormalBiteReaction/PlayFinalBiteSequence ever requests
+        /// Waiting again while riding, so the pose survives untouched
+        /// through every bite reaction and the terminal sequence, right up
+        /// until this collector is hidden or destroyed.
         /// </summary>
         public void ShowConveyorFrontEating()
         {
             if (_terminalStarted)
                 return;
 
+            View.PosePresentation?.SetPose(CharacterPresentationPose.Conveyor);
             StartSequence(BoardingSequence());
         }
 

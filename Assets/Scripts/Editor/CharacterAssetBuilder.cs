@@ -270,14 +270,19 @@ namespace Project001.EditorTools
             // Take Damage/Die/...) - every character here is a static queue/
             // conveyor visual with no animation of its own, so the Animator
             // is disabled outright rather than left to cycle through those.
-            // Applied (and, for Crab, the claw pose below adjusted) BEFORE
-            // the Animator is disabled here has no bearing on either step -
-            // the Animator was never enabled/driving anything during this
-            // build pass to begin with (PrefabUtility.InstantiatePrefab does
-            // not run animation), so the bone pose set below is exactly the
-            // pose this prefab keeps forever: nothing ever re-poses these
-            // bones again once the Animator is permanently disabled, at
-            // build time or at runtime.
+            // Whether this runs before or after the Crab pose adapter is
+            // configured below has no bearing on either step - the Animator
+            // was never enabled/driving anything during this build pass to
+            // begin with (PrefabUtility.InstantiatePrefab does not run
+            // animation), so every arm bone is still sitting at its raw
+            // imported (bind) rotation when ApplyCrabPosePresentation reads
+            // it below, regardless of this ordering. Unlike the one-off
+            // build-time bone edit this replaced, bones ARE re-posed again
+            // at runtime now, on request - see CharacterPosePresentation -
+            // but only ever by that component's own SetPose, driven only by
+            // CollectorPresentation; the Animator being permanently disabled
+            // just means nothing else (no clip, no other system) ever also
+            // drives these bones.
             var animator = root.GetComponentInChildren<Animator>(true);
             if (animator != null)
             {
@@ -286,7 +291,7 @@ namespace Project001.EditorTools
             }
 
             if (species == Species.Crab)
-                ApplyCrabClawPoseAdjustment(body, idLabel);
+                ApplyCrabPosePresentation(body, idLabel);
 
             // The same rootBone-space-aware bounds computation CollectorView
             // uses at runtime to pivot-center this same prefab instance (see
@@ -403,45 +408,126 @@ namespace Project001.EditorTools
         // Explicit bone names, discovered from the vendor Crab rig itself
         // (readable strings embedded in Assets/Cube Animals 02/FBX/No Root/
         // Crab/Crab.fbx - RigHub is the root, RigLArm1/RigRArm1 the
-        // shoulder joint of each claw's arm chain, RigLArm2../RigRArm2..
-        // continuing to the palm/fingers) - never a fragile approximate
-        // name/renderer match.
+        // shoulder joint of each claw's arm chain, RigLArm2/RigRArm2 the
+        // elbow joint, continuing on to RigLArm3/RigRArm3 the wrist and then
+        // the palm/fingers, neither of which this pose adapter touches) -
+        // never a fragile approximate name/renderer match.
         private const string CrabLeftShoulderBone = "RigLArm1";
         private const string CrabRightShoulderBone = "RigRArm1";
+        private const string CrabLeftElbowBone = "RigLArm2";
+        private const string CrabRightElbowBone = "RigRArm2";
 
-        // A 90-degree rotation around each shoulder bone's own local Z axis,
+        // Blend duration for CharacterPosePresentation's Waiting<->Conveyor
+        // transition - inside the project's requested 0.12-0.2s window, and
+        // deliberately the same order of magnitude as
+        // CollectorAnimation.BoardingBounceDuration (0.22s), so the claw
+        // fold/unfold reads as part of the same boarding/return beat rather
+        // than a separately-timed effect. An elbow-folded Waiting-pose
+        // candidate was tried and rejected after real Play Mode viewing -
+        // it looked unnaturally rotated outward/upward, not compact - so
+        // this now restores the exact shoulder-only delta the project's
+        // pre-existing (now-deleted) ApplyCrabClawPoseAdjustment used,
+        // recovered verbatim from git history (commit 256a0b2, the only
+        // commit that ever touched this file, i.e. the state immediately
+        // before this pose-switching feature existed) rather than
+        // re-approximated: same 90-degree AngleAxis around local Z,
+        // post-multiplied onto the bone's own current rotation, applied
+        // IDENTICALLY to both shoulders with no left/right sign flip (the
+        // rig's own local axis conventions for the two arms already mirror
+        // each other, confirmed empirically by that original
+        // implementation - see its own historical remarks, reproduced
+        // below). Elbows are left at their authored rotation in both
+        // states - this pose only ever touched the shoulder.
+        private const float CrabClawBlendSeconds = 0.16f;
+
+        // Recovered verbatim from git history (256a0b2) - the exact delta
+        // ApplyCrabClawPoseAdjustment used to apply directly to the live
+        // bone before this feature replaced that permanent build-time bake
+        // with runtime pose switching. Its own original remarks: "A
+        // 90-degree rotation around each shoulder bone's own local Z axis,
         // applied identically to both (confirmed empirically to already
         // produce a correctly left/right-mirrored world-space result - the
         // rig's own local axis conventions for the two arms are themselves
         // mirror images of each other, so no sign-flip is needed between L
-        // and R here). Swings the rigid claw chain from "extending sideways"
-        // to "tucked back toward the body," which is what actually narrows
-        // the silhouette - rotating the shoulder alone at smaller angles
-        // (tested up to 50 degrees on every axis) only redirected the
-        // fingertip's ~0.45-unit reach without shortening it enough; 90
-        // degrees on Z was the first candidate that visibly worked,
-        // confirmed by real measured bounds: combined width (X) dropped
-        // from the vendor's authored 2.303 to 1.547 - close to Turtle's own
-        // 1.567 - while height (Y, 1.377) was completely unaffected and
-        // depth (Z) only grew moderately (0.996 -&gt; 1.152). Never touches
-        // body geometry, X scale, or any other bone - a pure, symmetric,
-        // build-time pose edit on an instantiated copy; the vendor FBX/
-        // prefab under Assets/Cube Animals 02/ is never written to.
-        private static readonly Quaternion CrabShoulderPoseDelta = Quaternion.AngleAxis(90f, Vector3.forward);
+        // and R here). Swings the rigid claw chain from 'extending
+        // sideways' to 'tucked back toward the body,' which is what
+        // actually narrows the silhouette." Applied here the same way that
+        // implementation applied it (bone.localRotation * delta, i.e. in
+        // the bone's own local space, post-multiplied) - the only
+        // difference is WHERE: that version wrote it directly onto the live
+        // bone once, permanently, at build time; this version stores it as
+        // CharacterPosePresentation's Waiting target, applied and reverted
+        // at runtime, on request, arbitrarily many times, always from the
+        // same authored Conveyor rotation - never cumulative.
+        private static readonly Quaternion CrabShoulderWaitingDelta = Quaternion.AngleAxis(90f, Vector3.forward);
 
-        private static void ApplyCrabClawPoseAdjustment(GameObject body, string idLabel)
+        /// <summary>
+        /// Configures Crab's CharacterPosePresentation: finds the four
+        /// controlled bones once, captures each one's CURRENT local
+        /// rotation (the raw imported/bind rotation - see the Animator
+        /// remarks above for why this is guaranteed unmodified at this
+        /// point) as that bone's Conveyor pose, pairs it with an explicit
+        /// Waiting-pose rotation, and adds the component to body carrying
+        /// that configuration. This is the only place any Crab bone
+        /// rotation is ever read or decided - CollectorPresentation and
+        /// CollectorView never see a bone name, only the
+        /// CharacterPresentationPose enum (see CharacterPosePresentation).
+        /// A missing bone leaves Crab without a pose adapter entirely
+        /// (logged, not thrown) rather than configuring a partial/asymmetric
+        /// one - CollectorView.PosePresentation is then simply null and
+        /// every SetPose request against it is already a safe no-op.
+        /// </summary>
+        private static void ApplyCrabPosePresentation(GameObject body, string idLabel)
         {
             Transform leftShoulder = FindDeep(body.transform, CrabLeftShoulderBone);
             Transform rightShoulder = FindDeep(body.transform, CrabRightShoulderBone);
+            Transform leftElbow = FindDeep(body.transform, CrabLeftElbowBone);
+            Transform rightElbow = FindDeep(body.transform, CrabRightElbowBone);
 
-            if (leftShoulder == null || rightShoulder == null)
+            if (leftShoulder == null || rightShoulder == null || leftElbow == null || rightElbow == null)
             {
-                Debug.LogError($"CharacterAssetBuilder: Match ID {idLabel} - could not find Crab claw bone(s) ('{CrabLeftShoulderBone}'/'{CrabRightShoulderBone}'); claws left in their wide authored pose.");
+                Debug.LogError($"CharacterAssetBuilder: Match ID {idLabel} - could not find every Crab claw bone ('{CrabLeftShoulderBone}'/'{CrabRightShoulderBone}'/'{CrabLeftElbowBone}'/'{CrabRightElbowBone}'); no pose adapter added, claws left in their wide authored pose everywhere.");
                 return;
             }
 
-            leftShoulder.localRotation = leftShoulder.localRotation * CrabShoulderPoseDelta;
-            rightShoulder.localRotation = rightShoulder.localRotation * CrabShoulderPoseDelta;
+            var bonePoses = new[]
+            {
+                BuildCrabBonePose(leftShoulder, CrabShoulderWaitingDelta),
+                BuildCrabBonePose(rightShoulder, CrabShoulderWaitingDelta),
+                BuildCrabBonePose(leftElbow, Quaternion.identity),
+                BuildCrabBonePose(rightElbow, Quaternion.identity),
+            };
+
+            var posePresentation = body.AddComponent<CharacterPosePresentation>();
+            posePresentation.Configure(bonePoses, CrabClawBlendSeconds);
+        }
+
+        /// <summary>
+        /// One bone's Conveyor pose is simply its own current rotation,
+        /// read fresh (never a cached/assumed identity) so this stays
+        /// correct even if the vendor rig's own authored bind pose ever
+        /// changes. Its Waiting pose is that same rotation with waitingDelta
+        /// applied on top, in the bone's own local space (conveyorRotation *
+        /// waitingDelta) - the exact multiplication order/convention the
+        /// original ApplyCrabClawPoseAdjustment used on the live bone (see
+        /// CrabShoulderWaitingDelta's own remarks), just never written onto
+        /// the live bone itself here (see CharacterPosePresentation's own
+        /// remarks on why applying a pose is deliberately absolute at apply
+        /// time, not cumulative). Callers pass CrabShoulderWaitingDelta for
+        /// both shoulders (identical, no left/right sign flip - see
+        /// CrabShoulderWaitingDelta's remarks) and Quaternion.identity for
+        /// both elbows, so an elbow's Waiting and Conveyor rotations end up
+        /// exactly equal - i.e. elbows never move between states at all.
+        /// </summary>
+        private static CharacterPosePresentation.BonePose BuildCrabBonePose(Transform bone, Quaternion waitingDelta)
+        {
+            Quaternion conveyorRotation = bone.localRotation;
+            return new CharacterPosePresentation.BonePose
+            {
+                bone = bone,
+                conveyorLocalRotation = conveyorRotation,
+                waitingLocalRotation = conveyorRotation * waitingDelta,
+            };
         }
 
         private static Transform FindDeep(Transform root, string name)
