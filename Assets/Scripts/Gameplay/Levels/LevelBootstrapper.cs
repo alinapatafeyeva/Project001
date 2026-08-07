@@ -40,6 +40,13 @@ namespace Project001.Gameplay.Levels
     /// enableFailureTestSetup. The approved LevelDefinition and LevelCatalog
     /// are never mutated by this.
     ///
+    /// Optionally replaces the resolved approved level entirely with a
+    /// Bootstrap-only, deterministic Feeding Flow test level (all 20 Match
+    /// IDs, real feeding pipeline) via FeedingFlowTestLevelFactory — see
+    /// enableFeedingFlowTestSetup. Mutually exclusive with
+    /// enableFailureTestSetup; if both are enabled, Feeding Flow wins and an
+    /// error is logged.
+    ///
     /// Conveyor capacity, conveyor move speed, and Waiting Line capacity all
     /// come from GameplayConstants, never from the resolved LevelDefinition —
     /// they are global gameplay rules identical for every normal level, not
@@ -69,8 +76,11 @@ namespace Project001.Gameplay.Levels
         [SerializeField, Tooltip("LevelId a new Play Mode/application session starts on. Applied once, at the first Bootstrap load of the session; ignored on later reloads (Victory's Continue, Retry), which keep whatever level the session already progressed to. Change this directly to launch any approved level from the Inspector. Known ids: level_001, level_002.")]
         private string startingLevelId = "level_001";
 
-        [SerializeField, Tooltip("Bootstrap-only deterministic Failure test setup. When enabled, prepends GameplayConstants.WaitingLineCapacity + 1 debug collectors (a dedicated MatchTypeId that never appears on any approved pixel layout) to the resolved level's queues, so the first GameplayConstants.WaitingLineCapacity fill the Waiting Line and the next one triggers Failure on demand. Never mutates LevelCatalog or approved level data; the derived level is never validated by LevelDefinitionValidator, since it is intentionally invalid test data.")]
+        [SerializeField, Tooltip("Bootstrap-only deterministic Failure test setup. When enabled, prepends GameplayConstants.WaitingLineCapacity + 1 debug collectors (a dedicated MatchTypeId that never appears on any approved pixel layout) to the resolved level's queues, so the first GameplayConstants.WaitingLineCapacity fill the Waiting Line and the next one triggers Failure on demand. Never mutates LevelCatalog or approved level data; the derived level is never validated by LevelDefinitionValidator, since it is intentionally invalid test data. Mutually exclusive with Enable Feeding Flow Test Setup below — do not enable both at once.")]
         private bool enableFailureTestSetup = false;
+
+        [SerializeField, Tooltip("Bootstrap-only deterministic Feeding Flow test setup. When enabled, replaces the resolved level entirely with FeedingFlowTestLevelFactory's own level: all 20 Match IDs, one collector each across 4 queues, a dedicated 20x6 pixel layout giving every Match ID 6 real, matching pixels, and a debug-only large hunger capacity (FeedingFlowTestLevelFactory.FeedingFlowTestHungerCapacity) so collectors normally survive long enough to reach WaitingLine/RecoveryRow instead of being satisfied instantly - except the one Match ID FeedingFlowTestLevelFactory deliberately exempts, whose hunger exactly equals its pixel supply so it CAN be satisfied deliberately. Every collector still goes through the real PixelGrid -> PixelConsumer -> FoodFlightController -> FoodPacket -> FeedTarget chain, unlike Enable Failure Test Setup's permanently-unmatched debug collectors. Never mutates LevelCatalog or startingLevelId's approved level; the derived level is never validated by LevelDefinitionValidator, since its hunger surplus is intentionally unbalanced test data. Mutually exclusive with Enable Failure Test Setup above - do not enable both at once.")]
+        private bool enableFeedingFlowTestSetup = false;
 
         private readonly LevelCatalog _levelCatalog = new LevelCatalog();
 
@@ -101,7 +111,18 @@ namespace Project001.Gameplay.Levels
 
             LevelDefinition levelToBuild = approvedLevel;
 
-            if (enableFailureTestSetup)
+            if (enableFailureTestSetup && enableFeedingFlowTestSetup)
+            {
+                Debug.LogError($"LevelBootstrapper: '{name}' has both Enable Failure Test Setup and Enable Feeding Flow Test Setup checked; they are mutually exclusive. Using Enable Feeding Flow Test Setup and ignoring Enable Failure Test Setup this session — uncheck one in the Inspector.", this);
+                enableFailureTestSetup = false;
+            }
+
+            if (enableFeedingFlowTestSetup)
+            {
+                levelToBuild = FeedingFlowTestLevelFactory.BuildFeedingFlowTestLevel();
+                Debug.Log($"(DEBUG) LevelBootstrapper: '{name}' Enable Feeding Flow Test Setup is active — building the dedicated all-20-Match-ID feeding test level instead of '{currentLevelId}'.", this);
+            }
+            else if (enableFailureTestSetup)
             {
                 int debugCollectorCount = GameplayConstants.WaitingLineCapacity + 1;
                 levelToBuild = FailureTestLevelFactory.BuildFailureTestLevel(approvedLevel, debugCollectorCount);

@@ -161,6 +161,34 @@ repeated here. Lower-level unit coverage to add alongside them:
   `LevelBootstrapper.enableFailureTestSetup` already provides a
   deterministic Inspector-only Failure trigger for one specific case — the
   general debug panel is still open.
+- **Feeding Flow test mode** (`LevelBootstrapper.enableFeedingFlowTestSetup`,
+  mutually exclusive with `enableFailureTestSetup`): tick this box on the
+  `LevelBootstrapper` GameObject in `Assets/Scenes/Bootstrap.unity` and enter
+  Play Mode to validate the full Pixel Feed Flow against every
+  Character_01-20 in one run. Builds `FeedingFlowTestLevelFactory`'s own
+  level instead of `startingLevelId`'s approved one: 4 queues x 5 collectors
+  = all 20 Match IDs at once (queue `q` holds Match IDs `q+1, q+5, q+9,
+  q+13, q+17`), a dedicated 20x6 pixel layout giving every Match ID exactly
+  6 real, matching pixels, and every collector fed through the exact
+  production chain (no direct `RegisterConsumedPixel` calls, no fake
+  packets). Debug hunger capacity is
+  `FeedingFlowTestLevelFactory.FeedingFlowTestHungerCapacity` (18 — larger
+  than any one Match ID's 6-pixel supply) for row 2 of every queue (Match
+  IDs 9/10/11/12), so those four collectors stay hungry after their own
+  species' pixels run out and cycle into WaitingLine and stay there —
+  the clear demonstration of "large debug hunger, doesn't just vanish"
+  the task calls for. Every other row is satisfiable (hunger set to
+  exactly 6, its own full pixel supply), including Match ID 1/Crab
+  specifically so a developer can confirm the satisfied/disappear
+  sequence on purpose (Crab's own claw-pose switching included). This
+  4-large/16-satisfiable split (not a 50/50 or larger-hungry-majority
+  split) is deliberate: WaitingLine has no eject/timeout, so a
+  permanently-hungry collector occupies a Conveyor or WaitingLine slot
+  forever once it gets one, and Conveyor (5) + WaitingLine (5) = 10 slots
+  total — confirmed empirically, 11+ permanently-hungry collectors
+  reliably fill both and deadlock the remaining queue for the rest of
+  that session, while 4 leaves the system reliably, deterministically
+  draining through all 20 Match IDs every run.
 
 ---
 

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using Project001.Gameplay.Conveyor;
 using Project001.Gameplay.Failure;
+using Project001.Gameplay.Feeding;
 using Project001.Gameplay.Levels;
 using Project001.Gameplay.Pixels;
 using Project001.Gameplay.Presentation;
@@ -136,11 +137,18 @@ namespace Project001.Gameplay.Collectors
                     // Awake runs. Listing any of them again here would add a
                     // second, duplicate instance instead of reusing the one
                     // already added.
+                    // FoodFlightController is listed explicitly (unlike
+                    // ConveyorRider/CollectorPresentation/CollectorAnimation
+                    // above) because nothing else's [RequireComponent] adds
+                    // it — PixelConsumer only resolves it as a sibling via
+                    // GetComponent (see PixelConsumer.FoodFlightController),
+                    // it never requires/adds it itself.
                     var collectorObject = new GameObject(
                         $"Collector_{queueIndex}_{rowIndex}",
                         typeof(CollectorView),
                         typeof(PixelConsumer),
-                        typeof(CollectorLifecycle));
+                        typeof(CollectorLifecycle),
+                        typeof(FoodFlightController));
                     collectorObject.transform.SetParent(queueObject.transform, false);
                     collectorObject.transform.localPosition = RowLocalPosition(rowIndex);
                     // Uniform scale, unlike the old (scale, scale, 1) used
@@ -160,6 +168,9 @@ namespace Project001.Gameplay.Collectors
 
                     var conveyorRider = collectorObject.GetComponent<ConveyorRider>();
                     conveyorRider.Initialize(collectorDefinition.MatchTypeId, collectorDefinition.HungerCapacity);
+
+                    var foodFlightController = collectorObject.GetComponent<FoodFlightController>();
+                    foodFlightController.Initialize(conveyorRider, collectorView.FeedTarget, collectorView);
 
                     var pixelConsumer = collectorObject.GetComponent<PixelConsumer>();
                     pixelConsumer.Initialize(pixelGrid, conveyorRider);
