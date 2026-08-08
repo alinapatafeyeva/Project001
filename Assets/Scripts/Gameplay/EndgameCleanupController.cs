@@ -25,11 +25,20 @@ namespace Project001.Gameplay
     ///
     /// Owns only the decision to enter the phase and the one-time signal to
     /// the systems that already own each affected behaviour: FailureController
-    /// (failure activation), WaitingLine (admission), and ConveyorSystem
-    /// (move speed). Never reimplements their logic, and never touches
-    /// CollectorLifecycle or collector selection — both already produce the
-    /// desired Endgame Cleanup behaviour once WaitingLine stops accepting
-    /// collectors and FailureController is permanently disabled.
+    /// (failure activation) and ConveyorSystem (move speed). Never
+    /// reimplements their logic, and never touches CollectorLifecycle,
+    /// WaitingLine admission, or collector selection — WaitingLine
+    /// deliberately keeps accepting collectors into any genuinely free slot
+    /// even after this phase begins: the trigger condition below already
+    /// guarantees RemainingCollectors is at or under WaitingLineCapacity,
+    /// and that count only ever decreases afterwards (a collector becoming
+    /// satisfied is the sole event that lowers it — see
+    /// CollectorLifecycle.CollectorSatisfied), so Waiting Line can never
+    /// genuinely run out of room for whoever is still active once Endgame
+    /// Cleanup has begun. Refusing admission anyway here previously left a
+    /// still-riding, not-yet-lapped unsatisfied collector to circulate the
+    /// Conveyor forever with no signal, since this same phase also disables
+    /// FailureController permanently — see WaitingLine.GetFirstEmptySlot.
     /// </summary>
     public class EndgameCleanupController : MonoBehaviour
     {
@@ -39,7 +48,7 @@ namespace Project001.Gameplay
         [SerializeField, Tooltip("Conveyor whose occupancy counts toward RemainingCollectors, and whose speed increases once Endgame Cleanup is active.")]
         private ConveyorSystem conveyorSystem;
 
-        [SerializeField, Tooltip("Waiting line whose occupancy counts toward RemainingCollectors, and which stops accepting new collectors once Endgame Cleanup is active.")]
+        [SerializeField, Tooltip("Waiting line whose occupancy counts toward RemainingCollectors. Keeps accepting collectors after Endgame Cleanup begins — see this class's own remarks for why that is always safe.")]
         private Project001.Gameplay.WaitingLine.WaitingLine waitingLine;
 
         [SerializeField, Tooltip("Recovery Row whose held collectors count toward RemainingCollectors.")]
@@ -108,7 +117,6 @@ namespace Project001.Gameplay
             IsActive = true;
 
             failureController.DisablePermanently();
-            waitingLine.StopAcceptingCollectors();
             conveyorSystem.ApplySpeedMultiplier(GameplayConstants.EndgameCleanupConveyorSpeedMultiplier);
 
             Debug.Log("Endgame Cleanup entered.");

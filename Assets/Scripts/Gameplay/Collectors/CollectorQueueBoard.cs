@@ -30,6 +30,9 @@ namespace Project001.Gameplay.Collectors
         [SerializeField, Tooltip("Resolves each collector's MatchId to the Character_XX prefab it should display.")]
         private CharacterDatabase characterDatabase;
 
+        [SerializeField, Tooltip("Assets/Prefabs/UI/EnergyBar.prefab - instantiated once per collector by CollectorView.Initialize. Wired here (see BootstrapSceneCreator.CreateCollectorQueueBoard), never via Resources.Load/GameObject.Find.")]
+        private GameObject energyBarPrefab;
+
         [SerializeField, Tooltip("Gap between neighbouring queues, in world units.")]
         [Min(0f)]
         private float horizontalSpacing = 0.3f;
@@ -160,7 +163,7 @@ namespace Project001.Gameplay.Collectors
                     GameObject visualPrefab = ResolvePrefab(collectorDefinition.MatchId);
 
                     var collectorView = collectorObject.GetComponent<CollectorView>();
-                    collectorView.Initialize(visualPrefab);
+                    collectorView.Initialize(visualPrefab, energyBarPrefab, collectorDefinition.MatchId);
 
                     var collectorPresentation = collectorObject.GetComponent<CollectorPresentation>();
                     collectorPresentation.ShowWaitingBackIdle();

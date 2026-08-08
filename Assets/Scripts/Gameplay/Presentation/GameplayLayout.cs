@@ -304,33 +304,6 @@ namespace Project001.Gameplay.Presentation
         public static float CollectorQueueBoardRegionHeight =>
             (ReservedQueueRowCount - 1) * QueueRowStep + CollectorVisibleHeight;
 
-        // ----- Hunger label's own presentation token -------------------------
-        // The world-space size a collector's RemainingHunger label renders
-        // at, regardless of CollectorSpriteScale. CollectorView applies this
-        // via an inverse-scale compensation on the label's own child
-        // transform, so a bigger character never produces a bigger hunger number.
-        public const float HungerLabelWorldSize = 0.12f;
-
-        // ----- Hunger label sorting safety margin -----------------------------
-        // The hunger label's own individual Renderer.sortingOrder. Its real
-        // separation from the model is genuine depth (see CollectorView.
-        // HungerTextLocalOffset's own camera-toward pull) — this is only a
-        // small, harmless backup value on top of that, kept clear of the
-        // model's own (default-zero) renderers.
-        //
-        // A per-row/per-state SortingGroup tier system used to sit here as
-        // well (queue row, WaitingLine, RecoveryRow, Conveyor, terminal
-        // tiers), added to try to fix adjacent queue rows' silhouettes
-        // visually intersecting under the tilted camera. Real Play Mode
-        // testing confirmed sortingOrder cannot override a genuine Z-test
-        // result for opaque, Z-tested 3D renderers — the tiers changed
-        // nothing observable and were removed. The actual fix is
-        // QueueVisibleGap below: enough real vertical separation that
-        // adjacent silhouettes never geometrically intersect in the first
-        // place, which the depth buffer then sorts correctly on its own,
-        // with no sortingOrder involved at all.
-        public const int HungerLabelSortingOffset = 10;
-
         // ----- Spacing and padding: the rest of the composition ------------
         // GridToClusterSpacing is the single gap between PixelGrid — the
         // primary play surface — and the Conveyor's own margin (see
