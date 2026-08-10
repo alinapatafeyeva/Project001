@@ -19,21 +19,21 @@ namespace Project001.Gameplay.Pixels
     /// </summary>
     public class PixelGrid : MonoBehaviour
     {
-        [SerializeField, Tooltip("Extra spacing added between neighbouring cells, in world units.")]
-        [Min(0f)]
-        private float cellGap = 0.05f;
+        [SerializeField, Tooltip("Preferred (design-target) world-space size of a single square cell, used as-is whenever the grid fits within maxGridWorldWidth/Height at this size. Never exceeded — a small/sparse grid renders at exactly this size instead of being enlarged to fill the field.")]
+        [Min(0.001f)]
+        private float preferredCellSize = 0.45f;
 
-        [SerializeField, Tooltip("Scene-owned maximum world-space width this grid may occupy. Set by scene layout (e.g. BootstrapSceneCreator), not by level data — never referenced by ConveyorSystem or any other gameplay system.")]
+        [SerializeField, Tooltip("Preferred (design-target) gap between neighbouring cells, in world units. Scaled down by the exact same factor as preferredCellSize whenever the grid must shrink to fit, so the gap-to-cell ratio stays visually consistent at every grid density.")]
         [Min(0f)]
-        private float availableWidth = 6.5f;
+        private float preferredGap = 0.05f;
 
-        [SerializeField, Tooltip("Scene-owned maximum world-space height this grid may occupy. Set by scene layout (e.g. BootstrapSceneCreator), not by level data — never referenced by ConveyorSystem or any other gameplay system.")]
+        [SerializeField, Tooltip("Scene-owned maximum world-space width this grid may occupy. Set by scene layout (e.g. BootstrapSceneCreator) or at runtime via SetFieldBounds before Initialize — not by level data, never referenced by ConveyorSystem or any other gameplay system.")]
         [Min(0f)]
-        private float availableHeight = 6.5f;
+        private float maxGridWorldWidth = 6f;
 
-        [SerializeField, Tooltip("Scene-owned cap on a single cell's world-space size, applied even when availableWidth/availableHeight would allow a larger cell. Set by scene layout (e.g. BootstrapSceneCreator), not by level data — purely a presentation cap, never referenced by any gameplay system.")]
-        [Min(0.01f)]
-        private float maximumCellSize = 1f;
+        [SerializeField, Tooltip("Scene-owned maximum world-space height this grid may occupy. Set by scene layout (e.g. BootstrapSceneCreator) or at runtime via SetFieldBounds before Initialize — not by level data, never referenced by ConveyorSystem or any other gameplay system.")]
+        [Min(0f)]
+        private float maxGridWorldHeight = 6f;
 
         private Texture2D _sharedTexture;
         private Sprite _sharedSprite;
@@ -44,6 +44,32 @@ namespace Project001.Gameplay.Pixels
         public int Width { get; private set; }
 
         public int Height { get; private set; }
+
+        /// <summary>
+        /// The actual world-space size of one square cell, resolved by
+        /// Initialize from preferredCellSize scaled down (never up) to fit
+        /// maxGridWorldWidth/Height — see TryComputeCellMetrics. Zero before
+        /// Initialize succeeds. Purely a presentation metric: exposed so
+        /// dependents (e.g. PixelConsumer's alignment tolerance) can derive
+        /// their own world-space behaviour from the grid's real runtime
+        /// scale instead of duplicating preferredCellSize/preferredGap as
+        /// separate constants.
+        /// </summary>
+        public float CellSize { get; private set; }
+
+        /// <summary>
+        /// The actual world-space gap between neighbouring cells, resolved
+        /// by the same scale factor as CellSize. Zero before Initialize
+        /// succeeds.
+        /// </summary>
+        public float CellGap { get; private set; }
+
+        /// <summary>
+        /// Centre-to-centre world-space distance between neighbouring
+        /// cells (CellSize + CellGap) — the same "spacing" GenerateGrid
+        /// places cells apart by.
+        /// </summary>
+        public float CellSpacing => CellSize + CellGap;
 
         /// <summary>
         /// Number of pixels not yet consumed. Maintained incrementally —
@@ -58,6 +84,29 @@ namespace Project001.Gameplay.Pixels
         /// based on it.
         /// </summary>
         public bool IsComplete => _remainingPixelCount <= 0;
+
+        /// <summary>
+        /// Sets the world-space field this grid may occupy. Scene-owned
+        /// presentation data, exactly like the maxGridWorldWidth/Height
+        /// Inspector fields it overwrites — never level data. Exists as a
+        /// public seam (instead of only an editor-time SerializedObject
+        /// write, see BootstrapSceneCreator) so a future responsive layout
+        /// pass can compute bounds from the real screen/safe area at
+        /// runtime without reaching past this class's encapsulation. Must
+        /// be called before Initialize; calling it afterwards has no effect
+        /// on the already-generated grid and is refused (logged).
+        /// </summary>
+        public void SetFieldBounds(float maxWidth, float maxHeight)
+        {
+            if (_isInitialized)
+            {
+                Debug.LogError($"PixelGrid: SetFieldBounds called on '{name}' after Initialize; the grid is already generated at its old bounds. Call SetFieldBounds before Initialize.", this);
+                return;
+            }
+
+            maxGridWorldWidth = maxWidth;
+            maxGridWorldHeight = maxHeight;
+        }
 
         /// <summary>
         /// Builds this grid's cells from the given layout. Must be called
@@ -83,50 +132,69 @@ namespace Project001.Gameplay.Pixels
                 return;
             }
 
-            if (!TryComputeCellSize(layout, out float cellSize))
+            if (!TryComputeCellMetrics(layout, out float cellSize, out float gap))
                 return;
 
+            CellSize = cellSize;
+            CellGap = gap;
+
             CreateSharedSprite();
-            GenerateGrid(layout, cellSize);
+            GenerateGrid(layout, cellSize, gap);
             _isInitialized = true;
         }
 
         /// <summary>
-        /// Computes the uniform square cell size that fits layout's
-        /// dimensions inside availableWidth x availableHeight (accounting for
-        /// cellGap between cells), capped at maximumCellSize so a generous
-        /// area does not enlarge cells beyond that cap. Fails cleanly —
-        /// logging one specific diagnostic and generating nothing — if the
-        /// bounds or the resulting cell size are not positive, rather than
+        /// Computes this grid's actual, uniform square cell size and gap: the
+        /// natural size layout's dimensions would occupy at preferredCellSize/
+        /// preferredGap, scaled down by one uniform factor — never up — only
+        /// as much as needed to fit inside maxGridWorldWidth x
+        /// maxGridWorldHeight. cellSize and gap are always scaled by the
+        /// exact same factor, so the gap-to-cell ratio stays visually
+        /// consistent at every density, and a grid small enough to fit at
+        /// preferredCellSize renders at exactly that size (scale 1) rather
+        /// than being enlarged to fill the field. Fails cleanly — logging one
+        /// specific diagnostic and generating nothing — if the bounds,
+        /// preferred size, or resulting scale are not positive, rather than
         /// building a partially-sized grid.
         /// </summary>
-        private bool TryComputeCellSize(PixelLayoutDefinition layout, out float cellSize)
+        private bool TryComputeCellMetrics(PixelLayoutDefinition layout, out float cellSize, out float gap)
         {
             cellSize = 0f;
+            gap = 0f;
 
-            if (availableWidth <= 0f)
+            if (maxGridWorldWidth <= 0f)
             {
-                Debug.LogError($"PixelGrid: '{name}' has a non-positive availableWidth ({availableWidth}); aborting to avoid generating an invalid grid.", this);
+                Debug.LogError($"PixelGrid: '{name}' has a non-positive maxGridWorldWidth ({maxGridWorldWidth}); aborting to avoid generating an invalid grid.", this);
                 return false;
             }
 
-            if (availableHeight <= 0f)
+            if (maxGridWorldHeight <= 0f)
             {
-                Debug.LogError($"PixelGrid: '{name}' has a non-positive availableHeight ({availableHeight}); aborting to avoid generating an invalid grid.", this);
+                Debug.LogError($"PixelGrid: '{name}' has a non-positive maxGridWorldHeight ({maxGridWorldHeight}); aborting to avoid generating an invalid grid.", this);
                 return false;
             }
 
-            float cellSizeByWidth = (availableWidth - cellGap * (layout.Width - 1)) / layout.Width;
-            float cellSizeByHeight = (availableHeight - cellGap * (layout.Height - 1)) / layout.Height;
-            float computedCellSize = Mathf.Min(maximumCellSize, Mathf.Min(cellSizeByWidth, cellSizeByHeight));
-
-            if (computedCellSize <= 0f)
+            if (preferredCellSize <= 0f)
             {
-                Debug.LogError($"PixelGrid: '{name}' computed a non-positive cell size ({computedCellSize}) for a {layout.Width}x{layout.Height} layout within {availableWidth}x{availableHeight} world units (cellGap {cellGap}); aborting to avoid generating an invalid grid.", this);
+                Debug.LogError($"PixelGrid: '{name}' has a non-positive preferredCellSize ({preferredCellSize}); aborting to avoid generating an invalid grid.", this);
                 return false;
             }
 
-            cellSize = computedCellSize;
+            float naturalWidth = layout.Width * preferredCellSize + (layout.Width - 1) * preferredGap;
+            float naturalHeight = layout.Height * preferredCellSize + (layout.Height - 1) * preferredGap;
+
+            float widthFit = maxGridWorldWidth / naturalWidth;
+            float heightFit = maxGridWorldHeight / naturalHeight;
+            float scale = Mathf.Min(1f, Mathf.Min(widthFit, heightFit));
+
+            if (scale <= 0f)
+            {
+                Debug.LogError($"PixelGrid: '{name}' computed a non-positive scale ({scale}) for a {layout.Width}x{layout.Height} layout within {maxGridWorldWidth}x{maxGridWorldHeight} world units (preferredCellSize {preferredCellSize}, preferredGap {preferredGap}); aborting to avoid generating an invalid grid.", this);
+                return false;
+            }
+
+            cellSize = preferredCellSize * scale;
+            gap = preferredGap * scale;
             return true;
         }
 
@@ -147,7 +215,7 @@ namespace Project001.Gameplay.Pixels
                 pixelsPerUnit: 1f);
         }
 
-        private void GenerateGrid(PixelLayoutDefinition layout, float cellSize)
+        private void GenerateGrid(PixelLayoutDefinition layout, float cellSize, float gap)
         {
             Width = layout.Width;
             Height = layout.Height;
@@ -155,7 +223,7 @@ namespace Project001.Gameplay.Pixels
             _cells = new PixelCell[Width, Height];
             _remainingPixelCount = 0;
 
-            float spacing = cellSize + cellGap;
+            float spacing = cellSize + gap;
             float offsetX = (Width - 1) * spacing * 0.5f;
             float offsetY = (Height - 1) * spacing * 0.5f;
 

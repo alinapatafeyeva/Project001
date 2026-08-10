@@ -30,15 +30,38 @@ namespace Project001.Gameplay.Pixels
         [Min(0f)]
         private float consumptionCooldown = 0.1f;
 
-        [SerializeField, Tooltip("Maximum world-space offset, along the axis perpendicular to the rider's facing side, for a pixel to count as aligned. Tuned for the ~1-unit cell spacing.")]
-        [Min(0f)]
-        private float alignmentTolerance = 0.5f;
+        // Fraction of pixelGrid.CellSpacing (its actual runtime centre-to-
+        // centre cell distance — see PixelGrid.CellSpacing) used as the
+        // alignment tolerance below, rather than a fixed world-space
+        // constant duplicating PixelGrid's own preferredCellSize/
+        // preferredGap. 0.5 preserves this project's original tuning
+        // exactly: the previous fixed alignmentTolerance (0.5) was tuned
+        // against the prototype grid's spacing at the time (cell 0.95 + gap
+        // 0.05 = 1.0), i.e. also exactly half of it. Deriving from
+        // CellSpacing instead of hardcoding 0.5 world units means this
+        // scales correctly with any future preferredCellSize/preferredGap
+        // tuning or grid density, with no re-tuning needed here.
+        private const float AlignmentToleranceRatio = 0.5f;
 
         private float _cooldownRemaining;
         private FoodFlightController _foodFlightController;
 
         private FoodFlightController FoodFlightController =>
             _foodFlightController != null ? _foodFlightController : _foodFlightController = rider != null ? rider.GetComponent<FoodFlightController>() : null;
+
+        /// <summary>
+        /// Maximum world-space offset, along the axis perpendicular to the
+        /// rider's facing side, for a pixel to count as aligned — derived
+        /// live from pixelGrid.CellSpacing (see AlignmentToleranceRatio)
+        /// instead of a fixed constant, so it automatically matches
+        /// whatever cell size/gap the grid actually resolved to at
+        /// Initialize, at any density. Zero if pixelGrid is unset or was
+        /// never successfully initialized (CellSpacing stays 0), which is
+        /// the same "nothing to consume yet" state that condition already
+        /// implies.
+        /// </summary>
+        private float AlignmentTolerance =>
+            pixelGrid != null ? pixelGrid.CellSpacing * AlignmentToleranceRatio : 0f;
 
         /// <summary>
         /// Assigns the grid to consume from and the rider that drives
@@ -70,7 +93,7 @@ namespace Project001.Gameplay.Pixels
 
             // Reset after every attempt, successful or not, so a failed search
             // does not re-scan the whole grid on the very next frame.
-            bool consumed = pixelGrid.TryConsumeNearestExposed(rider.transform.position, rider.MatchTypeId, alignmentTolerance, out Vector3 consumedWorldPosition, out Color consumedColor);
+            bool consumed = pixelGrid.TryConsumeNearestExposed(rider.transform.position, rider.MatchTypeId, AlignmentTolerance, out Vector3 consumedWorldPosition, out Color consumedColor);
             if (consumed)
                 FoodFlightController?.Enqueue(consumedWorldPosition, consumedColor);
 

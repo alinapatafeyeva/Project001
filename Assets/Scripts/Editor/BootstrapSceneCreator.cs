@@ -241,10 +241,18 @@ public static class BootstrapSceneCreator
 
         var pixelGrid = pixelGridObject.GetComponent<PixelGrid>();
         var serializedPixelGrid = new SerializedObject(pixelGrid);
-        serializedPixelGrid.FindProperty("availableWidth").floatValue = GameplayLayout.GridRegionWidth;
-        serializedPixelGrid.FindProperty("availableHeight").floatValue = GameplayLayout.GridRegionHeight;
-        serializedPixelGrid.FindProperty("maximumCellSize").floatValue = GameplayLayout.GridMaximumCellSize;
+        serializedPixelGrid.FindProperty("preferredCellSize").floatValue = GameplayLayout.GridPreferredCellSize;
+        serializedPixelGrid.FindProperty("preferredGap").floatValue = GameplayLayout.GridPreferredGap;
         serializedPixelGrid.ApplyModifiedPropertiesWithoutUndo();
+
+        // The field's outer bound goes through the public runtime seam
+        // (SetFieldBounds), not SerializedObject reflection — unlike
+        // preferredCellSize/preferredGap above (authored presentation
+        // constants), this is the one value a future responsive layout pass
+        // needs to recompute at runtime from the real screen/safe area, so
+        // it is exercised through the same API that pass would use, keeping
+        // this call site honest about what is actually a public seam.
+        pixelGrid.SetFieldBounds(GameplayLayout.GridRegionWidth, GameplayLayout.GridRegionHeight);
 
         return pixelGrid;
     }
