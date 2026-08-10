@@ -43,9 +43,21 @@ namespace Project001.Gameplay.Levels
     /// Optionally replaces the resolved approved level entirely with a
     /// Bootstrap-only, deterministic Feeding Flow test level (all 20 Match
     /// IDs, real feeding pipeline) via FeedingFlowTestLevelFactory — see
-    /// enableFeedingFlowTestSetup. Mutually exclusive with
-    /// enableFailureTestSetup; if both are enabled, Feeding Flow wins and an
-    /// error is logged.
+    /// enableFeedingFlowTestSetup.
+    ///
+    /// Optionally replaces the resolved approved level entirely with a
+    /// Bootstrap-only Pixel Grid scaling test level, at one of a fixed set of
+    /// representative sizes (see PixelGridScalingTestSize), via
+    /// PixelGridScalingTestLevelFactory — see enablePixelGridScalingTestSetup
+    /// and pixelGridScalingTestSize. Only this one of the three debug setups
+    /// is validator-clean (balanced pixel/collector data), since its purpose
+    /// is verifying PixelGrid's own scaling formula, not exercising a
+    /// deliberately unbalanced edge case.
+    ///
+    /// enableFailureTestSetup, enableFeedingFlowTestSetup, and
+    /// enablePixelGridScalingTestSetup are mutually exclusive; if more than
+    /// one is enabled, Feeding Flow wins, then Failure, then Pixel Grid
+    /// Scaling, and an error is logged.
     ///
     /// Conveyor capacity, conveyor move speed, and Waiting Line capacity all
     /// come from GameplayConstants, never from the resolved LevelDefinition —
@@ -79,8 +91,14 @@ namespace Project001.Gameplay.Levels
         [SerializeField, Tooltip("Bootstrap-only deterministic Failure test setup. When enabled, prepends GameplayConstants.WaitingLineCapacity + 1 debug collectors (a dedicated MatchTypeId that never appears on any approved pixel layout) to the resolved level's queues, so the first GameplayConstants.WaitingLineCapacity fill the Waiting Line and the next one triggers Failure on demand. Never mutates LevelCatalog or approved level data; the derived level is never validated by LevelDefinitionValidator, since it is intentionally invalid test data. Mutually exclusive with Enable Feeding Flow Test Setup below — do not enable both at once.")]
         private bool enableFailureTestSetup = false;
 
-        [SerializeField, Tooltip("Bootstrap-only deterministic Feeding Flow test setup. When enabled, replaces the resolved level entirely with FeedingFlowTestLevelFactory's own level: all 20 Match IDs, one collector each across 4 queues, a dedicated 20x6 pixel layout giving every Match ID 6 real, matching pixels, and a debug-only large hunger capacity (FeedingFlowTestLevelFactory.FeedingFlowTestHungerCapacity) so collectors normally survive long enough to reach WaitingLine/RecoveryRow instead of being satisfied instantly - except the one Match ID FeedingFlowTestLevelFactory deliberately exempts, whose hunger exactly equals its pixel supply so it CAN be satisfied deliberately. Every collector still goes through the real PixelGrid -> PixelConsumer -> FoodFlightController -> FoodPacket -> FeedTarget chain, unlike Enable Failure Test Setup's permanently-unmatched debug collectors. Never mutates LevelCatalog or startingLevelId's approved level; the derived level is never validated by LevelDefinitionValidator, since its hunger surplus is intentionally unbalanced test data. Mutually exclusive with Enable Failure Test Setup above - do not enable both at once.")]
+        [SerializeField, Tooltip("Bootstrap-only deterministic Feeding Flow test setup. When enabled, replaces the resolved level entirely with FeedingFlowTestLevelFactory's own level: all 20 Match IDs, one collector each across 4 queues, a dedicated 20x6 pixel layout giving every Match ID 6 real, matching pixels, and a debug-only large hunger capacity (FeedingFlowTestLevelFactory.FeedingFlowTestHungerCapacity) so collectors normally survive long enough to reach WaitingLine/RecoveryRow instead of being satisfied instantly - except the one Match ID FeedingFlowTestLevelFactory deliberately exempts, whose hunger exactly equals its pixel supply so it CAN be satisfied deliberately. Every collector still goes through the real PixelGrid -> PixelConsumer -> FoodFlightController -> FoodPacket -> FeedTarget chain, unlike Enable Failure Test Setup's permanently-unmatched debug collectors. Never mutates LevelCatalog or startingLevelId's approved level; the derived level is never validated by LevelDefinitionValidator, since its hunger surplus is intentionally unbalanced test data. Mutually exclusive with Enable Failure Test Setup and Enable Pixel Grid Scaling Test Setup below - do not enable more than one at once.")]
         private bool enableFeedingFlowTestSetup = false;
+
+        [SerializeField, Tooltip("Bootstrap-only Pixel Grid scaling test setup. When enabled, replaces the resolved level entirely with PixelGridScalingTestLevelFactory's own level at Pixel Grid Scaling Test Size: a balanced, LevelDefinitionValidator-clean layout/queue set (unlike the two debug setups above) sized for visually and technically verifying PixelGrid's preferred-size/proportional-gap scaling at representative densities (6x6 up to 30x40). Never mutates LevelCatalog or startingLevelId's approved level. Mutually exclusive with Enable Failure Test Setup and Enable Feeding Flow Test Setup above - do not enable more than one at once.")]
+        private bool enablePixelGridScalingTestSetup = false;
+
+        [SerializeField, Tooltip("Grid size PixelGridScalingTestLevelFactory builds when Enable Pixel Grid Scaling Test Setup above is checked. Ignored otherwise.")]
+        private PixelGridScalingTestSize pixelGridScalingTestSize = PixelGridScalingTestSize.Grid6x6;
 
         private readonly LevelCatalog _levelCatalog = new LevelCatalog();
 
@@ -111,10 +129,14 @@ namespace Project001.Gameplay.Levels
 
             LevelDefinition levelToBuild = approvedLevel;
 
-            if (enableFailureTestSetup && enableFeedingFlowTestSetup)
+            int enabledDebugSetupCount =
+                (enableFailureTestSetup ? 1 : 0) +
+                (enableFeedingFlowTestSetup ? 1 : 0) +
+                (enablePixelGridScalingTestSetup ? 1 : 0);
+
+            if (enabledDebugSetupCount > 1)
             {
-                Debug.LogError($"LevelBootstrapper: '{name}' has both Enable Failure Test Setup and Enable Feeding Flow Test Setup checked; they are mutually exclusive. Using Enable Feeding Flow Test Setup and ignoring Enable Failure Test Setup this session — uncheck one in the Inspector.", this);
-                enableFailureTestSetup = false;
+                Debug.LogError($"LevelBootstrapper: '{name}' has more than one Bootstrap-only debug setup checked; they are mutually exclusive. Priority is Enable Feeding Flow Test Setup, then Enable Failure Test Setup, then Enable Pixel Grid Scaling Test Setup — uncheck all but one in the Inspector.", this);
             }
 
             if (enableFeedingFlowTestSetup)
@@ -127,6 +149,11 @@ namespace Project001.Gameplay.Levels
                 int debugCollectorCount = GameplayConstants.WaitingLineCapacity + 1;
                 levelToBuild = FailureTestLevelFactory.BuildFailureTestLevel(approvedLevel, debugCollectorCount);
                 Debug.Log($"(DEBUG) LevelBootstrapper: '{name}' Enable Failure Test Setup is active — prepending {debugCollectorCount} debug collectors to trigger Failure on demand.", this);
+            }
+            else if (enablePixelGridScalingTestSetup)
+            {
+                levelToBuild = PixelGridScalingTestLevelFactory.BuildTestLevel(pixelGridScalingTestSize);
+                Debug.Log($"(DEBUG) LevelBootstrapper: '{name}' Enable Pixel Grid Scaling Test Setup is active — building the {pixelGridScalingTestSize} scaling test level instead of '{currentLevelId}'.", this);
             }
 
             BuildLevel(levelToBuild);

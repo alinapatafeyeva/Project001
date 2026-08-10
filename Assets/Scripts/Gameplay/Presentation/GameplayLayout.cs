@@ -35,8 +35,10 @@ namespace Project001.Gameplay.Presentation
     /// A level's actual generated content (grid dimensions, queue depth) is
     /// never consulted here and never changes any of these values.
     /// PixelGrid still scales itself to fit inside GridRegionWidth x
-    /// GridRegionHeight (capped at GridMaximumCellSize) exactly as before;
-    /// a level whose CollectorQueueBoard queues run deeper than
+    /// GridRegionHeight, at up to GridPreferredCellSize/GridPreferredGap and
+    /// never larger, uniformly shrinking both together only when a denser
+    /// grid would otherwise exceed that region; a level whose
+    /// CollectorQueueBoard queues run deeper than
     /// CollectorQueueBoardRegionHeight simply extends past that region's
     /// bottom edge rather than the camera compensating — a content
     /// authoring constraint, not something this class or the camera solves.
@@ -44,11 +46,35 @@ namespace Project001.Gameplay.Presentation
     public static class GameplayLayout
     {
         // ----- PixelGrid's authored region ---------------------------------
-        // Assigned directly to PixelGrid's availableWidth/availableHeight/
-        // maximumCellSize fields by BootstrapSceneCreator.
+        // GridRegionWidth/Height are assigned to PixelGrid's
+        // maxGridWorldWidth/Height (via SetFieldBounds, see
+        // BootstrapSceneCreator) — the field's outer bound, never a target
+        // it must fill. Every other camera/composition value below
+        // (ConveyorSize, CameraFrameTop/Width) is still derived from these
+        // two exactly as before; changing PixelGrid's own preferred cell
+        // size/gap below never touches this region's own bounds, so the
+        // rest of the fixed composition (Conveyor, WaitingLine,
+        // CollectorQueueBoard, camera frame, boost-reserved space) is
+        // unaffected by denser pixel art.
         public const float GridRegionWidth = 6f;
         public const float GridRegionHeight = 6f;
-        public const float GridMaximumCellSize = 0.95f;
+
+        // GridPreferredCellSize/GridPreferredGap are assigned to PixelGrid's
+        // own preferredCellSize/preferredGap fields by BootstrapSceneCreator
+        // — the design-target size/gap a grid renders at whenever it fits
+        // GridRegionWidth x GridRegionHeight without shrinking (see
+        // PixelGrid.TryComputeCellMetrics). Both were previously one
+        // constant (GridMaximumCellSize, 0.95, with a separate fixed
+        // PixelGrid.cellGap of 0.05) that acted as an upper cap a small grid
+        // would nearly reach edge-to-edge; GridPreferredCellSize is
+        // deliberately smaller (denser, cleaner pixel art for the same 6x6
+        // prototype grid) and GridPreferredGap now scales down together with
+        // the cell size for any grid dense enough to need shrinking, instead
+        // of staying a fixed absolute value that would dominate the cell at
+        // high density (see PixelGrid's own remarks). Tuned visually against
+        // the real Portrait 1080x1920 Game View, not solved from a formula.
+        public const float GridPreferredCellSize = 0.45f;
+        public const float GridPreferredGap = 0.05f;
 
         // ----- Collector sprite scale and its actual visible extent ---------
         // CollectorSpriteScale controls only the rendered collector visual
