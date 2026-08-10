@@ -30,7 +30,6 @@ namespace Project001.Gameplay.WaitingLine
         private Sprite _sharedSprite;
         private WaitingSlot[] _slots;
         private bool _isInitialized;
-        private bool _isAcceptingCollectors = true;
 
         /// <summary>
         /// Builds this line's slots using the given capacity, which is
@@ -116,11 +115,18 @@ namespace Project001.Gameplay.WaitingLine
             }
         }
 
+        /// <summary>
+        /// Returns the first unoccupied slot, or null if every slot is
+        /// occupied. Always evaluates real occupancy — including after
+        /// Endgame Cleanup begins (see EndgameCleanupController's own
+        /// remarks for why that phase never needs to close this line off
+        /// early: an unsatisfied collector that completes a lap and finds
+        /// every slot genuinely full still falls back to
+        /// CollectorLifecycle.ResolveLap's existing
+        /// FailureController.NotifyWaitingLineFull path exactly as before.
+        /// </summary>
         public WaitingSlot GetFirstEmptySlot()
         {
-            if (!_isAcceptingCollectors)
-                return null;
-
             if (_slots == null)
                 return null;
 
@@ -134,9 +140,7 @@ namespace Project001.Gameplay.WaitingLine
         }
 
         /// <summary>
-        /// Number of slots currently occupied. Independent of
-        /// IsAcceptingCollectors — a slot already holding a collector still
-        /// counts even after this line has stopped accepting new ones.
+        /// Number of slots currently occupied.
         /// </summary>
         public int OccupiedSlotCount
         {
@@ -154,20 +158,6 @@ namespace Project001.Gameplay.WaitingLine
 
                 return count;
             }
-        }
-
-        /// <summary>
-        /// Permanently stops this line from handing out empty slots (e.g.
-        /// once Endgame Cleanup begins): GetFirstEmptySlot returns null from
-        /// this point on, regardless of actual occupancy, so unsatisfied
-        /// collectors that complete a lap are left circulating on the
-        /// Conveyor instead of entering the Waiting Line. Irreversible, and
-        /// never clears slots already occupied — those collectors remain
-        /// exactly where they are and stay selectable.
-        /// </summary>
-        public void StopAcceptingCollectors()
-        {
-            _isAcceptingCollectors = false;
         }
 
         /// <summary>

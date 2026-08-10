@@ -1,6 +1,8 @@
+using System.Collections.Generic;
 using Project001.Gameplay.Conveyor;
 using Project001.Gameplay.Feeding;
 using Project001.Gameplay.Presentation;
+using Project001.UI.EnergyBar;
 using UnityEngine;
 
 namespace Project001.Gameplay.Collectors
@@ -40,80 +42,280 @@ namespace Project001.Gameplay.Collectors
     /// runtime material selection or swap here, unlike the shared-model/
     /// resolved-color scheme this replaced.
     ///
-    /// Also owns a RemainingHunger text indicator kept in sync via
-    /// ConveyorRider.RemainingHungerChanged — this view never reads or
-    /// stores hunger state itself, only displays whatever value the event
-    /// last reported. The label is a direct child of this root (a sibling of
-    /// Visual, never a descendant of it), which is scaled by
-    /// GameplayLayout.CollectorSpriteScale (see
-    /// CollectorQueueBoard.GenerateBoard) — without correction the label
-    /// would inherit that scale and grow right along with the character. Instead the
-    /// label's own local scale is set to the inverse of
-    /// CollectorSpriteScale, so its rendered size always equals
-    /// GameplayLayout.HungerLabelWorldSize regardless of how big the
-    /// collector's sprite is, and being a sibling of Visual rather than its
-    /// descendant, the label is also completely unaffected by any
-    /// presentation animation played on Visual/VisualMotion. Holds no
-    /// movement, input, or queue logic, and has no knowledge of the conveyor
-    /// beyond that — a Collider2D on this root only makes it detectable via
-    /// Physics2D point queries for selection.
+    /// Also owns this collector's EnergyBar (Assets/Prefabs/UI/EnergyBar.prefab),
+    /// kept in sync via ConveyorRider.RemainingHungerChanged — this view
+    /// never reads or stores hunger state itself, only displays whatever
+    /// value the event last reported. EnergyBar's ValueText is the ONLY
+    /// on-screen RemainingHunger indicator: an earlier standalone
+    /// world-space "HungerText" TextMesh (a direct sibling of Visual,
+    /// pre-dating EnergyBar entirely) was removed once EnergyBar took over
+    /// that exact same responsibility - showing both at once was a
+    /// confirmed-redundant duplicate number on the character body (see docs
+    /// task "Refine the live Energy Bar presentation"). EnergyBar itself is
+    /// a direct child of this root (a sibling of Visual, never a descendant
+    /// of it) for the same reason HungerText always was: Visual is the only
+    /// node CollectorAnimation ever rotates or depth-shifts for
+    /// presentation, so a sibling of it is unaffected by any of that.
+    /// Holds no movement, input, or queue logic, and has no knowledge of
+    /// the conveyor beyond that — a Collider2D on this root only makes it
+    /// detectable via Physics2D point queries for selection.
     /// </summary>
     [RequireComponent(typeof(CircleCollider2D))]
     [RequireComponent(typeof(ConveyorRider))]
     [RequireComponent(typeof(CollectorPresentation))]
     public class CollectorView : MonoBehaviour
     {
-        // Positioned slightly below the model's own center, and pulled
-        // toward the camera so it renders in front of the model regardless
-        // of which way Visual is currently rotated to face (see
-        // CollectorAnimation's facing rotation) — Visual can sit at any
-        // Y-axis angle while riding (facing the pixel grid from wherever the
-        // conveyor loop has carried it, not just a fixed toward/away flip
-        // any more), so an offset that only cleared the model's front face
-        // at one angle would clip through it at another. The mesh's own
-        // roughly circular footprint (local X/Z extents both ~0.89, from
-        // the vendor body mesh) keeps its camera-facing half-depth about the
-        // same at every rotation angle, ~0.35 at CharacterVisual's authored scale (0.88
-        // mesh depth x 0.79 PrefabRootScale x 0.5), plus a small margin for
-        // breathing's scale wobble — 0.5 clears that with room to spare
-        // regardless of facing angle.
+        // ----- EnergyBar (see docs task "Connect the existing EnergyBar
+        // prefab to live collectors") -----------------------------------
         //
-        // The camera-toward pull is along -GameplayLayout.CameraForward, not
-        // a raw local/world -Z axis (this used to be a plain -0.5 Z
-        // component, back when the camera looked straight down world +Z and
-        // a pure Z move had zero effect on screen position — see
-        // CollectorAnimation.TerminalForegroundPullDistance's own remarks
-        // for the identical issue proven there, once the camera gained its
-        // downward tilt, GameplayLayout.CameraTiltDegrees). Only the
-        // vertical "below center" component stays a plain local Y offset,
-        // since that one is genuinely about vertical placement, not depth.
-        // A physical depth offset at all is a spike-appropriate fix, not a
-        // production one; a camera-facing billboard/canvas label would be
-        // more robust against rotation and is called out as a follow-up in
-        // the spike's evaluation notes.
-        private const float HungerTextVerticalOffset = -0.15f;
-        private const float HungerTextForegroundPullDistance = 0.5f;
+        // A World Space Canvas instance (Assets/Prefabs/UI/EnergyBar.prefab
+        // - see EnergyBarPrefabBuilder for why its own root carries no baked
+        // world-space scale), parented directly under this collector's
+        // root, as a SIBLING of Visual — never a descendant of it. Visual is
+        // the ONLY node CollectorAnimation ever rotates (its continuous
+        // re-aim toward the pixel grid while riding, see
+        // CollectorAnimation.Update) or moves for presentation depth — the
+        // collector ROOT itself is never rotated by anything, for this
+        // collector's entire lifetime (queue -> boarding -> riding ->
+        // waiting/recovery -> terminal). A sibling of Visual therefore never
+        // inherits that yaw. On top of that (see docs task's own explicit
+        // camera-facing requirement), EnergyBarLocalRotation additionally
+        // counter-rotates for the camera's own fixed downward tilt
+        // (GameplayLayout.CameraTiltDegrees) so the bar's face is exactly
+        // perpendicular to the camera's view direction - needs computing
+        // only once, here, never per-frame, since neither the camera nor
+        // this root's own rotation ever changes afterward.
+        private static readonly Quaternion EnergyBarLocalRotation = GameplayLayout.CameraRotation;
 
-        private static Vector3 HungerTextLocalOffset =>
-            new Vector3(0f, HungerTextVerticalOffset, 0f) + (-GameplayLayout.CameraForward) * HungerTextForegroundPullDistance;
+        // Desired apparent WORLD width, in world units, regardless of
+        // GameplayLayout.CollectorSpriteScale — an explicit presentation
+        // token, divided back out of whatever scale this collector's root
+        // actually carries, rather than baked as a fixed Transform scale on
+        // the prefab itself (see EnergyBarPrefabBuilder's own remarks on why
+        // that would couple a generic reusable prefab to one specific
+        // collector-integration assumption).
+        //
+        // Raised again from 1.15 to 1.55 after a further real Game View
+        // review at portrait 1080x1920 found 1.15 still read as a tiny
+        // technical label, and its ValueText number was effectively
+        // unreadable without zooming into the screenshot - numeric
+        // measurements passing automated verification had not actually been
+        // checked against a real rendered screenshot. 1.55 sits inside this
+        // review's own requested 1.45-1.60 range. Wider than the previous
+        // pass's "stay comfortably narrower than the widest species" goal —
+        // deliberately so, since this review explicitly prioritised
+        // readability over subtlety at this stage (see docs task "Refine
+        // the EnergyBar visual size and vertical placement": "it may be
+        // relatively wide compared with the character"). Still narrower
+        // than the widest species alone (CollectorVisibleWidth ranges
+        // ~1.04-1.98 world units — see GameplayLayout, Turtle's ~1.98 being
+        // the widest).
+        private const float EnergyBarWorldWidth = 1.55f;
 
-        // Recomputed by SetHungerTextPresentationDepth whenever this
-        // collector's own row/state presentation depth changes: the label's
-        // own foreground pull above is a small, FIXED amount ahead of
-        // wherever the character itself currently sits, so it must move
-        // forward by that same additional depthWorldUnits whenever
-        // CollectorAnimation.SetPresentationDepth does — otherwise a deeper
-        // queue row's own character (pulled further toward the camera than
-        // the label's fixed offset) would render in FRONT of its own label.
+        // EnergyBar.prefab's own authored RectTransform width (see
+        // EnergyBarPrefabBuilder.RootSize) — the canvas-unit denominator
+        // EnergyBarWorldWidth is divided by, alongside CollectorSpriteScale,
+        // to derive this instance's own compensating localScale. Kept as an
+        // explicit named constant rather than reading the instantiated
+        // prefab's own live RectTransform.rect.width at runtime, since that
+        // width is authored/fixed by the builder tool, never resized per
+        // instance.
+        private const float EnergyBarPrefabCanvasWidth = 384f;
 
-        [SerializeField, Tooltip("Font size, in font-import units, of the RemainingHunger text.")]
-        [Min(1)]
-        private int hungerTextFontSize = 48;
+        // How far below a waiting collector's own visible bottom edge (Queue
+        // /WaitingLine/RecoveryRow) and how far above a riding collector's
+        // own visible top edge (Conveyor) the bar sits, in this root's own
+        // LOCAL space (already divided by CollectorSpriteScale) — see
+        // GameplayLayout.CollectorVisibleHeight for the measured visible
+        // body height these clear (half-height ~0.75 world units at
+        // CollectorSpriteScale 1.9). Deliberately two DIFFERENT values, not
+        // one shared constant, because Queue and Conveyor have very
+        // different neighbour-to-neighbour spacing available to push into
+        // (see each constant's own remarks below) - reusing one number for
+        // both was tried first and produced a real regression (see
+        // EnergyBarConveyorVerticalOffset's own remarks).
+        //
+        // Pulled back from -0.70 toward the character after a further real
+        // Game View review at portrait 1080x1920 found -0.70 read as
+        // floating far below the character rather than "just below" it -
+        // the earlier 0.52 -> 0.70 magnitude increase (see history above)
+        // over-corrected past clearing the body into visibly detached.
+        // -0.46 sat inside that review's own requested -0.42 to -0.50
+        // range, confirmed clear of feet/tentacles/shell and the next
+        // row's head.
+        //
+        // Raised again after a follow-up real Game View review asked for
+        // "the bar feels visually attached to the character" - -0.46 still
+        // read as a little too separated. The full requested +0.10 step
+        // (-0.46 -> -0.36) was tried first and a fresh real rendered
+        // screenshot showed a genuine overlap regression: several
+        // characters' own feet/legs now visibly covered part of their own
+        // bar's digit (Teal/Blue/Navy/Purple all confirmed), directly
+        // hurting the same review's own readability goal. Landed on -0.42
+        // instead (+0.04, a smaller partial step) - confirmed via a
+        // further fresh screenshot to read as clearly closer/more attached
+        // than -0.46 while staying clear of feet/tentacles/shell across
+        // Crab/Turtle/Fish/Octopus, and still clear of the next row's head
+        // (GameplayLayout.QueueRowStep, 2.001 world units center-to-center
+        // - a smaller offset only INCREASES the margin to the next row).
+        //
+        // Raised again, a further small step, per a follow-up "the bar
+        // still feels visually detached... move it slightly higher, do not
+        // guess from numeric offsets" request. GameplayLayout.
+        // QueueVisibleGap (the ENTIRE open space between adjacent rows'
+        // visible bodies) is only 0.5 world units total, and -0.42 was
+        // already consuming 0.42 of that, leaving only ~0.08 of genuine
+        // spare room - this hard ceiling (not a stylistic choice) is why
+        // this step is small. -0.34 (+0.08) - confirmed via a fresh real
+        // rendered screenshot to read as noticeably more attached while
+        // still leaving a real, visible margin before the next row's head.
+        private const float EnergyBarQueueVerticalOffset = -0.34f;
 
-        private static Font _sharedFont;
+        // Conveyor riders are packed far tighter than Queue rows
+        // (GameplayLayout.ConveyorRiderMinimumSpacing, ~1.85 world units
+        // center-to-center vs Queue's 2.001, with a smaller authored visual
+        // gap on top of body height - see ConveyorRiderVisualGap). 0.75 (the
+        // docs task's own suggested 0.70-0.80 starting direction) was tried
+        // first alongside the larger EnergyBarWorldWidth this same pass
+        // raised to 1.55, and a real rendered screenshot at portrait
+        // 1080x1920 showed a genuine regression far worse than this
+        // constant's own prior history: the bar now clearly overlapped
+        // half of the PREVIOUS rider's own torso silhouette (not just a
+        // claw grazing its top pixel, the previous known residual edge
+        // case) - the larger bar's own extra height, stacked on top of a
+        // larger offset, ran out of the limited vertical room
+        // ConveyorRiderMinimumSpacing leaves between consecutive riders.
+        // Per docs task section 6 ("visual verification is authoritative"),
+        // this real screenshot result overrides the task's own numeric
+        // starting direction. Pulled back to 0.40 - confirmed via a fresh
+        // real rendered screenshot to clear the previous rider's own body
+        // across Crab/Turtle/Fish/Octopus while still reading as clearly
+        // above (not touching) this bar's own character's head, including
+        // at the same tightly-packed loop corner the prior pass checked.
+        //
+        // The same +0.10 step applied to EnergyBarQueueVerticalOffset above
+        // (0.40 -> 0.50) was tried first, for the same "keep visual spacing
+        // consistent" follow-up request - a fresh real rendered screenshot
+        // at the same tightly-packed loop corner showed this reopened a
+        // real overlap regression: the PREVIOUS rider's own legs dipped
+        // well into this bar's coloured fill area, not just the trivial
+        // top-edge graze 0.40 already had. Per the same follow-up request's
+        // own section 4 ("Confirm that... nothing overlaps the character"),
+        // that hard requirement overrides "apply the same delta as Queue"
+        // when the two conflict. Landed on 0.43 instead - a smaller,
+        // partial step toward Queue's own upward move (some consistency,
+        // not none) - confirmed via a further fresh screenshot to be back
+        // to only the same trivial top-edge graze 0.40 already had, never
+        // reaching into the previous rider's own coloured fill area.
+        //
+        // NOT raised further this pass despite the same "move slightly
+        // higher" follow-up request: this constant's own history above
+        // already shows +0.07 more (0.43 -&gt; 0.50) reopened a real overlap
+        // with the previous rider - there is no further safe headroom on
+        // the shared baseline alone. What actually needed to move here
+        // instead was the per-species correction below (Fish/Octopus/
+        // Turtle's own bars were sitting with an artificially INFLATED gap
+        // above their own head specifically because of the recentering bug
+        // those species sink further under - see
+        // EnergyBarSpeciesConveyorCorrection), which is what "moved higher"
+        // really meant for this context once actually diagnosed.
+        private const float EnergyBarConveyorVerticalOffset = 0.43f;
 
-        private static Font SharedFont =>
-            _sharedFont != null ? _sharedFont : _sharedFont = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+        // Per-species correction added purely to EnergyBar's own position -
+        // CharacterVisual's own Transform is never touched by this, so this
+        // is strictly a presentation-only compensation, not a gameplay
+        // change. Root cause (see docs task "Investigate Turtle
+        // alignment"): CollectorView.Initialize's own CharacterVisual
+        // recentering (-boundsCenter, a few dozen lines below) calls
+        // CollectorAnimation.ComputeLocalRendererBounds on modelInstance
+        // AFTER it is already parented deep in the real
+        // Root->Visual->VisualMotion runtime hierarchy - exactly the "deep
+        // nested collector hierarchy" CharacterVerification.
+        // FinishAllTwentyOverlapCheck's own remarks already document reads
+        // back WRONG, INFLATED skinned bounds through
+        // SkinnedMeshRenderer.BakeMesh, by a confirmed real, per-species
+        // amount (that check measured size inflation of Crab +9%, Octopus
+        // +17%, Turtle +26%, Fish +34% - reproducible, not a same-frame
+        // timing race). A dedicated diagnostic for this pass
+        // (EnergyBarSpeciesBoundsDiagnostic, run against one representative
+        // Match ID per species from a real live Feeding Flow board in real
+        // Play Mode) measured what that inflation does to bounds.CENTER
+        // specifically (not just size) - i.e. exactly what the recentering
+        // above actually uses - by comparing each live CharacterVisual's
+        // real, already-applied localPosition.y against what a reliable,
+        // standalone (unparented) Instantiate of the same saved prefab says
+        // it should be (the same shallow-nesting approach
+        // CharacterAssetBuilder's own build-time scale measurement and
+        // CharacterVerification.ComputeExpectedWorldBounds both already use
+        // and trust). Result: EVERY species is shifted, not just Turtle -
+        // Crab measured closest to correct (~0.049 world units), Turtle
+        // 0.274, Octopus 0.333, Fish the most at 0.509 - all in the SAME
+        // direction (every species renders LOWER than its own correct,
+        // bug-free position).
+        //
+        // Queue and Conveyor need DIFFERENT-sized corrections, not one
+        // shared value, because the sign of "the character renders lower"
+        // has OPPOSITE consequences for each: in the Queue, a lower
+        // character means its feet are CLOSER to the fixed-offset bar below
+        // it (shrinking the gap toward the next row - the real, measured
+        // collision risk this pass's own first attempt hit, see below), so
+        // a correction that fully compensates has almost no safe headroom
+        // (GameplayLayout.QueueVisibleGap is only 0.5 world units total,
+        // and the baseline offset above already uses most of it). In the
+        // Conveyor, a lower character means MORE clearance above its own
+        // head (the bar reads as floating further away, not colliding) -
+        // so the correction is safe to apply much closer to its full
+        // measured value there, with no next-rider collision risk from
+        // this specific correction (it only ever REDUCES how far the bar
+        // reaches, since a species that needs a bigger correction sinks
+        // further and needs the bar pulled IN, toward zero, to compensate).
+        //
+        // The full Crab-relative values above (Turtle -0.225, Octopus
+        // -0.284, Fish -0.460) were tried on BOTH offsets in one shared
+        // dictionary first; a real rendered screenshot showed Fish/
+        // Octopus's own Queue bars pushed down far enough to visibly
+        // collide with the NEXT queue row's own character - a confirmed
+        // regression against this task's own "must not collide with the
+        // next queue row" requirement. Split into two separate, smaller
+        // tables below instead, each tuned against real rendered
+        // screenshots: Queue capped well inside QueueVisibleGap's real
+        // spare room (never pushing any species' own total Queue offset
+        // past the old, already-confirmed-safe -0.42 baseline); Conveyor
+        // allowed a larger fraction of the full measured correction since
+        // it carries no equivalent collision risk.
+        private static readonly Dictionary<int, float> EnergyBarSpeciesQueueCorrection = new Dictionary<int, float>
+        {
+            { 1, 0f }, { 2, 0f }, { 14, 0f }, { 15, 0f }, { 20, 0f }, // Crab
+            { 3, -0.05f }, { 4, -0.05f }, { 5, -0.05f }, { 9, -0.05f }, { 16, -0.05f }, // Turtle
+            { 6, -0.08f }, { 8, -0.08f }, { 10, -0.08f }, { 17, -0.08f }, { 19, -0.08f }, // Fish
+            { 7, -0.06f }, { 11, -0.06f }, { 12, -0.06f }, { 13, -0.06f }, { 18, -0.06f }, // Octopus
+        };
+
+        private static readonly Dictionary<int, float> EnergyBarSpeciesConveyorCorrection = new Dictionary<int, float>
+        {
+            { 1, 0f }, { 2, 0f }, { 14, 0f }, { 15, 0f }, { 20, 0f }, // Crab
+            { 3, -0.15f }, { 4, -0.15f }, { 5, -0.15f }, { 9, -0.15f }, { 16, -0.15f }, // Turtle
+            { 6, -0.25f }, { 8, -0.25f }, { 10, -0.25f }, { 17, -0.25f }, { 19, -0.25f }, // Fish
+            { 7, -0.18f }, { 11, -0.18f }, { 12, -0.18f }, { 13, -0.18f }, { 18, -0.18f }, // Octopus
+        };
+
+        // A flat World Space Canvas quad needs a "pull toward camera"
+        // treatment to guarantee it renders in front of this collector's
+        // own opaque 3D geometry (and, while queued, in front of whichever
+        // nearer row's geometry might otherwise share its screen position),
+        // never behind it - same value/purpose the removed HungerText label
+        // already used successfully.
+        private const float EnergyBarForegroundPullDistance = 0.5f;
+
+        // Fallback fill colour, used only if ColorPalette.TryGetByMatchId
+        // fails to resolve this collector's own MatchId (an id outside the
+        // approved 1-20 table - see ColorPalette) - logged as an error when
+        // this happens, since every real collector's MatchId always comes
+        // from approved level/debug data and should always resolve. Kept
+        // distinctly different from any real Match ID colour so a fallback
+        // is immediately obvious in Play Mode rather than silently
+        // resembling a real result.
+        private static readonly Color EnergyFillFallbackColor = Color.magenta;
 
         private Transform _visual;
         private Transform _visualMotion;
@@ -121,7 +323,11 @@ namespace Project001.Gameplay.Collectors
         private CollectorPresentation _presentation;
         private CharacterPosePresentation _posePresentation;
         private FeedTarget _feedTarget;
-        private TextMesh _hungerText;
+        private Transform _energyBarTransform;
+        private EnergyBarView _energyBarView;
+        private bool _energyBarIsAboveCharacter;
+        private float _energyBarDepth;
+        private int _matchId;
 
         /// <summary>
         /// This collector's CollectorPresentation, cached once in Awake.
@@ -184,11 +390,24 @@ namespace Project001.Gameplay.Collectors
         /// <summary>
         /// Currently displayed RemainingHunger text. Read-only — this view
         /// never sets hunger state, only mirrors whatever
-        /// ConveyorRider.RemainingHungerChanged last reported. Exposed so
-        /// tests and tooling can verify the indicator without reaching into
-        /// the TextMesh directly.
+        /// ConveyorRider.RemainingHungerChanged last reported. Sourced from
+        /// EnergyBar's own ValueText (see EnergyBarView.DisplayText) - the
+        /// property name/contract is unchanged from when a separate
+        /// standalone HungerText TextMesh backed it, so existing verification
+        /// tooling (CharacterVerification) needed no changes when that
+        /// TextMesh was removed. Returns an empty string if EnergyBar itself
+        /// is null (energyBarPrefab was never assigned - see Initialize).
         /// </summary>
-        public string HungerDisplayText => _hungerText.text;
+        public string HungerDisplayText => _energyBarView != null ? _energyBarView.DisplayText : string.Empty;
+
+        /// <summary>
+        /// This collector's EnergyBar (Assets/Prefabs/UI/EnergyBar.prefab),
+        /// resolved by Initialize() - null only if the energyBarPrefab
+        /// argument passed to Initialize was itself null (logged there, not
+        /// thrown). Exposed read-only for verification tooling to inspect
+        /// CurrentValue/MaxValue directly.
+        /// </summary>
+        public EnergyBarView EnergyBar => _energyBarView;
 
         private void Awake()
         {
@@ -196,7 +415,6 @@ namespace Project001.Gameplay.Collectors
             GetComponent<Collider2D>().isTrigger = true;
 
             _presentation = GetComponent<CollectorPresentation>();
-            _hungerText = CreateHungerText();
 
             _conveyorRider = GetComponent<ConveyorRider>();
             _conveyorRider.RemainingHungerChanged += OnRemainingHungerChanged;
@@ -247,9 +465,25 @@ namespace Project001.Gameplay.Collectors
         /// editor time, by CharacterAssetBuilder), so Instantiate() alone
         /// produces the correct, fully-textured result — there is nothing
         /// left for this method to swap or tint.
+        ///
+        /// energyBarPrefab (Assets/Prefabs/UI/EnergyBar.prefab, injected by
+        /// CollectorQueueBoard exactly like characterDatabase already is -
+        /// never Resources.Load/GameObject.Find) is instantiated here too,
+        /// as a sibling of Visual under this same root - see the EnergyBar
+        /// field group's own class remarks for why a sibling, never a
+        /// Visual descendant. Starts positioned/rotated for the Queue (the
+        /// state every collector is actually created into - see
+        /// CollectorQueueBoard.GenerateBoard's own call order,
+        /// ShowWaitingBackIdle always runs immediately after this), with its
+        /// fill tinted to matchId's own canonical ColorPalette colour (see
+        /// CreateEnergyBar); CollectorPresentation.ShowWaitingBackIdle/
+        /// ShowConveyorFrontEating are what move it between Queue-below and
+        /// Conveyor-above afterward, never this method again.
         /// </summary>
-        public void Initialize(GameObject visualPrefab)
+        public void Initialize(GameObject visualPrefab, GameObject energyBarPrefab, int matchId)
         {
+            _matchId = matchId;
+
             var visualWrapper = new GameObject("Visual");
             visualWrapper.transform.SetParent(transform, false);
 
@@ -269,79 +503,155 @@ namespace Project001.Gameplay.Collectors
             _visualMotion = visualMotion.transform;
             _posePresentation = modelInstance.GetComponentInChildren<CharacterPosePresentation>(true);
             _feedTarget = modelInstance.GetComponentInChildren<FeedTarget>(true);
+
+            CreateEnergyBar(energyBarPrefab, matchId);
         }
 
         /// <summary>
-        /// Hides the RemainingHunger label for good. Called once, by
-        /// CollectorPresentation right as the terminal final-bite sequence
-        /// begins — RemainingHunger already reads 0 at that point (set by
-        /// ConveyorRider.RegisterConsumedPixel just before), and the player
-        /// must never see that value on screen. There is no matching "show"
-        /// method: this collector is destroyed shortly after the sequence
-        /// completes, so the label never needs to reappear.
+        /// Moves EnergyBar to its Queue/WaitingLine/RecoveryRow position
+        /// (below this collector's own visible body) at this collector's
+        /// CURRENT presentation depth - called by CollectorPresentation.
+        /// ShowWaitingBackIdle, which every one of those waiting sources
+        /// (initial Queue placement, an unsatisfied return, a Recovery Row
+        /// transfer, or a rolled-back boarding attempt) already calls, so
+        /// this needs no separate call site of its own. Safe to call
+        /// whether or not this collector's presentation depth was just
+        /// cleared/changed - always reads _energyBarDepth, this instance's
+        /// own last-applied depth, rather than assuming 0.
         /// </summary>
-        public void HideHungerText()
+        public void ShowEnergyBarBelowCharacter()
         {
-            _hungerText.gameObject.SetActive(false);
+            _energyBarIsAboveCharacter = false;
+            ApplyEnergyBarLocalPosition();
         }
 
         /// <summary>
-        /// Keeps the RemainingHunger label's own genuine camera-depth pull
-        /// (HungerTextLocalOffset) in sync with this collector's current
-        /// presentation depth (see CollectorAnimation.SetPresentationDepth)
-        /// — called by CollectorPresentation alongside every call into
-        /// Animation.SetPresentationDepth, with the exact same
-        /// depthWorldUnits, so the label always renders exactly
-        /// HungerTextForegroundPullDistance further toward the camera than
-        /// wherever this collector's own character currently sits, whether
-        /// that's queue row depth, a waiting source's neutral depth, or
-        /// (implicitly, since HideHungerText already ran first) never during
-        /// the terminal sequence. The label is a sibling of Visual under
-        /// this root, not a Visual descendant, so it never inherits
-        /// CollectorAnimation's own per-row depth automatically — this is
-        /// what keeps the two in sync instead.
+        /// Moves EnergyBar to its Conveyor position (above this collector's
+        /// own visible head) - called by CollectorPresentation.
+        /// ShowConveyorFrontEating, the single moment any collector actually
+        /// starts riding (see CollectorSelectionController.
+        /// ProcessPendingBoardings), regardless of which source it boarded
+        /// from. Stays there for the rest of this collector's ride,
+        /// including the satisfied/terminal sequence - nothing requests
+        /// Waiting again while riding (see ShowConveyorFrontEating's own
+        /// remarks), so EnergyBar reads full/0 right up until this
+        /// collector is destroyed, matching the docs task's own "satisfied
+        /// collectors reach full bar / 0 before disappearance" requirement
+        /// with no extra code here.
         /// </summary>
-        public void SetHungerTextPresentationDepth(float depthWorldUnits)
+        public void ShowEnergyBarAboveCharacter()
         {
-            _hungerText.transform.localPosition = HungerTextLocalOffset + (-GameplayLayout.CameraForward) * depthWorldUnits;
+            _energyBarIsAboveCharacter = true;
+            ApplyEnergyBarLocalPosition();
+        }
+
+        /// <summary>
+        /// Keeps EnergyBar's own genuine camera-depth pull in sync with this
+        /// collector's current presentation depth (see CollectorAnimation.
+        /// SetPresentationDepth) - called by CollectorPresentation.
+        /// ApplyPresentationDepth alongside Animation.SetPresentationDepth,
+        /// with the exact same depthWorldUnits: without this, a
+        /// nearer/depth-pulled queue row's own EnergyBar would fall behind
+        /// (and be genuinely Z-test-occluded by) that row's own
+        /// foregrounded character.
+        /// </summary>
+        public void SetEnergyBarPresentationDepth(float depthWorldUnits)
+        {
+            _energyBarDepth = depthWorldUnits;
+            ApplyEnergyBarLocalPosition();
+        }
+
+        private void ApplyEnergyBarLocalPosition()
+        {
+            if (_energyBarTransform == null)
+                return;
+
+            float verticalOffset = _energyBarIsAboveCharacter ? EnergyBarConveyorVerticalOffset : EnergyBarQueueVerticalOffset;
+            Dictionary<int, float> speciesCorrectionTable = _energyBarIsAboveCharacter ? EnergyBarSpeciesConveyorCorrection : EnergyBarSpeciesQueueCorrection;
+            float speciesCorrection = speciesCorrectionTable.TryGetValue(_matchId, out float correction) ? correction : 0f;
+            Vector3 baseOffset = new Vector3(0f, verticalOffset + speciesCorrection, 0f) + (-GameplayLayout.CameraForward) * EnergyBarForegroundPullDistance;
+            _energyBarTransform.localPosition = baseOffset + (-GameplayLayout.CameraForward) * _energyBarDepth;
         }
 
         private void OnRemainingHungerChanged(int remainingHunger)
         {
-            _hungerText.text = remainingHunger.ToString();
+            if (_energyBarView == null)
+                return;
+
+            // energyGained = MaxHunger - RemainingHunger; fill =
+            // energyGained / MaxHunger (see docs task section 4) - driven
+            // through SetMaxValue/SetCurrentValue's own generic current/max
+            // fill fraction, then SetDisplayValue immediately overrides the
+            // visible number back to the raw remainingHunger (SetCurrentValue's
+            // own Refresh would otherwise show energyGained instead - see
+            // SetDisplayValue's own remarks on why it must run last).
+            // HungerCapacity is read fresh from the rider every call rather
+            // than cached at Initialize time - it is fixed for this
+            // collector's lifetime, but this avoids ever silently drifting
+            // out of sync with the actual gameplay source of truth if that
+            // ever changes.
+            int maxHunger = Mathf.Max(1, _conveyorRider.HungerCapacity);
+            int clampedRemaining = Mathf.Clamp(remainingHunger, 0, maxHunger);
+            _energyBarView.SetMaxValue(maxHunger);
+            _energyBarView.SetCurrentValue(maxHunger - clampedRemaining);
+            _energyBarView.SetDisplayValue(clampedRemaining);
         }
 
-        private TextMesh CreateHungerText()
+        /// <summary>
+        /// Instantiates energyBarPrefab as a sibling of Visual (see the
+        /// EnergyBar field group's own class remarks) and applies every
+        /// static, per-instance setup that never changes again afterward:
+        /// the compensating localScale (cancels CollectorSpriteScale so
+        /// every species reads at the same EnergyBarWorldWidth - see its own
+        /// remarks), the camera-tilt-compensating localRotation, and the
+        /// fill colour resolved from matchId via ColorPalette (Assets/Art/
+        /// ColorPalette.md's runtime mirror - the same single source of
+        /// truth CharacterAssetBuilder/CharacterDatabase already key off of
+        /// for this exact Match ID, never a second/duplicated colour table -
+        /// see docs task "Refine the live Energy Bar presentation" section
+        /// 5). Falls back to EnergyFillFallbackColor (and logs an error) if
+        /// matchId is outside ColorPalette's approved 1-20 table - every
+        /// real collector's MatchId always comes from approved level/debug
+        /// data, so this should never actually trigger. Logs and leaves
+        /// _energyBarTransform/_energyBarView null (every EnergyBar call
+        /// elsewhere already null-checks) rather than throwing if
+        /// energyBarPrefab itself is null - the same "missing expected
+        /// reference" convention CharacterAssetBuilder/CollectorQueueBoard
+        /// already use throughout this codebase.
+        /// </summary>
+        private void CreateEnergyBar(GameObject energyBarPrefab, int matchId)
         {
-            var textObject = new GameObject("HungerText");
-            textObject.transform.SetParent(transform, false);
-            textObject.transform.localPosition = HungerTextLocalOffset;
+            if (energyBarPrefab == null)
+            {
+                Debug.LogError($"CollectorView: '{name}' was initialized with no energyBarPrefab; this collector will show no EnergyBar.", this);
+                return;
+            }
 
-            // Cancels out this collector root's own CollectorSpriteScale
-            // (read directly from GameplayLayout, not this transform's live
-            // localScale, since CollectorQueueBoard assigns that scale after
-            // this Awake already ran) so the label's rendered size is driven
-            // by HungerLabelWorldSize alone.
-            textObject.transform.localScale =
-                Vector3.one / GameplayLayout.CollectorSpriteScale;
+            var instance = Instantiate(energyBarPrefab, transform, false);
+            instance.name = "EnergyBar";
 
-            var textMesh = textObject.AddComponent<TextMesh>();
-            textMesh.font = SharedFont;
-            textMesh.anchor = TextAnchor.MiddleCenter;
-            textMesh.alignment = TextAlignment.Center;
-            textMesh.color = Color.white;
-            textMesh.characterSize = GameplayLayout.HungerLabelWorldSize;
-            textMesh.fontSize = hungerTextFontSize;
+            Transform energyBarTransform = instance.transform;
+            energyBarTransform.localRotation = EnergyBarLocalRotation;
+            energyBarTransform.localScale =
+                Vector3.one * (EnergyBarWorldWidth / (EnergyBarPrefabCanvasWidth * GameplayLayout.CollectorSpriteScale));
 
-            // HungerTextLocalOffset's own camera-toward pull already
-            // guarantees this renders in front of the model via genuine
-            // depth; GameplayLayout.HungerLabelSortingOffset is only a
-            // small, harmless backup sortingOrder on top of that.
-            var meshRenderer = textObject.GetComponent<MeshRenderer>();
-            meshRenderer.sharedMaterial = SharedFont.material;
-            meshRenderer.sortingOrder = GameplayLayout.HungerLabelSortingOffset;
+            _energyBarTransform = energyBarTransform;
+            _energyBarView = instance.GetComponent<EnergyBarView>();
 
-            return textMesh;
+            if (_energyBarView == null)
+            {
+                Debug.LogError($"CollectorView: '{name}' - energyBarPrefab '{energyBarPrefab.name}' has no EnergyBarView component.", this);
+                return;
+            }
+
+            if (!ColorPalette.TryGetByMatchId(matchId, out Color fillColor))
+            {
+                Debug.LogError($"CollectorView: '{name}' - Match ID {matchId} has no ColorPalette entry; EnergyBar fill falls back to '{EnergyFillFallbackColor}'.", this);
+                fillColor = EnergyFillFallbackColor;
+            }
+
+            _energyBarView.SetFillColor(fillColor);
+            ApplyEnergyBarLocalPosition();
         }
     }
 }

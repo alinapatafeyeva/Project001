@@ -48,6 +48,20 @@ namespace Project001.Gameplay.Feeding
         private CollectorView _collectorView;
         private readonly Queue<PendingPacket> _pending = new Queue<PendingPacket>();
         private Coroutine _launchRoutine;
+        private int _inFlightCount;
+
+        /// <summary>
+        /// True while this collector has reserved food that has not yet
+        /// resolved into a hunger decrement - either still queued here
+        /// (waiting for its own launchInterval turn) or already launched and
+        /// flying (waiting for FoodPacket to reach FeedTarget). Read by
+        /// CollectorLifecycle.ResolveLap's caller to defer judging a
+        /// completed-lap collector's satisfaction until every packet already
+        /// committed to it has actually landed - see CollectorLifecycle's
+        /// own remarks for why sampling RemainingHunger/IsSatisfied while
+        /// this is true would be a race.
+        /// </summary>
+        public bool HasPendingFood => _pending.Count > 0 || _inFlightCount > 0;
 
         private struct PendingPacket
         {
@@ -136,12 +150,15 @@ namespace Project001.Gameplay.Feeding
         {
             Transform target = _feedTarget != null ? _feedTarget.transform : transform;
 
+            _inFlightCount++;
+
             FoodPacket packet = FoodPacket.Create(pending.StartWorldPosition, pending.Color);
             packet.Launch(target, flightDuration, _collectorView, HandleArrived);
         }
 
         private void HandleArrived(FoodPacket packet)
         {
+            _inFlightCount--;
             _rider?.RegisterConsumedPixel();
         }
     }

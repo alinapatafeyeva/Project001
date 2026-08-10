@@ -1,6 +1,7 @@
 using System;
 using Project001.Gameplay.Conveyor;
 using Project001.Gameplay.Failure;
+using Project001.Gameplay.Feeding;
 using UnityEngine;
 
 namespace Project001.Gameplay.Collectors
@@ -20,6 +21,23 @@ namespace Project001.Gameplay.Collectors
     /// boarding point, or left riding — while notifying FailureController —
     /// if no slot is free. Holds no movement logic of its own — ConveyorSystem
     /// still owns positioning while riding.
+    ///
+    /// A completed lap is never judged on a stale RemainingHunger: if this
+    /// collector's own FoodFlightController still has reserved food in
+    /// flight (queued or already launched, not yet arrived) the instant a
+    /// lap completes, satisfaction is genuinely undecided until that food
+    /// resolves — sampling IsSatisfied/RemainingHunger right then could
+    /// send an about-to-be-satisfied collector to WaitingLine, where
+    /// nothing ever re-checks satisfaction again (Update below only samples
+    /// IsSatisfied while IsRiding is true), stranding it there forever even
+    /// once fully fed. _awaitingFoodResolution is the explicit state that
+    /// prevents this: it is set the instant a completed lap finds food
+    /// still in flight, checked every frame instead of only once per lap,
+    /// and cleared the moment that food resolves — at which point
+    /// satisfaction is evaluated exactly once, without waiting for another
+    /// full lap. This is deliberately a flag checked every Update, not a
+    /// polling coroutine/loop: it costs the same one-comparison read every
+    /// other branch here already pays per frame.
     /// </summary>
     public class CollectorLifecycle : MonoBehaviour
     {
@@ -43,9 +61,19 @@ namespace Project001.Gameplay.Collectors
         private Project001.Gameplay.WaitingLine.WaitingLine _waitingLine;
         private FailureController _failureController;
         private CollectorView _collectorView;
+        private FoodFlightController _foodFlightController;
+
+        // True from the instant a completed lap finds this rider's own food
+        // still in flight until that food resolves — see this class's own
+        // remarks above. Never set while satisfied (satisfaction always
+        // takes priority — see Update) and never carried across riders.
+        private bool _awaitingFoodResolution;
 
         private CollectorView CollectorViewComponent =>
             _collectorView != null ? _collectorView : _collectorView = GetComponent<CollectorView>();
+
+        private FoodFlightController FoodFlightControllerComponent =>
+            _foodFlightController != null ? _foodFlightController : _foodFlightController = GetComponent<FoodFlightController>();
 
         /// <summary>
         /// Assigns the rider this lifecycle tracks, the conveyor it currently
@@ -77,17 +105,52 @@ namespace Project001.Gameplay.Collectors
             if (_rider.IsSatisfied)
             {
                 // Satisfied collectors leave immediately — never wait for a
-                // lap, and never go to WaitingLine.
+                // lap, and never go to WaitingLine. Checked first, every
+                // frame, even while _awaitingFoodResolution is true: food
+                // that arrives mid-wait and completes satisfaction should
+                // not sit blocked behind HasPendingFood from *other* still
+                // in-flight packets for the same collector (those clamp
+                // harmlessly to zero RemainingHunger once they land — see
+                // ConveyorRider.RegisterConsumedPixel).
+                _awaitingFoodResolution = false;
+
                 if (_conveyorSystem.TryRemoveRider(_rider))
                     ResolveSatisfaction();
 
                 return;
             }
 
+            if (_awaitingFoodResolution)
+            {
+                if (HasFoodInFlight())
+                    return;
+
+                _awaitingFoodResolution = false;
+                ResolveLap();
+                return;
+            }
+
             if (!_conveyorSystem.TryConsumeCompletedLap(_rider))
                 return;
 
+            if (HasFoodInFlight())
+            {
+                // Lap credit is already consumed above — deliberately not
+                // given back. Re-arming ConveyorSystem's own lap counter has
+                // no bearing on when this waits end: that end is driven
+                // entirely by HasFoodInFlight going false, next checked on
+                // the very next Update, not by completing another lap.
+                _awaitingFoodResolution = true;
+                return;
+            }
+
             ResolveLap();
+        }
+
+        private bool HasFoodInFlight()
+        {
+            FoodFlightController controller = FoodFlightControllerComponent;
+            return controller != null && controller.HasPendingFood;
         }
 
         private void ResolveLap()

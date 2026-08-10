@@ -98,6 +98,19 @@ Implementation reminders not already spelled out there:
   level-authoring workflow/tool.
 - Extend `LevelDefinitionValidator`'s existing pixel/HungerCapacity/Match ID
   checks with static solvability checks.
+- **Per-Match Energy Validation** (TODO, not yet implemented): production
+  levels must guarantee that the total available energy (pixel supply) for
+  every MatchId is sufficient to satisfy the total demand of all collectors
+  of that MatchId. When the procedural/final level generator is built, add a
+  validation pass that checks, for every MatchId: total collector demand;
+  total available pixels (and any future energy sources); whether the level
+  is mathematically completable. The generator must never produce a
+  production level where collectors remain unsatisfied simply because the
+  required MatchId runs out of energy. This validation applies to
+  production-generated levels only — debug/test levels (e.g. Feeding Flow,
+  see Phase 8 below) are explicitly allowed to intentionally violate this
+  invariant when testing WaitingLine, Recovery, Endgame Cleanup, or other
+  failure scenarios.
 - Measure average completion time per level and per chapter; avoid chapters
   that finish too quickly or feel repetitive.
 - Define the provisional chapter length (currently ~30 levels, per

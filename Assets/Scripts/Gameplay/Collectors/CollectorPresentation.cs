@@ -153,6 +153,7 @@ namespace Project001.Gameplay.Collectors
             StopActiveSequence();
             Animation.PlayIdleBreathing();
             View.PosePresentation?.SetPose(CharacterPresentationPose.Waiting);
+            View.ShowEnergyBarBelowCharacter();
         }
 
         /// <summary>
@@ -197,7 +198,7 @@ namespace Project001.Gameplay.Collectors
         private void ApplyPresentationDepth(float depthWorldUnits)
         {
             Animation.SetPresentationDepth(depthWorldUnits);
-            View.SetHungerTextPresentationDepth(depthWorldUnits);
+            View.SetEnergyBarPresentationDepth(depthWorldUnits);
         }
 
         /// <summary>
@@ -223,6 +224,7 @@ namespace Project001.Gameplay.Collectors
                 return;
 
             View.PosePresentation?.SetPose(CharacterPresentationPose.Conveyor);
+            View.ShowEnergyBarAboveCharacter();
             StartSequence(BoardingSequence());
         }
 
@@ -340,9 +342,17 @@ namespace Project001.Gameplay.Collectors
 
         private IEnumerator FinalBiteSequence()
         {
-            // Hidden before the satisfied/heart reactions play, so the
-            // player never sees the RemainingHunger label read "0".
-            View.HideHungerText();
+            // EnergyBar is deliberately left showing (full bar, ValueText
+            // "0") through this entire terminal sequence - unlike the
+            // removed standalone HungerText label, which used to be hidden
+            // here specifically so the player never saw a bare "0" with no
+            // visual context. A full EnergyBar reading "0" is the intended,
+            // readable payoff of satisfaction (see docs task "Preserve
+            // energy semantics": "at RemainingHunger = 0: bar full; text =
+            // 0"), not something to hide - it disappears naturally when this
+            // collector's GameObject is destroyed at the end of this
+            // sequence (see CollectorLifecycle.HandleVisualSequenceComplete),
+            // with no separate EnergyBar-specific hide call needed here.
 
             // Foregrounded for the whole terminal sequence, not just the
             // Heart, so an ordinary rider that reaches this collector's

@@ -496,9 +496,11 @@ namespace Project001.EditorTools
 
             // Hunger label sanity: every one of the 20 collectors was given
             // HungerCapacity 1, so RemainingHunger starts at 1 - a quick,
-            // cheap readability/position check (the label itself already
-            // renders at GameplayLayout.HungerLabelWorldSize regardless of
-            // this collector's own visual scale - see CollectorView).
+            // cheap readability/position check. HungerDisplayText now reads
+            // from EnergyBar's own ValueText (see CollectorView) rather than
+            // a separate standalone label, but its contract (the currently
+            // displayed RemainingHunger text) is unchanged, so this check
+            // needed no update when that standalone label was removed.
             for (int q = 0; q < OverlapCheckQueueCount; q++)
             {
                 for (int r = 0; r < OverlapCheckRowsPerQueue; r++)

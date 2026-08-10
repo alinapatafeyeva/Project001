@@ -326,6 +326,8 @@ public static class BootstrapSceneCreator
         return waitingLineObject.GetComponent<Project001.Gameplay.WaitingLine.WaitingLine>();
     }
 
+    private const string EnergyBarPrefabPath = "Assets/Prefabs/UI/EnergyBar.prefab";
+
     private static CollectorQueueBoard CreateCollectorQueueBoard(
         PixelGrid pixelGrid,
         ConveyorSystem conveyorSystem,
@@ -336,9 +338,14 @@ public static class BootstrapSceneCreator
         var boardObject = new GameObject("CollectorQueueBoard", typeof(CollectorQueueBoard));
         boardObject.transform.position = new Vector3(0f, GameplayLayout.CollectorQueueBoardPositionY, 0f);
 
+        var energyBarPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(EnergyBarPrefabPath);
+        if (energyBarPrefab == null)
+            Debug.LogError($"BootstrapSceneCreator: could not load EnergyBar prefab at '{EnergyBarPrefabPath}'; collectors will show no EnergyBar.");
+
         var collectorQueueBoard = boardObject.GetComponent<CollectorQueueBoard>();
         var serializedBoard = new SerializedObject(collectorQueueBoard);
         serializedBoard.FindProperty("characterDatabase").objectReferenceValue = characterDatabase;
+        serializedBoard.FindProperty("energyBarPrefab").objectReferenceValue = energyBarPrefab;
         serializedBoard.FindProperty("pixelGrid").objectReferenceValue = pixelGrid;
         serializedBoard.FindProperty("conveyorSystem").objectReferenceValue = conveyorSystem;
         serializedBoard.FindProperty("waitingLine").objectReferenceValue = waitingLine;
