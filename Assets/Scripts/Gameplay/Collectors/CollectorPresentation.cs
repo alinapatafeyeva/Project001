@@ -199,6 +199,7 @@ namespace Project001.Gameplay.Collectors
         {
             Animation.SetPresentationDepth(depthWorldUnits);
             View.SetEnergyBarPresentationDepth(depthWorldUnits);
+            View.SetContactShadowPresentationDepth(depthWorldUnits);
         }
 
         /// <summary>
