@@ -51,6 +51,7 @@ public static class BootstrapSceneCreator
         Scene scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
 
         Camera mainCamera = CreateCamera();
+        CreateGameplayBackground(mainCamera);
         CreateKeyLight();
         ConfigureEnvironmentLighting();
         PixelGrid pixelGrid = CreatePixelGrid();
@@ -181,6 +182,60 @@ public static class BootstrapSceneCreator
 
         var cameraData = cameraObject.AddComponent<UniversalAdditionalCameraData>();
         cameraData.SetRenderer(rendererIndex);
+    }
+
+    private const string GameplayBackgroundSpritePath = "Assets/Art/UI/Classic/Background.png";
+    private const string GameplayBackgroundSortingLayerName = "Background";
+
+    // Local Z offset (along the camera's own forward axis, since this is a
+    // child of Main Camera - see below) comfortably beyond
+    // GameplayLayout.CameraDistance (10, the distance from the camera to
+    // the shared Z=0 gameplay plane every other element sits at or is
+    // pulled toward - see GameplayLayout.QueueRowDepthStep's own remarks),
+    // so normal depth testing alone already keeps this behind every opaque
+    // 3D character, independent of the Background sorting layer below.
+    private const float GameplayBackgroundLocalDepth = 15f;
+
+    /// <summary>
+    /// Creates the Classic theme gameplay background: a single
+    /// SpriteRenderer showing Background.png, parented to Main Camera so it
+    /// always exactly fills the camera's view at any tilt (see
+    /// GameplayBackground's own remarks for why parenting makes this
+    /// trivial for an orthographic camera). Placed first in the scene
+    /// build order - behind every other gameplay element both by depth
+    /// (GameplayBackgroundLocalDepth) and by sorting layer
+    /// (GameplayBackgroundSortingLayerName, the first/lowest layer in
+    /// Project Settings > Tags and Layers; every other SpriteRenderer in
+    /// this project stays on the default "Default" layer, so this is
+    /// guaranteed behind all of them regardless of sortingOrder). Runtime
+    /// sizing (cover the viewport, preserve aspect, crop rather than
+    /// stretch) happens in GameplayBackground.Awake(); the Fit call here
+    /// only bakes a same-reference-aspect preview into the saved scene,
+    /// exactly like CreateCamera's own orthographicSize bake above.
+    /// </summary>
+    private static void CreateGameplayBackground(Camera mainCamera)
+    {
+        var sprite = AssetDatabase.LoadAssetAtPath<Sprite>(GameplayBackgroundSpritePath);
+        if (sprite == null)
+        {
+            Debug.LogError($"BootstrapSceneCreator: could not load a Sprite at '{GameplayBackgroundSpritePath}'; gameplay background will be missing. Check its TextureImporter Texture Type is set to 'Sprite (2D and UI)'.");
+            return;
+        }
+
+        var backgroundObject = new GameObject(
+            "GameplayBackground",
+            typeof(SpriteRenderer),
+            typeof(GameplayBackground));
+        backgroundObject.transform.SetParent(mainCamera.transform, false);
+        backgroundObject.transform.localPosition = new Vector3(0f, 0f, GameplayBackgroundLocalDepth);
+        backgroundObject.transform.localRotation = Quaternion.identity;
+
+        var spriteRenderer = backgroundObject.GetComponent<SpriteRenderer>();
+        spriteRenderer.sprite = sprite;
+        spriteRenderer.sortingLayerName = GameplayBackgroundSortingLayerName;
+        spriteRenderer.sortingOrder = 0;
+
+        backgroundObject.GetComponent<GameplayBackground>().Fit(9f, 16f);
     }
 
     /// <summary>

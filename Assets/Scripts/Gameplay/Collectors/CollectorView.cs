@@ -59,6 +59,14 @@ namespace Project001.Gameplay.Collectors
     /// Holds no movement, input, or queue logic, and has no knowledge of
     /// the conveyor beyond that — a Collider2D on this root only makes it
     /// detectable via Physics2D point queries for selection.
+    ///
+    /// Also owns this collector's contact shadow (see the contact shadow
+    /// field group's own remarks below and ContactShadowMesh) - a soft,
+    /// low-opacity oval fixed under this collector wherever it goes, purely
+    /// a "grounded on the surface" cue. A third direct child of this root,
+    /// alongside Visual and EnergyBar - never a descendant of either, for
+    /// the same reason EnergyBar is not: it must track neither Visual's yaw
+    /// nor VisualMotion's breathing/bounce/punch animation.
     /// </summary>
     [RequireComponent(typeof(CircleCollider2D))]
     [RequireComponent(typeof(ConveyorRider))]
@@ -307,6 +315,98 @@ namespace Project001.Gameplay.Collectors
         // already used successfully.
         private const float EnergyBarForegroundPullDistance = 0.5f;
 
+        // ----- Contact shadow (see docs task "Refine collector grounding
+        // with contact shadows") ---------------------------------------
+        //
+        // A soft, low-opacity oval sitting at this collector's own feet -
+        // purely a "grounded on the surface" cue, not a directional-light
+        // shadow. A sibling of Visual/EnergyBar under this same root (never
+        // a Visual or VisualMotion descendant), for the same reason
+        // EnergyBar is a sibling: Visual is the only node CollectorAnimation
+        // ever rotates (facing) or moves for presentation depth, and
+        // VisualMotion is the only node the breathing/bounce/punch/heart
+        // reactions ever scale or offset - a shadow parented under either
+        // would inherit that yaw or bounce, reading as pinned to the
+        // character rather than fixed to the ground beneath it. Left at
+        // identity local rotation (no camera-facing counter-rotation the
+        // way EnergyBar applies) - EnergyBar counter-rotates because it
+        // carries readable text/fill that must stay legible; a soft blurred
+        // oval has no such requirement, and every other flat 2D element in
+        // this project (PixelGrid cells, WaitingSlot outlines, Conveyor
+        // path) already renders correctly at identity rotation under the
+        // same tilted camera.
+        //
+        // ----- Root cause of the previous (wrong) placement -----------
+        // The previous pass derived ContactShadowVerticalOffset from
+        // EnergyBarQueueVerticalOffset - it pushed the shadow BELOW
+        // whatever Y the Queue EnergyBar happened to sit at, so the two
+        // would not spatially collide. That treated this as a Y-avoidance
+        // problem ("don't share the bar's Y") when it is actually a DEPTH
+        // ordering problem ("shadow behind the body, body behind the bar" -
+        // see ContactShadowCameraPullDistance/EnergyBarForegroundPullDistance,
+        // both already real-Z-tested against each other and against the
+        // opaque body). Chasing Y-avoidance instead of the real footprint
+        // moved the shadow well past the character's own feet, into the
+        // dead space toward the NEXT queue row - nowhere near "under the
+        // character" any more, and also tied to EnergyBar's own Queue-only
+        // offset even though the shadow must look right on the Conveyor,
+        // WaitingLine, and Recovery Row too.
+        //
+        // This pass derives both size and vertical placement from
+        // CharacterVisual's own real rendered bounds instead (measured
+        // once, right after Initialize's own CharacterVisual-recentering
+        // block, in THIS root's local space via
+        // CollectorAnimation.ComputeLocalRendererBounds(transform) - the
+        // same shared helper that recentering already uses, just queried
+        // relative to this root instead of CharacterVisual itself, so no
+        // further CollectorSpriteScale division is needed the way the old
+        // EnergyBar-derived constants required). No EnergyBar offset is
+        // read anywhere in this derivation. See CreateContactShadow.
+        // Deliberately a stylized presentation decal, sized directly as a
+        // multiple of the character's own visible width - not a physically
+        // "correct" footprint. Reference comparison (Shadow_Reference.jpg)
+        // target: ~1.5-2.0x the character's visible width, extending clearly
+        // past the silhouette on both sides.
+        private const float ContactShadowWidthFraction = 1.7f;
+
+        // On-screen height as a fraction of on-screen width - reference
+        // target ~15-25%, a flat wide ellipse, not a round puddle.
+        private const float ContactShadowHeightToWidthRatio = 0.2f;
+
+        // Fallback used only if a species' visualPrefab has no renderers to
+        // measure (CollectorAnimation.ComputeLocalRendererBounds returns
+        // null) - should not happen for any approved Character_XX prefab,
+        // but keeps this collector's shadow present rather than throwing.
+        private const float ContactShadowFallbackWidth = 1f;
+
+        // How far the shadow's own centre sits above the character's exact
+        // measured bottom edge (bounds.min.y), as a fraction of the shadow's
+        // own height - keeps a visible portion below the feet while letting
+        // the rest tuck under the body, so the shadow still reads even when
+        // the character overlaps its centre.
+        private const float ContactShadowOcclusionBias = 0.15f;
+
+        // Small fixed pull toward the camera (see ApplyContactShadowLocalPosition)
+        // so this shadow reliably Z-tests behind its own collector's opaque
+        // body. Safe at this size for a camera-facing decal (no real depth
+        // extent of its own) - only affects the portion overlapping the
+        // character's own silhouette; the parts extending past it on either
+        // side are visible regardless.
+        private const float ContactShadowCameraPullDistance = 0.15f;
+
+        // Color/opacity live on ContactShadowMesh.SharedMaterial (a single
+        // shared Material, since neither ever varies per collector or per
+        // MatchId), not as a per-instance property here.
+
+        private Transform _contactShadowTransform;
+        private float _contactShadowDepth;
+
+        // This instance's own measured footprint Y (root-local), set once
+        // by CreateContactShadow from CharacterVisual's real rendered
+        // bounds - see the contact shadow field group's own remarks above
+        // for why this replaced a fixed, EnergyBar-derived constant.
+        private float _contactShadowBaseY;
+
         // Fallback fill colour, used only if ColorPalette.TryGetByMatchId
         // fails to resolve this collector's own MatchId (an id outside the
         // approved 1-20 table - see ColorPalette) - logged as an error when
@@ -504,6 +604,12 @@ namespace Project001.Gameplay.Collectors
             _posePresentation = modelInstance.GetComponentInChildren<CharacterPosePresentation>(true);
             _feedTarget = modelInstance.GetComponentInChildren<FeedTarget>(true);
 
+            // Must run AFTER CharacterVisual is instantiated and recentered
+            // above - it measures that same geometry (see CreateContactShadow's
+            // own remarks) to place/size this collector's shadow from its
+            // real footprint instead of a fixed constant.
+            CreateContactShadow();
+
             CreateEnergyBar(energyBarPrefab, matchId);
         }
 
@@ -559,6 +665,93 @@ namespace Project001.Gameplay.Collectors
         {
             _energyBarDepth = depthWorldUnits;
             ApplyEnergyBarLocalPosition();
+        }
+
+        /// <summary>
+        /// Keeps this collector's contact shadow a fixed distance BEHIND
+        /// wherever Visual currently is (see ContactShadowCameraPullDistance) -
+        /// the mirror image of SetEnergyBarPresentationDepth above, called
+        /// by the same CollectorPresentation.ApplyPresentationDepth call
+        /// site with the same depthWorldUnits, so the shadow tracks every
+        /// queue-row depth change and every waiting-source baseline reset
+        /// automatically, in every location (Queue, Conveyor, WaitingLine,
+        /// Recovery Row) - there is no separate shadow-positioning call site
+        /// anywhere else.
+        /// </summary>
+        public void SetContactShadowPresentationDepth(float depthWorldUnits)
+        {
+            _contactShadowDepth = depthWorldUnits;
+            ApplyContactShadowLocalPosition();
+        }
+
+        private void ApplyContactShadowLocalPosition()
+        {
+            if (_contactShadowTransform == null)
+                return;
+
+            Vector3 baseOffset = new Vector3(0f, _contactShadowBaseY, 0f)
+                + GameplayLayout.CameraForward * ContactShadowCameraPullDistance;
+            _contactShadowTransform.localPosition = baseOffset + (-GameplayLayout.CameraForward) * _contactShadowDepth;
+        }
+
+        /// <summary>
+        /// Creates this collector's contact shadow as a sibling of Visual
+        /// under this root (see the contact shadow field group's own class
+        /// remarks) - called from Initialize AFTER CharacterVisual exists
+        /// and has already been recentered, since this measures it.
+        ///
+        /// A stylized camera-facing presentation decal (see
+        /// ContactShadowMesh), sized directly as a multiple of the
+        /// character's own measured visible width (ContactShadowWidthFraction/
+        /// HeightToWidthRatio) rather than derived from any ground-plane
+        /// projection - visual similarity to the approved reference is the
+        /// only goal here, not physical accuracy. Measured once, at this
+        /// collector's rest pose, so placement/size never changes afterward.
+        /// </summary>
+        private void CreateContactShadow()
+        {
+            Bounds? footprintBounds = CollectorAnimation.ComputeLocalRendererBounds(transform);
+
+            float width;
+            float footprintY;
+
+            if (footprintBounds.HasValue)
+            {
+                Bounds bounds = footprintBounds.Value;
+                width = bounds.size.x * ContactShadowWidthFraction;
+                footprintY = bounds.min.y;
+            }
+            else
+            {
+                Debug.LogError($"CollectorView: '{name}' has no renderers to measure a contact shadow footprint from; using a fallback size/position.", this);
+                width = ContactShadowFallbackWidth;
+                footprintY = -width * 0.3f;
+            }
+
+            float height = width * ContactShadowHeightToWidthRatio;
+
+            var shadowObject = new GameObject("ContactShadow", typeof(MeshFilter), typeof(MeshRenderer));
+            shadowObject.transform.SetParent(transform, false);
+            shadowObject.transform.localScale = new Vector3(width, height, 1f);
+
+            var meshFilter = shadowObject.GetComponent<MeshFilter>();
+            meshFilter.sharedMesh = ContactShadowMesh.SharedMesh;
+
+            var meshRenderer = shadowObject.GetComponent<MeshRenderer>();
+            meshRenderer.sharedMaterial = ContactShadowMesh.SharedMaterial;
+            meshRenderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            meshRenderer.receiveShadows = false;
+            meshRenderer.lightProbeUsage = UnityEngine.Rendering.LightProbeUsage.Off;
+            meshRenderer.reflectionProbeUsage = UnityEngine.Rendering.ReflectionProbeUsage.Off;
+            // One order step behind the rest of this project's default-layer
+            // sprites (PixelGrid cells, WaitingSlot outlines, Conveyor path)
+            // as an explicit, cheap extra guarantee alongside the real Z
+            // placement above.
+            meshRenderer.sortingOrder = -1;
+
+            _contactShadowTransform = shadowObject.transform;
+            _contactShadowBaseY = footprintY + height * ContactShadowOcclusionBias;
+            ApplyContactShadowLocalPosition();
         }
 
         private void ApplyEnergyBarLocalPosition()

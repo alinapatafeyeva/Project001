@@ -77,6 +77,17 @@ Implementation reminders not already spelled out there:
   `GameplayConstants`'s own remarks on `BaseConveyorMoveSpeed` for where
   this hooks in. Re-check pixel-consumption alignment sampling at ×2 speed
   so a fast-moving rider cannot skip a row/column.
+- **Deferred: final collector grounding polish** (visual polish, not a
+  gameplay blocker). Current state (`CollectorView.CreateContactShadow` +
+  `ContactShadowMesh`, `QueueGroundingZone`) is accepted as good enough for
+  now. Revisit once Conveyor, Waiting Line, Recovery Row, and the rest of
+  the level presentation exist:
+  - Re-tune contact-shadow width/softness/visibility.
+  - Compare again against `reference/Shadow_Reference.jpg`.
+  - Reconsider whether `QueueGroundingZone` is still needed once final
+    Conveyor/Waiting Line/Recovery Row surfaces exist.
+  - Do this polish only in the context of the completed level presentation,
+    not in isolation.
 
 ---
 

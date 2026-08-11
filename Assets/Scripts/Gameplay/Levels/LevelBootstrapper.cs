@@ -1,6 +1,7 @@
 using Project001.Gameplay.Collectors;
 using Project001.Gameplay.Conveyor;
 using Project001.Gameplay.Pixels;
+using Project001.Gameplay.Presentation;
 using UnityEngine;
 
 namespace Project001.Gameplay.Levels
@@ -210,6 +211,13 @@ namespace Project001.Gameplay.Levels
 
         private void BuildLevel(LevelDefinition levelDefinition)
         {
+            // Purely decorative - a soft grounding haze behind the queue
+            // area (see QueueGroundingZone). Built entirely from code here
+            // rather than baked into Bootstrap.unity via
+            // BootstrapSceneCreator, so it takes effect immediately without
+            // needing a manual scene regeneration.
+            QueueGroundingZone.Create();
+
             pixelGrid.Initialize(levelDefinition.PixelLayout);
             conveyorSystem.Configure(GameplayConstants.BaseConveyorCapacity, GameplayConstants.BaseConveyorMoveSpeed);
             waitingLine.Initialize(GameplayConstants.WaitingLineCapacity);
