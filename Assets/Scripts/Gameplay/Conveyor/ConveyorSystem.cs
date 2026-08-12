@@ -45,6 +45,17 @@ namespace Project001.Gameplay.Conveyor
 
         public bool HasSpace => _riders.Count < capacity;
 
+        /// <summary>
+        /// The current move speed riders are actually travelling at, in
+        /// world units per second — read-only, presentation-facing (see
+        /// Project001.Gameplay.Presentation.ConveyorBeltAnimation), so a
+        /// belt-animation speed can stay tied to the real gameplay speed
+        /// (including ApplySpeedMultiplier changes, e.g. Endgame Cleanup)
+        /// without a second copy of any speed constant. Never settable from
+        /// outside this class.
+        /// </summary>
+        public float MoveSpeed => moveSpeed;
+
         private void Awake()
         {
             capacity = Mathf.Max(1, capacity);

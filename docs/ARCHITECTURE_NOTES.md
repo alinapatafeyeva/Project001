@@ -194,13 +194,40 @@ immediate and direct — there is no pixel-flight animation, no `FeedTarget`,
 and no reserved-hunger concept yet. `RemainingHunger` changes the instant a
 pixel is matched, in the same frame.
 
-## ConveyorPath / ConveyorPathRenderer / ConveyorRider / ConveyorSystem
+## ConveyorPath / ConveyorRider / ConveyorSystem
 
 Location: `Assets/Scripts/Gameplay/Conveyor/`
 
 `ConveyorPath` is a procedural rounded-rectangle closed route with
-normalized progress sampling. `ConveyorPathRenderer` is its purely visual
-representation. `ConveyorRider` holds the minimal state a riding collector
+normalized progress sampling. Its visual representation is
+`Project001.Gameplay.Presentation.ConveyorVisual`
+(`Assets/Scripts/Gameplay/Presentation/ConveyorVisual.cs`) — a SpriteRenderer
+showing the Classic theme's `Conveyor.png`, parented to the same GameObject
+and reading nothing from ConveyorPath/ConveyorSystem, so it can be replaced
+by an animated presentation without any gameplay-side change. (Superseded
+the earlier `ConveyorPathRenderer` LineRenderer placeholder.)
+
+The belt's own movement animation is a second, sibling presentation layer:
+`Project001.Gameplay.Presentation.ConveyorBeltAnimation`
+(`Assets/Scripts/Gameplay/Presentation/ConveyorBeltAnimation.cs`) — a
+procedurally-built, closed-loop ribbon mesh of soft scrolling chevron
+markers drawn over ConveyorVisual's belt band. Never moves, rotates, or
+scales Conveyor.png itself — only the ribbon's material texture offset
+animates, once per frame. Built from one continuous walk of
+`ConveyorPath.Points` (every straight and every rounded corner in a single
+fixed order), so the scroll reads continuously all the way around with no
+per-corner seam. Direction is derived from `ConveyorPath`/`ConveyorSystem`'s
+own established counter-clockwise point order (`ConveyorSystem.Update`'s own
+comment: "a positive delta progress walks the path's point order, which is
+counter-clockwise"), never guessed from Conveyor.png's arrow decals — the
+two happen to agree, but the code path never depends on that agreement.
+Speed is read live every frame from the new `ConveyorSystem.MoveSpeed`
+read-only property, so the belt visibly speeds up/slows down with any
+`ApplySpeedMultiplier` change (e.g. Endgame Cleanup) with no duplicated
+speed constant. Ribbon vertices reuse `ConveyorBeltCalibration`'s existing
+belt-vs-path offset, the same correction riding collectors already apply,
+so the markers sit on the real rendered belt centerline. `ConveyorRider`
+holds the minimal state a riding collector
 needs — `MatchTypeId`, `HungerCapacity`, `RemainingHunger`,
 `RemainingHungerChanged` event, riding state, and (for presentation only)
 `RidingOrientation`. `ConveyorSystem` moves every rider counter-clockwise at

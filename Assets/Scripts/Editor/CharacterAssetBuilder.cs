@@ -70,8 +70,12 @@ namespace Project001.EditorTools
     ///
     /// Every assembled model also gets a FeedTarget child (see
     /// CreateFeedTarget) - the world position a FoodPacket flies to under
-    /// the Pixel Feed Flow pipeline (Project001.Gameplay.Feeding). Added
-    /// for all four species here, not per-species by hand.
+    /// the Pixel Feed Flow pipeline (Project001.Gameplay.Feeding) - and a
+    /// GroundAnchor child (see CreateGroundAnchor) - this species' own true
+    /// visual ground/contact point, consumed by CollectorView to align
+    /// riding presentation to the Conveyor belt without ever assuming every
+    /// species shares the same contact point relative to its own bounds
+    /// center. Added for all four species here, not per-species by hand.
     /// </summary>
     public static class CharacterAssetBuilder
     {
@@ -320,6 +324,12 @@ namespace Project001.EditorTools
             // model automatically.
             CreateFeedTarget(root, combined.Value);
 
+            // Every species also gets a GroundAnchor (see CreateGroundAnchor)
+            // - this species' own true visual ground/contact point, from the
+            // exact same pre-scale bounds measurement, for the exact same
+            // "ordinary child transform, scales automatically" reason.
+            CreateGroundAnchor(root, combined.Value, species);
+
             Vector3 size = combined.Value.size;
 
             // Shared-height-only: every species is scaled so its own height
@@ -381,6 +391,57 @@ namespace Project001.EditorTools
             feedTargetObject.transform.SetParent(root.transform, false);
             feedTargetObject.transform.localPosition =
                 localBounds.center + Vector3.up * (localBounds.extents.y * FeedTargetHeightFraction);
+        }
+
+        // How far DOWN from bounds' vertical center a GroundAnchor sits by
+        // default, expressed as a fraction of the model's own half-height
+        // (localBounds.extents.y) - mirrors FeedTargetHeightFraction's own
+        // convention exactly (a single shared fraction applied to each
+        // species' own measured bounds already produces a species-
+        // appropriate absolute offset), just measured downward instead of
+        // upward. 1.0 sits exactly at the model's own lowest rendered point
+        // (bounds.min.y) - the sensible default for "where does this model
+        // actually touch the ground", per the investigation's own request
+        // to "prefer deriving an initial position from renderer bounds".
+        private const float GroundAnchorHeightFraction = 1.0f;
+
+        // Escape hatch for a single species whose bounds-bottom measurement
+        // does not land on that species' own true visual contact point
+        // (e.g. a stray low-hanging polygon, or a limb that extends below
+        // where the model actually reads as "standing") - empty until real
+        // Play Mode screenshot review shows one is needed for a specific
+        // species. Overrides GroundAnchorHeightFraction for that species
+        // only when present. Deliberately keyed by Species, not MatchId:
+        // GroundAnchor is a per-MODEL-FAMILY concept (see GroundAnchor's own
+        // class remarks) - every Match ID sharing a species shares its
+        // model, and therefore its correct ground contact point.
+        private static readonly Dictionary<Species, float> GroundAnchorHeightFractionOverride = new Dictionary<Species, float>();
+
+        /// <summary>
+        /// Adds a GroundAnchor child to every species' assembled model,
+        /// mirroring CreateFeedTarget immediately above almost exactly (see
+        /// its own remarks for why root, not body, and why pre-scale
+        /// localBounds is the right space) - measuring DOWN from bounds'
+        /// vertical center instead of up. This is this species' own true
+        /// visual ground/contact point (see GroundAnchor's own class
+        /// remarks), consumed at runtime by CollectorView to align the
+        /// character's PRESENTATION to wherever it is actually standing
+        /// (Conveyor riding today - see CollectorView.
+        /// ApplyConveyorPresentationOffset) - never derived from the
+        /// collector root, and never a per-MatchId runtime lookup: this is
+        /// the only place any species-specific ground-contact knowledge
+        /// exists at all, baked once per model family, at build time.
+        /// </summary>
+        private static void CreateGroundAnchor(GameObject root, Bounds localBounds, Species species)
+        {
+            float fraction = GroundAnchorHeightFractionOverride.TryGetValue(species, out float overrideFraction)
+                ? overrideFraction
+                : GroundAnchorHeightFraction;
+
+            var groundAnchorObject = new GameObject("GroundAnchor", typeof(GroundAnchor));
+            groundAnchorObject.transform.SetParent(root.transform, false);
+            groundAnchorObject.transform.localPosition =
+                localBounds.center - Vector3.up * (localBounds.extents.y * fraction);
         }
 
         /// <summary>

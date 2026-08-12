@@ -21,7 +21,7 @@ namespace Project001.Gameplay.Presentation
     /// (first/lowest in Project Settings > Tags and Layers, every other
     /// SpriteRenderer in the project stays on "Default") places it behind
     /// every other SpriteRenderer (PixelGrid cells, WaitingSlot outlines,
-    /// ConveyorPathRenderer) regardless of Z.
+    /// ConveyorVisual) regardless of Z.
     ///
     /// Scales to always fully cover the visible viewport - crop, never
     /// stretch - using the exact same GameplayLayout.ComputeOrthographicSize

@@ -51,8 +51,8 @@ namespace Project001.Gameplay.Presentation
         /// The shared transparent Unlit URP material, textured with the
         /// shared soft radial-gradient texture and tinted ShadowColor. Null
         /// only if this project's URP package does not expose a shader named
-        /// ShaderName (logged as an error there, mirroring
-        /// ConveyorPathRenderer's own Shader.Find null-check convention).
+        /// ShaderName (logged as an error there, mirroring this project's
+        /// usual Shader.Find null-check convention).
         /// </summary>
         public static Material SharedMaterial => _sharedMaterial != null ? _sharedMaterial : _sharedMaterial = CreateMaterial();
 

@@ -552,5 +552,71 @@ namespace Project001.Gameplay.Presentation
             float sizeToFitHeight = CameraFrameHeight * 0.5f * Mathf.Cos(CameraTiltRadians);
             return Mathf.Max(sizeToFitWidth, sizeToFitHeight);
         }
+
+        // ----- Presentation depth layering (explicit rendering-order contract) -----
+        // Every gameplay-plane element that must never visually occlude a
+        // collector, and every collector-attached element that must always
+        // render in FRONT of the character itself, is pushed/pulled a real,
+        // explicit distance along CameraForward - never left to sortingOrder
+        // alone (see the now-removed SortingGroup attempt's own lesson,
+        // QueueRowDepthStep's remarks: "sortingOrder alone cannot [win an
+        // opaque Z-test]"). Collecting the three riding-relevant distances
+        // here, in the one file this project already treats as composition's
+        // single source of truth, makes the intended stack an explicit,
+        // named contract instead of three independently-authored constants
+        // in three different files that merely happen to agree:
+        //
+        //   GameplayBackground (BootstrapSceneCreator.GameplayBackgroundLocalDepth,
+        //   15 - far deeper than every distance below combined)
+        //     -> ConveyorVisual (ConveyorVisualDepthPush, pushed AWAY from camera)
+        //       -> ContactShadow (ContactShadowDepthPush, pushed AWAY from camera)
+        //         -> Character baseline (0 - the shared Z=0 gameplay plane
+        //            every ConveyorRider/collector root actually sits on)
+        //           -> EnergyBar (EnergyBarDepthPull, pulled TOWARD camera)
+        //
+        // Each step only needs to clear the previous layer by more than a
+        // collector's own real camera-facing depth extent (~0.35-0.45 world
+        // units at CollectorSpriteScale - see CollectorAnimation.
+        // TerminalForegroundPullDistance's own remarks for that figure's
+        // origin) for the ordering to hold structurally, everywhere around
+        // the loop, regardless of any per-collector alignment variance -
+        // never a coincidence of whatever numbers happened to be chosen.
+        //
+        // 5.0 (raised from an initial 1.5, then 3.5 - see its own history): once
+        // ConveyorBeltCalibration started shifting a riding collector's own
+        // world Y position (to follow the belt art, not just the
+        // mathematical path), that same Y shift also changes the
+        // collector's camera-space DEPTH under this project's tilted
+        // camera (CameraForward has a nonzero Y component - see
+        // GameplayLayout.CameraForward's own remarks), shrinking the
+        // margin 1.5 alone left. Confirmed via a real Play Mode diagnostic
+        // (ConveyorAlignmentDiagnostic) that conservatively checks EVERY
+        // world-axis-aligned bounding-box corner of a riding collector
+        // (deliberately a looser, safer test than the collector's own true
+        // rotated silhouette, which real screenshots at every sampled edge/
+        // corner/species already confirmed renders correctly with no
+        // clipping even before this margin was raised) - a real Play Mode
+        // run at 3.5 already reached zero violations (worst-case margin
+        // +0.14, at the Bottom straight); 5.0 gives that same worst case a
+        // full +1 unit of comfortable headroom instead of a thin margin,
+        // still far short of the camera's far clip plane.
+        public const float ConveyorVisualDepthPush = 5.0f;
+
+        // The scrolling belt-marker ribbon (ConveyorBeltAnimation) sits
+        // between ConveyorVisual (5.0, the static frame/belt art) and
+        // ContactShadow (0.15) in this same stack — pulled closer to the
+        // camera than the static art so it draws on top of it (this
+        // project's transparent objects sort back-to-front by real camera
+        // distance, not sortingOrder alone — see ConveyorVisual's own
+        // remarks), while staying far short of ContactShadow/the character
+        // baseline (0) so it can never win a draw-order contest against a
+        // riding collector. 4.5 leaves a full 4.5-unit margin under the
+        // baseline — vastly more than a collector's own ~0.35-0.45 real
+        // depth extent (see ConveyorVisualDepthPush's own history) — and a
+        // comfortable 0.5-unit gap under ConveyorVisual so it reliably wins
+        // that ordering too.
+        public const float ConveyorBeltAnimationDepthPush = 4.5f;
+        public const float ContactShadowDepthPush = 0.15f;
+        public const float EnergyBarDepthPull = 0.5f;
     }
 }
