@@ -8,23 +8,43 @@ using UnityEngine;
 namespace Project001.Gameplay.Collectors
 {
     /// <summary>
-    /// A single visual collector slot. Owns a three-level presentation
+    /// A single visual collector slot. Owns a four-level presentation
     /// hierarchy under this root:
     ///
     ///   Collector root (gameplay-owned; queue placement, Conveyor movement,
-    ///   WaitingLine/RecoveryRowView reparenting)
-    ///   └── Visual — the yaw pivot; CollectorAnimation's Update() is the
-    ///       only thing that ever touches its localRotation, and never its
-    ///       localPosition/localScale (always identity/one)
-    ///       └── VisualMotion — the scale/position pivot; breathing, boarding
-    ///           bounce, eating/satisfied punches, and the heart pulse/
-    ///           collapse are the only things that ever touch its
-    ///           localScale/localPosition, and never its localRotation
-    ///           (always identity)
-    ///           └── CharacterVisual — the resolved Character_XX prefab instance
-    ///               (injected via Initialize(), pivot-corrected against its
-    ///               own mesh bounds), already carrying its own baked
-    ///               Character_XX material on its renderer(s)
+    ///   WaitingLine/RecoveryRowView reparenting) - ALWAYS exactly on
+    ///   ConveyorPath/Queue/WaitingLine/RecoveryRow placement; nothing
+    ///   below this node ever feeds back into where gameplay thinks this
+    ///   collector is (selection, boarding, lap counting, feeding all key
+    ///   off this root/its ConveyorRider, never anything under it).
+    ///   └── PresentationOffset — a translation-only "presentation
+    ///       transform" (see its own field remarks); ApplyConveyorPresentationOffset
+    ///       is the only thing that ever touches its localPosition, and
+    ///       never its localRotation/localScale (always identity/one).
+    ///       Parent of the three siblings below, so a riding-only
+    ///       correction moves all three together without each separately
+    ///       re-deriving it.
+    ///       ├── Visual — the yaw pivot; CollectorAnimation's Update() is the
+    ///       │   only thing that ever touches its localRotation, and never its
+    ///       │   localPosition/localScale (always identity/one)
+    ///       │   └── VisualMotion — the scale/position pivot; breathing, boarding
+    ///       │       bounce, eating/satisfied punches, and the heart pulse/
+    ///       │       collapse are the only things that ever touch its
+    ///       │       localScale/localPosition, and never its localRotation
+    ///       │       (always identity)
+    ///       │       └── CharacterVisual — the resolved Character_XX prefab
+    ///       │           instance (injected via Initialize(), pivot-corrected
+    ///       │           against its own mesh bounds once and never moved
+    ///       │           again), already carrying its own baked Character_XX
+    ///       │           material on its renderer(s), and its own baked
+    ///       │           GroundAnchor/FeedTarget marker children (see
+    ///       │           Project001.Gameplay.Presentation.GroundAnchor,
+    ///       │           CharacterAssetBuilder.CreateGroundAnchor) - this
+    ///       │           species' own true visual ground/contact point,
+    ///       │           the sole input ApplyConveyorPresentationOffset
+    ///       │           reads to decide PresentationOffset's own position.
+    ///       ├── EnergyBar — see its own field group remarks below.
+    ///       └── ContactShadow — see its own field group remarks below.
     ///
     /// Splitting yaw (Visual) from scale/position (VisualMotion) is what
     /// makes it structurally impossible for a reaction animation to
@@ -32,7 +52,11 @@ namespace Project001.Gameplay.Collectors
     /// different owners, not different fields on the same node a routine
     /// could accidentally touch — see CollectorAnimation for why the old
     /// single-node design was the actual root cause of the rotation bugs
-    /// this replaced.
+    /// this replaced. PresentationOffset sitting ABOVE Visual (rather than
+    /// the riding correction living on CharacterVisual, below Visual, as it
+    /// used to) is what makes a WORLD-space X/Y correction read correctly
+    /// regardless of Visual's own current yaw — see PresentationOffset's own
+    /// remarks and ConveyorBeltCalibration.
     ///
     /// This view never decides pose or facing, only which prefab to
     /// instantiate; CollectorPresentation and CollectorAnimation own the
@@ -52,10 +76,12 @@ namespace Project001.Gameplay.Collectors
     /// that exact same responsibility - showing both at once was a
     /// confirmed-redundant duplicate number on the character body (see docs
     /// task "Refine the live Energy Bar presentation"). EnergyBar itself is
-    /// a direct child of this root (a sibling of Visual, never a descendant
-    /// of it) for the same reason HungerText always was: Visual is the only
-    /// node CollectorAnimation ever rotates or depth-shifts for
-    /// presentation, so a sibling of it is unaffected by any of that.
+    /// a sibling of Visual under PresentationOffset (never a descendant
+    /// of Visual) for the same reason HungerText always was: Visual is the only
+    /// node CollectorAnimation ever rotates for facing, so a sibling of it is
+    /// unaffected by that rotation (it still shares PresentationOffset's own
+    /// riding-only translation with Visual, deliberately - see
+    /// PresentationOffset's remarks).
     /// Holds no movement, input, or queue logic, and has no knowledge of
     /// the conveyor beyond that — a Collider2D on this root only makes it
     /// detectable via Physics2D point queries for selection.
@@ -63,10 +89,12 @@ namespace Project001.Gameplay.Collectors
     /// Also owns this collector's contact shadow (see the contact shadow
     /// field group's own remarks below and ContactShadowMesh) - a soft,
     /// low-opacity oval fixed under this collector wherever it goes, purely
-    /// a "grounded on the surface" cue. A third direct child of this root,
-    /// alongside Visual and EnergyBar - never a descendant of either, for
-    /// the same reason EnergyBar is not: it must track neither Visual's yaw
-    /// nor VisualMotion's breathing/bounce/punch animation.
+    /// a "grounded on the surface" cue. A sibling of Visual and EnergyBar
+    /// under PresentationOffset, never a descendant of either, for the same
+    /// reason EnergyBar is not: it must track neither Visual's yaw nor
+    /// VisualMotion's breathing/bounce/punch animation (but, like EnergyBar,
+    /// deliberately does share PresentationOffset's own riding-only
+    /// translation).
     /// </summary>
     [RequireComponent(typeof(CircleCollider2D))]
     [RequireComponent(typeof(ConveyorRider))]
@@ -312,8 +340,11 @@ namespace Project001.Gameplay.Collectors
         // own opaque 3D geometry (and, while queued, in front of whichever
         // nearer row's geometry might otherwise share its screen position),
         // never behind it - same value/purpose the removed HungerText label
-        // already used successfully.
-        private const float EnergyBarForegroundPullDistance = 0.5f;
+        // already used successfully. Sourced from GameplayLayout.
+        // EnergyBarDepthPull - see its own remarks for the full explicit
+        // Background -> Conveyor -> ContactShadow -> Character -> EnergyBar
+        // depth-layering contract this is the nearest-to-camera step of.
+        private const float EnergyBarForegroundPullDistance = GameplayLayout.EnergyBarDepthPull;
 
         // ----- Contact shadow (see docs task "Refine collector grounding
         // with contact shadows") ---------------------------------------
@@ -386,13 +417,16 @@ namespace Project001.Gameplay.Collectors
         // the character overlaps its centre.
         private const float ContactShadowOcclusionBias = 0.15f;
 
-        // Small fixed pull toward the camera (see ApplyContactShadowLocalPosition)
+        // Small fixed push away from the camera (see ApplyContactShadowLocalPosition)
         // so this shadow reliably Z-tests behind its own collector's opaque
         // body. Safe at this size for a camera-facing decal (no real depth
         // extent of its own) - only affects the portion overlapping the
         // character's own silhouette; the parts extending past it on either
-        // side are visible regardless.
-        private const float ContactShadowCameraPullDistance = 0.15f;
+        // side are visible regardless. Sourced from GameplayLayout.
+        // ContactShadowDepthPush - see its own remarks for the full explicit
+        // Background -> Conveyor -> ContactShadow -> Character -> EnergyBar
+        // depth-layering contract this is one named step of.
+        private const float ContactShadowCameraPullDistance = GameplayLayout.ContactShadowDepthPush;
 
         // Color/opacity live on ContactShadowMesh.SharedMaterial (a single
         // shared Material, since neither ever varies per collector or per
@@ -406,6 +440,46 @@ namespace Project001.Gameplay.Collectors
         // bounds - see the contact shadow field group's own remarks above
         // for why this replaced a fixed, EnergyBar-derived constant.
         private float _contactShadowBaseY;
+
+        // ----- Conveyor riding presentation offset (see PresentationOffset,
+        // SetConveyorGroundingCorrection, ApplyConveyorPresentationOffset)
+        // ---------------------------------------------------------------
+        //
+        // PresentationOffset is a dedicated, translation-only node between
+        // this root and Visual/EnergyBar/ContactShadow (see Initialize) -
+        // the "presentation transform" separating the logical
+        // ConveyorRider/root position (still exactly on ConveyorPath,
+        // gameplay-owned, never touched by any of this) from where the
+        // character/shadow/bar actually render. Because it sits ABOVE
+        // Visual (never itself rotated - only Visual's own yaw pivot
+        // rotates), a world-space X/Y offset assigned to its localPosition
+        // (divided by CollectorSpriteScale, the only scale between this
+        // node and world space) reads correctly regardless of which way the
+        // rider currently faces - unlike a correction applied to
+        // CharacterVisual itself, which sits BELOW Visual and would need
+        // its own yaw counter-rotated out first.
+        private Transform _presentationOffset;
+
+        // True only while this collector is actively riding the Conveyor
+        // (see SetConveyorGroundingCorrection) - gates Update() so
+        // PresentationOffset is only ever recomputed (and costs anything)
+        // while riding; 0 the rest of this collector's lifetime.
+        private bool _isRidingConveyor;
+
+        // This collector's GroundAnchor, resolved from the instantiated
+        // CharacterVisual by Initialize() - this species' own true visual
+        // ground/contact point (see GroundAnchor's own class remarks and
+        // CharacterAssetBuilder.CreateGroundAnchor), baked once per model
+        // family at build time. The sole input ApplyConveyorPresentationOffset
+        // uses to decide how far PresentationOffset must move - never a
+        // hand-tuned per-species runtime constant, never derived from this
+        // collector's own root. Null for any species whose visualPrefab
+        // predates this feature (mirroring FeedTarget's own "absent rather
+        // than silently wrong" contract) - ApplyConveyorPresentationOffset
+        // is a no-op while this is null, so a collector simply keeps riding
+        // exactly on the logical path with no presentation correction
+        // rather than crashing.
+        private GroundAnchor _groundAnchor;
 
         // Fallback fill colour, used only if ColorPalette.TryGetByMatchId
         // fails to resolve this collector's own MatchId (an id outside the
@@ -436,6 +510,18 @@ namespace Project001.Gameplay.Collectors
         /// runtime GetComponent call.
         /// </summary>
         public CollectorPresentation Presentation => _presentation;
+
+        /// <summary>
+        /// This collector's PresentationOffset child transform - the
+        /// translation-only "presentation transform" between this root and
+        /// Visual/EnergyBar/ContactShadow, created by Initialize(). Exposed
+        /// read-only for verification/diagnostic tooling to inspect the
+        /// currently-applied riding correction directly; gameplay never
+        /// reads or writes it. See the class remarks and
+        /// ApplyConveyorPresentationOffset for what actually drives it.
+        /// Null until Initialize() has run.
+        /// </summary>
+        public Transform PresentationOffset => _presentationOffset;
 
         /// <summary>
         /// This collector's Visual child transform — the yaw pivot created
@@ -486,6 +572,17 @@ namespace Project001.Gameplay.Collectors
         /// falls back to this collector's own root transform when it is.
         /// </summary>
         public FeedTarget FeedTarget => _feedTarget;
+
+        /// <summary>
+        /// This collector's GroundAnchor, resolved from the instantiated
+        /// CharacterVisual by Initialize() - this species' own true visual
+        /// ground/contact point (see GroundAnchor's own class remarks and
+        /// CharacterAssetBuilder.CreateGroundAnchor). Exposed read-only for
+        /// verification/diagnostic tooling to inspect directly; gameplay
+        /// never reads this. Null for any species whose visualPrefab was
+        /// not built with one.
+        /// </summary>
+        public GroundAnchor GroundAnchor => _groundAnchor;
 
         /// <summary>
         /// Currently displayed RemainingHunger text. Read-only — this view
@@ -584,8 +681,21 @@ namespace Project001.Gameplay.Collectors
         {
             _matchId = matchId;
 
+            // The "presentation transform" between this root (gameplay-owned;
+            // always exactly on ConveyorPath/Queue/WaitingLine/RecoveryRow
+            // placement) and everything actually drawn - see PresentationOffset's
+            // own field remarks. Translation-only, never rotated/scaled by
+            // anything, so ApplyConveyorPresentationOffset's world-space X/Y
+            // offset reads correctly here regardless of Visual's own current
+            // yaw. Parent of Visual/EnergyBar/ContactShadow below instead of
+            // this root directly - the one structural change from the
+            // previous flat "three siblings under root" layout.
+            var presentationOffsetObject = new GameObject("PresentationOffset");
+            presentationOffsetObject.transform.SetParent(transform, false);
+            _presentationOffset = presentationOffsetObject.transform;
+
             var visualWrapper = new GameObject("Visual");
-            visualWrapper.transform.SetParent(transform, false);
+            visualWrapper.transform.SetParent(_presentationOffset, false);
 
             var visualMotion = new GameObject("VisualMotion");
             visualMotion.transform.SetParent(visualWrapper.transform, false);
@@ -603,6 +713,7 @@ namespace Project001.Gameplay.Collectors
             _visualMotion = visualMotion.transform;
             _posePresentation = modelInstance.GetComponentInChildren<CharacterPosePresentation>(true);
             _feedTarget = modelInstance.GetComponentInChildren<FeedTarget>(true);
+            _groundAnchor = modelInstance.GetComponentInChildren<GroundAnchor>(true);
 
             // Must run AFTER CharacterVisual is instantiated and recentered
             // above - it measures that same geometry (see CreateContactShadow's
@@ -611,6 +722,161 @@ namespace Project001.Gameplay.Collectors
             CreateContactShadow();
 
             CreateEnergyBar(energyBarPrefab, matchId);
+        }
+
+        /// <summary>
+        /// Applies/clears this instance's own conveyor riding presentation
+        /// offset (see PresentationOffset's own field remarks) - scoped to
+        /// actively riding the Conveyor only, exactly like the grounding
+        /// correction this replaced.
+        ///
+        /// Moves PresentationOffset itself (never Visual, which
+        /// CollectorAnimation.Update owns exclusively for yaw, nor
+        /// VisualMotion, which every breathing/bounce/punch/heart reaction
+        /// owns for scale/position, nor CharacterVisual, whose own baseline
+        /// recentering localPosition is set once at Initialize and never
+        /// touched again) - since EnergyBar and the contact shadow are now
+        /// BOTH children of this same PresentationOffset node (see
+        /// Initialize), moving it moves character, shadow, and EnergyBar
+        /// together automatically; neither needs to separately re-apply a
+        /// matching offset the way they used to.
+        ///
+        /// Snaps immediately here (riding: true) using this rider's CURRENT
+        /// RidingOrientation, so there is no one-frame pop before Update()
+        /// below takes over for the rest of the ride; riding: false zeroes
+        /// PresentationOffset and stops Update() from touching it again
+        /// until the next ride.
+        ///
+        /// Called by CollectorPresentation.ShowConveyorFrontEating (riding:
+        /// true, the moment any collector actually boards) and
+        /// ShowWaitingBackIdle (riding: false, every return to
+        /// Queue/WaitingLine/Recovery Row) — Queue/WaitingLine/Recovery Row
+        /// presentation itself is deliberately left exactly as it already
+        /// is, unaffected by this.
+        /// </summary>
+        public void SetConveyorGroundingCorrection(bool riding)
+        {
+            _isRidingConveyor = riding;
+
+            if (riding)
+                ApplyConveyorPresentationOffset();
+            else if (_presentationOffset != null)
+                _presentationOffset.localPosition = Vector3.zero;
+        }
+
+        /// <summary>
+        /// The sole owner of PresentationOffset's localPosition while
+        /// riding - called once immediately by SetConveyorGroundingCorrection
+        /// (riding: true) and every frame afterward by Update() below, both
+        /// reading this collector's ConveyorRider.RidingOrientation fresh
+        /// each time (set every frame by ConveyorSystem - see ConveyorRider),
+        /// so the correction tracks continuously as the rider travels
+        /// around the loop, through every corner, exactly like
+        /// CollectorAnimation's own yaw tracking does from the same
+        /// RidingOrientation sample. A no-op if this species has no
+        /// GroundAnchor (see its own field remarks).
+        ///
+        /// The target this collector's GroundAnchor should land ON is the
+        /// visible belt's own centerline at this rider's current position -
+        /// ConveyorPath's logical point (this collector root's own current
+        /// world position; ConveyorSystem already keeps it exactly there)
+        /// plus ConveyorBeltCalibration.ComputeOffset, the measured
+        /// world-space X/Y delta between that logical point and where the
+        /// belt ART actually renders there. Only X/Y are corrected - Z is
+        /// deliberately left at whatever GroundAnchor's own baseline Z
+        /// already is, so this never interferes with Visual's own separate
+        /// depth-pull mechanics (queue row depth, terminal foreground).
+        ///
+        /// Solves directly for the exact PresentationOffset.localPosition
+        /// that puts GroundAnchor exactly there, rather than nudging toward
+        /// it incrementally: because PresentationOffset only ever
+        /// translates (see its own field remarks - never rotated, never
+        /// scaled), moving it by a given WORLD delta moves every descendant,
+        /// including GroundAnchor, by that exact same delta, regardless of
+        /// Visual's own current yaw. So GroundAnchor's world position at the
+        /// CURRENT PresentationOffset already tells us everything needed:
+        /// subtracting PresentationOffset's own current contribution
+        /// (localPosition * CollectorSpriteScale, the only scale between it
+        /// and world space) recovers exactly where GroundAnchor would sit
+        /// with zero correction, and the rest is one exact, non-iterative
+        /// solve for the localPosition that closes the remaining gap -
+        /// correct in a single assignment, every frame, regardless of
+        /// whatever PresentationOffset happened to be a moment ago.
+        /// </summary>
+        private void ApplyConveyorPresentationOffset()
+        {
+            if (_presentationOffset == null || _conveyorRider == null || _groundAnchor == null)
+                return;
+
+            float scale = GameplayLayout.CollectorSpriteScale;
+
+            Vector3 currentAnchorWorldPos = _groundAnchor.WorldPosition;
+            Vector3 zeroOffsetAnchorWorldPos = currentAnchorWorldPos - _presentationOffset.localPosition * scale;
+
+            Vector3 pathPoint = transform.position;
+            Vector2 beltOffsetWorld = ConveyorBeltCalibration.ComputeOffset(_conveyorRider.RidingOrientation);
+            Vector3 targetAnchorWorldPos = new Vector3(
+                pathPoint.x + beltOffsetWorld.x,
+                pathPoint.y + beltOffsetWorld.y,
+                zeroOffsetAnchorWorldPos.z);
+
+            _presentationOffset.localPosition = (targetAnchorWorldPos - zeroOffsetAnchorWorldPos) / scale;
+        }
+
+        private void Update()
+        {
+            if (_isRidingConveyor)
+                ApplyConveyorPresentationOffset();
+        }
+
+        /// <summary>
+        /// Stops Update() from ever recomputing PresentationOffset again for
+        /// the rest of this collector's life, WITHOUT touching its current
+        /// value at all - the fix for the terminal "Satisfied jump/drop"
+        /// bug (see docs task "Fix the Satisfied transition jump").
+        ///
+        /// ----- Root cause -----
+        /// ApplyConveyorPresentationOffset solves every frame from a LIVE
+        /// read of GroundAnchor.WorldPosition - correct and necessary while
+        /// genuinely riding, since GroundAnchor's position must reflect
+        /// Visual's current yaw. But the terminal Satisfied sequence
+        /// (CollectorPresentation.FinalBiteSequence) ALSO drives Visual
+        /// (CollectorAnimation.EnterTerminalForeground, a one-way
+        /// camera-forward pull) and VisualMotion (the eating/satisfied
+        /// punch, heart pulse, and final collapse-to-zero-scale) - both of
+        /// which GroundAnchor sits downstream of, since it is a descendant
+        /// of VisualMotion. Left running, Update() kept re-solving
+        /// PresentationOffset every single frame using whatever GroundAnchor
+        /// position those SAME-FRAME terminal animations had just produced -
+        /// and because Unity does not guarantee whether CollectorView's
+        /// Update() or CollectorPresentation's coroutine step runs first
+        /// within a given frame, the two systems raced: on frames where the
+        /// terminal pull/punch applied before this component's Update() one
+        /// frame, the fresh solve would compensate and mask it; on frames
+        /// where it applied after, that frame rendered the RAW, uncompensated
+        /// terminal delta - a real, visible one-frame snap, worse each time
+        /// VisualMotion's own scale changed further (most dramatically as
+        /// HeartPulseAndCollapseRoutine collapses VisualMotion toward zero
+        /// scale, which drags GroundAnchor toward VisualMotion's own pivot
+        /// and would otherwise get "corrected" by yanking the whole
+        /// character sideways to compensate).
+        ///
+        /// ----- The fix -----
+        /// Simply STOP re-deriving PresentationOffset once the terminal
+        /// sequence claims Visual/VisualMotion for its own purposes -
+        /// called once, at the very start of
+        /// CollectorPresentation.FinalBiteSequence, before any terminal
+        /// animation runs. PresentationOffset is left at EXACTLY whatever
+        /// value it last correctly held (this collector's real, grounded
+        /// position on the belt at that instant) and never written again -
+        /// not reset to zero, not given a new "satisfied" value, nothing
+        /// arbitrary. The terminal sequence's own animations then compose
+        /// on top of that frozen base exactly as they already do for every
+        /// other collector state, with nothing left to race against them.
+        /// </summary>
+        public void FreezeConveyorPresentation()
+        {
+            _isRidingConveyor = false;
         }
 
         /// <summary>
@@ -696,9 +962,11 @@ namespace Project001.Gameplay.Collectors
 
         /// <summary>
         /// Creates this collector's contact shadow as a sibling of Visual
-        /// under this root (see the contact shadow field group's own class
-        /// remarks) - called from Initialize AFTER CharacterVisual exists
-        /// and has already been recentered, since this measures it.
+        /// under PresentationOffset (see the contact shadow field group's
+        /// own class remarks, and PresentationOffset's own remarks for why
+        /// a sibling of Visual there rather than a Visual descendant) -
+        /// called from Initialize AFTER CharacterVisual exists and has
+        /// already been recentered, since this measures it.
         ///
         /// A stylized camera-facing presentation decal (see
         /// ContactShadowMesh), sized directly as a multiple of the
@@ -731,7 +999,7 @@ namespace Project001.Gameplay.Collectors
             float height = width * ContactShadowHeightToWidthRatio;
 
             var shadowObject = new GameObject("ContactShadow", typeof(MeshFilter), typeof(MeshRenderer));
-            shadowObject.transform.SetParent(transform, false);
+            shadowObject.transform.SetParent(_presentationOffset, false);
             shadowObject.transform.localScale = new Vector3(width, height, 1f);
 
             var meshFilter = shadowObject.GetComponent<MeshFilter>();
@@ -762,6 +1030,13 @@ namespace Project001.Gameplay.Collectors
             float verticalOffset = _energyBarIsAboveCharacter ? EnergyBarConveyorVerticalOffset : EnergyBarQueueVerticalOffset;
             Dictionary<int, float> speciesCorrectionTable = _energyBarIsAboveCharacter ? EnergyBarSpeciesConveyorCorrection : EnergyBarSpeciesQueueCorrection;
             float speciesCorrection = speciesCorrectionTable.TryGetValue(_matchId, out float correction) ? correction : 0f;
+            // No riding-only correction term here any more: EnergyBar is
+            // now a child of PresentationOffset, the same node
+            // ApplyConveyorPresentationOffset moves - so it automatically
+            // moves together with CharacterVisual while riding without
+            // needing to separately re-add that shift to its own gap
+            // (verticalOffset/speciesCorrection, both tuned against real
+            // screenshots of the character's own baseline position) here.
             Vector3 baseOffset = new Vector3(0f, verticalOffset + speciesCorrection, 0f) + (-GameplayLayout.CameraForward) * EnergyBarForegroundPullDistance;
             _energyBarTransform.localPosition = baseOffset + (-GameplayLayout.CameraForward) * _energyBarDepth;
         }
@@ -820,7 +1095,7 @@ namespace Project001.Gameplay.Collectors
                 return;
             }
 
-            var instance = Instantiate(energyBarPrefab, transform, false);
+            var instance = Instantiate(energyBarPrefab, _presentationOffset, false);
             instance.name = "EnergyBar";
 
             Transform energyBarTransform = instance.transform;

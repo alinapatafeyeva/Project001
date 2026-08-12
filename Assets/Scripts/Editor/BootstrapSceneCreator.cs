@@ -36,7 +36,13 @@ public static class BootstrapSceneCreator
     [MenuItem("Tools/Bootstrap/Create Bootstrap Scene")]
     public static void CreateBootstrapScene()
     {
-        if (File.Exists(ScenePath))
+        // Application.isBatchMode guard: a headless -executeMethod run (e.g.
+        // regenerating the scene from CI or a script after an editor-script
+        // change) has no UI to show this dialog to - EditorUtility.
+        // DisplayDialog silently answers "Cancel" in that case, which would
+        // make the whole regeneration a silent no-op. Interactive Editor use
+        // still gets the confirmation prompt.
+        if (File.Exists(ScenePath) && !Application.isBatchMode)
         {
             bool overwrite = EditorUtility.DisplayDialog(
                 "Bootstrap Scene Exists",
@@ -317,7 +323,6 @@ public static class BootstrapSceneCreator
         var conveyorObject = new GameObject(
             "Conveyor",
             typeof(ConveyorPath),
-            typeof(ConveyorPathRenderer),
             typeof(ConveyorSystem));
         conveyorObject.transform.position = Vector3.zero;
 
@@ -346,7 +351,88 @@ public static class BootstrapSceneCreator
         serializedSystem.FindProperty("boardingClearance").floatValue = GameplayLayout.ConveyorRiderMinimumSpacing;
         serializedSystem.ApplyModifiedPropertiesWithoutUndo();
 
+        CreateConveyorVisual(conveyorObject.transform);
+        CreateConveyorBeltAnimation(conveyorObject.transform, conveyorPath, conveyorSystem);
+
         return conveyorSystem;
+    }
+
+    private const string ConveyorVisualSpritePath = "Assets/Art/UI/Classic/Conveyor.png";
+
+    /// <summary>
+    /// The Classic theme conveyor sprite, as a child of Conveyor so it
+    /// always shares ConveyorPath/ConveyorSystem's own world origin without
+    /// this method (or ConveyorVisual itself) touching either — purely
+    /// presentation, added after the gameplay components above. Its sprite
+    /// import settings (Pixels Per Unit, pivot — see Conveyor.png.meta) are
+    /// calibrated so its drawn belt lines up with GameplayLayout.
+    /// ConveyorSize at localScale (1,1,1); no runtime sizing needed here,
+    /// unlike CreateGameplayBackground's Fit() call, since this is fixed
+    /// gameplay content, not something that must cover the viewport.
+    /// Sprite/sortingLayer are set directly on the SpriteRenderer (baking a
+    /// scene-view preview, mirroring CreateGameplayBackground) as well as on
+    /// ConveyorVisual's own serialized field (what Awake re-applies at
+    /// runtime).
+    /// </summary>
+    private static void CreateConveyorVisual(Transform conveyorTransform)
+    {
+        var sprite = AssetDatabase.LoadAssetAtPath<Sprite>(ConveyorVisualSpritePath);
+        if (sprite == null)
+        {
+            Debug.LogError($"BootstrapSceneCreator: could not load a Sprite at '{ConveyorVisualSpritePath}'; conveyor visual will be missing. Check its TextureImporter Texture Type is set to 'Sprite (2D and UI)'.");
+            return;
+        }
+
+        var visualObject = new GameObject(
+            "ConveyorVisual",
+            typeof(SpriteRenderer),
+            typeof(ConveyorVisual));
+        visualObject.transform.SetParent(conveyorTransform, false);
+        // Baked here purely for an accurate scene-view preview - ConveyorVisual.Awake()
+        // re-applies this exact same push (see its own DepthPushDistance
+        // remarks) at runtime regardless of what is saved in the scene.
+        visualObject.transform.localPosition = GameplayLayout.CameraForward * ConveyorVisual.DepthPushDistanceValue;
+        visualObject.transform.localRotation = Quaternion.identity;
+
+        var spriteRenderer = visualObject.GetComponent<SpriteRenderer>();
+        spriteRenderer.sprite = sprite;
+        spriteRenderer.sortingLayerName = ConveyorVisual.SortingLayerNameValue;
+        spriteRenderer.sortingOrder = 0;
+
+        var conveyorVisual = visualObject.GetComponent<ConveyorVisual>();
+        var serializedVisual = new SerializedObject(conveyorVisual);
+        serializedVisual.FindProperty("sprite").objectReferenceValue = sprite;
+        serializedVisual.ApplyModifiedPropertiesWithoutUndo();
+    }
+
+    /// <summary>
+    /// The first Conveyor movement animation (see ConveyorBeltAnimation's
+    /// own remarks): a scrolling chevron-marker ribbon, added as a sibling
+    /// of ConveyorVisual rather than replacing it — the static Conveyor.png
+    /// frame/belt art stays exactly as CreateConveyorVisual placed it, this
+    /// only draws thin moving markers over its belt band. Only reads
+    /// conveyorPath/conveyorSystem (never writes either); both are already
+    /// fully configured by the time CreateConveyor calls this.
+    /// </summary>
+    private static void CreateConveyorBeltAnimation(Transform conveyorTransform, ConveyorPath conveyorPath, ConveyorSystem conveyorSystem)
+    {
+        var animationObject = new GameObject(
+            "ConveyorBeltAnimation",
+            typeof(MeshFilter),
+            typeof(MeshRenderer),
+            typeof(ConveyorBeltAnimation));
+        animationObject.transform.SetParent(conveyorTransform, false);
+        // Baked here purely for an accurate scene-view preview -
+        // ConveyorBeltAnimation.Awake() re-applies this exact same push at
+        // runtime, mirroring ConveyorVisual's own convention.
+        animationObject.transform.localPosition = GameplayLayout.CameraForward * ConveyorBeltAnimation.DepthPushDistanceValue;
+        animationObject.transform.localRotation = Quaternion.identity;
+
+        var beltAnimation = animationObject.GetComponent<ConveyorBeltAnimation>();
+        var serializedAnimation = new SerializedObject(beltAnimation);
+        serializedAnimation.FindProperty("conveyorPath").objectReferenceValue = conveyorPath;
+        serializedAnimation.FindProperty("conveyorSystem").objectReferenceValue = conveyorSystem;
+        serializedAnimation.ApplyModifiedPropertiesWithoutUndo();
     }
 
     /// <summary>

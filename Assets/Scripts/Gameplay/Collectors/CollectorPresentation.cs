@@ -154,6 +154,7 @@ namespace Project001.Gameplay.Collectors
             Animation.PlayIdleBreathing();
             View.PosePresentation?.SetPose(CharacterPresentationPose.Waiting);
             View.ShowEnergyBarBelowCharacter();
+            View.SetConveyorGroundingCorrection(riding: false);
         }
 
         /// <summary>
@@ -226,6 +227,7 @@ namespace Project001.Gameplay.Collectors
 
             View.PosePresentation?.SetPose(CharacterPresentationPose.Conveyor);
             View.ShowEnergyBarAboveCharacter();
+            View.SetConveyorGroundingCorrection(riding: true);
             StartSequence(BoardingSequence());
         }
 
@@ -354,6 +356,19 @@ namespace Project001.Gameplay.Collectors
             // collector's GameObject is destroyed at the end of this
             // sequence (see CollectorLifecycle.HandleVisualSequenceComplete),
             // with no separate EnergyBar-specific hide call needed here.
+
+            // Freezes PresentationOffset at wherever it correctly already
+            // is - this collector's real, currently-grounded belt position -
+            // before any terminal animation below ever runs, so nothing
+            // keeps re-deriving it from a GroundAnchor position that these
+            // same terminal animations are about to move for their own
+            // reasons. See View.FreezeConveyorPresentation's own remarks
+            // for the full race condition this prevents (the terminal
+            // "Satisfied jump" bug). A no-op for a collector that was never
+            // riding the Conveyor in the first place (WaitingLine/Recovery
+            // Row can also reach satisfaction) - Update() was never touching
+            // PresentationOffset for those anyway.
+            View.FreezeConveyorPresentation();
 
             // Foregrounded for the whole terminal sequence, not just the
             // Heart, so an ordinary rider that reaches this collector's
