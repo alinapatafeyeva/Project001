@@ -191,6 +191,15 @@ namespace Project001.Gameplay.Collectors
             transform.position = slot.transform.position;
             collectorView.Presentation.ShowWaitingBackIdle();
             collectorView.Presentation.ClearPresentationDepth();
+
+            // Grounds this collector on the slot the same generic,
+            // per-species way a rider is grounded on the Conveyor belt (see
+            // CollectorView.SetGroundedPosition) — this collector's ROOT
+            // stays exactly on slot.transform.position (set just above,
+            // gameplay's own source of truth for where it "is"), only the
+            // presentation-only offset moves so its FEET land on the slot
+            // instead of its body center.
+            collectorView.SetGroundedPosition(slot.transform.position);
         }
 
         /// <summary>

@@ -324,7 +324,11 @@ public static class BootstrapSceneCreator
             "Conveyor",
             typeof(ConveyorPath),
             typeof(ConveyorSystem));
-        conveyorObject.transform.position = Vector3.zero;
+        // Same Y as PixelGrid (GameplayLayout.PixelGridPositionY), not a
+        // separately hand-typed Vector3.zero - Conveyor is always centered
+        // on that same origin (see ConveyorSize's own remarks), so both stay
+        // concentric automatically if that shared value is ever revisited.
+        conveyorObject.transform.position = new Vector3(0f, GameplayLayout.PixelGridPositionY, 0f);
 
         // Square, centered on the world origin, sized from GameplayLayout's
         // own authored Conveyor extent — never a hand-copied literal — so
@@ -365,12 +369,13 @@ public static class BootstrapSceneCreator
     /// this method (or ConveyorVisual itself) touching either — purely
     /// presentation, added after the gameplay components above. Its sprite
     /// import settings (Pixels Per Unit, pivot — see Conveyor.png.meta) are
-    /// calibrated so its drawn belt lines up with GameplayLayout.
-    /// ConveyorSize at localScale (1,1,1); no runtime sizing needed here,
-    /// unlike CreateGameplayBackground's Fit() call, since this is fixed
-    /// gameplay content, not something that must cover the viewport.
-    /// Sprite/sortingLayer are set directly on the SpriteRenderer (baking a
-    /// scene-view preview, mirroring CreateGameplayBackground) as well as on
+    /// calibrated so its drawn belt lines up with ConveyorPath's authored
+    /// footprint at ConveyorBeltCalibration.CalibratedConveyorSize, then
+    /// uniformly rescaled by ConveyorBeltCalibration.VisualScale to track
+    /// GameplayLayout.ConveyorSize's current (possibly larger) value — see
+    /// ConveyorVisual's own remarks. Sprite/sortingLayer/scale are set
+    /// directly on the SpriteRenderer/Transform (baking a scene-view
+    /// preview, mirroring CreateGameplayBackground) as well as on
     /// ConveyorVisual's own serialized field (what Awake re-applies at
     /// runtime).
     /// </summary>
@@ -389,10 +394,11 @@ public static class BootstrapSceneCreator
             typeof(ConveyorVisual));
         visualObject.transform.SetParent(conveyorTransform, false);
         // Baked here purely for an accurate scene-view preview - ConveyorVisual.Awake()
-        // re-applies this exact same push (see its own DepthPushDistance
-        // remarks) at runtime regardless of what is saved in the scene.
+        // re-applies this exact same push and scale (see its own remarks)
+        // at runtime regardless of what is saved in the scene.
         visualObject.transform.localPosition = GameplayLayout.CameraForward * ConveyorVisual.DepthPushDistanceValue;
         visualObject.transform.localRotation = Quaternion.identity;
+        visualObject.transform.localScale = Vector3.one * ConveyorBeltCalibration.VisualScale;
 
         var spriteRenderer = visualObject.GetComponent<SpriteRenderer>();
         spriteRenderer.sprite = sprite;
@@ -465,6 +471,8 @@ public static class BootstrapSceneCreator
         return recoveryRowController;
     }
 
+    private const string WaitingSlotSpritePath = "Assets/Art/UI/Classic/WaitingSlot.png";
+
     private static Project001.Gameplay.WaitingLine.WaitingLine CreateWaitingLine()
     {
         var waitingLineObject = new GameObject(
@@ -472,7 +480,22 @@ public static class BootstrapSceneCreator
             typeof(Project001.Gameplay.WaitingLine.WaitingLine));
         waitingLineObject.transform.position = new Vector3(0f, GameplayLayout.WaitingLinePositionY, 0f);
 
-        return waitingLineObject.GetComponent<Project001.Gameplay.WaitingLine.WaitingLine>();
+        var waitingLine = waitingLineObject.GetComponent<Project001.Gameplay.WaitingLine.WaitingLine>();
+
+        // Baked here, mirroring CreateConveyorVisual's own sprite-loading
+        // convention, rather than inside WaitingLine.GenerateSlots itself
+        // (a runtime method with no AssetDatabase access) — WaitingLine only
+        // ever needs this reference to hand off to each slot's own
+        // WaitingSlotVisual child at Initialize time.
+        var slotSprite = AssetDatabase.LoadAssetAtPath<Sprite>(WaitingSlotSpritePath);
+        if (slotSprite == null)
+            Debug.LogError($"BootstrapSceneCreator: could not load a Sprite at '{WaitingSlotSpritePath}'; waiting line slots will show no visual.");
+
+        var serializedWaitingLine = new SerializedObject(waitingLine);
+        serializedWaitingLine.FindProperty("slotSprite").objectReferenceValue = slotSprite;
+        serializedWaitingLine.ApplyModifiedPropertiesWithoutUndo();
+
+        return waitingLine;
     }
 
     private const string EnergyBarPrefabPath = "Assets/Prefabs/UI/EnergyBar.prefab";

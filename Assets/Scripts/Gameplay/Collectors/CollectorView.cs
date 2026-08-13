@@ -466,6 +466,20 @@ namespace Project001.Gameplay.Collectors
         // while riding; 0 the rest of this collector's lifetime.
         private bool _isRidingConveyor;
 
+        // True only while this collector is grounded on a static point (a
+        // WaitingSlot's own position - see SetGroundedPosition), mutually
+        // exclusive with _isRidingConveyor. Gates Update() the same way
+        // _isRidingConveyor does, for the same reason (only pay the
+        // per-frame solve while it can actually matter - see
+        // SetGroundedPosition's own remarks for why this must stay
+        // continuous rather than a one-time snap).
+        private bool _isGroundedAtFixedPoint;
+
+        // The world-space target ApplyFixedGroundCorrection re-solves
+        // toward every frame while _isGroundedAtFixedPoint - set once by
+        // SetGroundedPosition, never mutated by Update() itself.
+        private Vector3 _groundedTargetPosition;
+
         // This collector's GroundAnchor, resolved from the instantiated
         // CharacterVisual by Initialize() - this species' own true visual
         // ground/contact point (see GroundAnchor's own class remarks and
@@ -583,6 +597,15 @@ namespace Project001.Gameplay.Collectors
         /// not built with one.
         /// </summary>
         public GroundAnchor GroundAnchor => _groundAnchor;
+
+        /// <summary>
+        /// This collector's MatchId, set once by Initialize(). Exposed
+        /// read-only for verification/diagnostic tooling to identify which
+        /// species a given instance is (see the species correction tables
+        /// above); gameplay never reads this directly (ConveyorRider is the
+        /// gameplay-facing source of matching/hunger behaviour).
+        /// </summary>
+        public int MatchId => _matchId;
 
         /// <summary>
         /// Currently displayed RemainingHunger text. Read-only — this view
@@ -757,11 +780,104 @@ namespace Project001.Gameplay.Collectors
         public void SetConveyorGroundingCorrection(bool riding)
         {
             _isRidingConveyor = riding;
+            _isGroundedAtFixedPoint = false;
 
             if (riding)
                 ApplyConveyorPresentationOffset();
             else if (_presentationOffset != null)
                 _presentationOffset.localPosition = Vector3.zero;
+        }
+
+        /// <summary>
+        /// Grounds this collector on a STATIC world-space point (a
+        /// WaitingSlot's own transform.position) using the exact same
+        /// GroundAnchor-based mechanism SetConveyorGroundingCorrection uses
+        /// for a moving path point - see ApplyGroundAnchorCorrection, the
+        /// shared solve both call. Fixes the "positioned by body center
+        /// instead of feet" WaitingLine bug generically, per-species, with
+        /// no hardcoded offset: CollectorLifecycle.ResolveLap still sets
+        /// this collector's ROOT to the slot's own position exactly as
+        /// before (gameplay's source of truth for where this collector
+        /// "is" never changes) - this only moves PresentationOffset, the
+        /// same purely-presentational node conveyor riding already owns,
+        /// so this collector's FEET (GroundAnchor) land exactly on the slot
+        /// instead of its body center.
+        ///
+        /// Continues applying every frame (via Update() below) rather than
+        /// snapping once: Visual's own yaw is still settling toward its new
+        /// "Away" orientation for a few frames after arriving (see
+        /// CollectorAnimation's own RotateTowards remarks), which moves
+        /// GroundAnchor - a one-time snap would go stale exactly like the
+        /// conveyor-riding case's own remarks describe for a moving corner.
+        /// Mutually exclusive with conveyor riding (see
+        /// SetConveyorGroundingCorrection, which clears this flag) - a
+        /// collector is never grounded at a fixed point while also riding.
+        /// </summary>
+        public void SetGroundedPosition(Vector3 targetWorldPosition)
+        {
+            _isRidingConveyor = false;
+            _isGroundedAtFixedPoint = true;
+            _groundedTargetPosition = targetWorldPosition;
+            ApplyFixedGroundCorrection();
+        }
+
+        /// <summary>
+        /// Releases a fixed-point grounding correction applied by
+        /// SetGroundedPosition, resetting PresentationOffset back to zero -
+        /// mirrors SetConveyorGroundingCorrection(false)'s own cleanup.
+        /// Not usually needed explicitly: boarding the Conveyor again
+        /// already clears this via SetConveyorGroundingCorrection(true)'s
+        /// own _isGroundedAtFixedPoint reset, so this exists mainly for
+        /// symmetry and any future non-conveyor exit path.
+        /// </summary>
+        public void ClearGroundedPosition()
+        {
+            _isGroundedAtFixedPoint = false;
+
+            if (_presentationOffset != null)
+                _presentationOffset.localPosition = Vector3.zero;
+        }
+
+        /// <summary>
+        /// The shared solve both ApplyConveyorPresentationOffset and
+        /// ApplyFixedGroundCorrection use: computes the exact
+        /// PresentationOffset.localPosition that puts this collector's
+        /// GroundAnchor exactly at targetAnchorWorldPos (X/Y only - Z is
+        /// deliberately left at whatever GroundAnchor's own baseline Z
+        /// already is, so this never interferes with Visual's own separate
+        /// depth-pull mechanics - queue row depth, terminal foreground).
+        ///
+        /// Solves directly rather than nudging toward it incrementally:
+        /// because PresentationOffset only ever translates (see its own
+        /// field remarks - never rotated, never scaled), moving it by a
+        /// given WORLD delta moves every descendant, including GroundAnchor,
+        /// by that exact same delta, regardless of Visual's own current
+        /// yaw. So GroundAnchor's world position at the CURRENT
+        /// PresentationOffset already tells us everything needed:
+        /// subtracting PresentationOffset's own current contribution
+        /// (localPosition * CollectorSpriteScale, the only scale between it
+        /// and world space) recovers exactly where GroundAnchor would sit
+        /// with zero correction, and the rest is one exact, non-iterative
+        /// solve for the localPosition that closes the remaining gap -
+        /// correct in a single assignment, every frame, regardless of
+        /// whatever PresentationOffset happened to be a moment ago.
+        /// </summary>
+        private void ApplyGroundAnchorCorrection(Vector2 targetAnchorWorldXY)
+        {
+            if (_presentationOffset == null || _groundAnchor == null)
+                return;
+
+            float scale = GameplayLayout.CollectorSpriteScale;
+
+            Vector3 currentAnchorWorldPos = _groundAnchor.WorldPosition;
+            Vector3 zeroOffsetAnchorWorldPos = currentAnchorWorldPos - _presentationOffset.localPosition * scale;
+
+            Vector3 targetAnchorWorldPos = new Vector3(
+                targetAnchorWorldXY.x,
+                targetAnchorWorldXY.y,
+                zeroOffsetAnchorWorldPos.z);
+
+            _presentationOffset.localPosition = (targetAnchorWorldPos - zeroOffsetAnchorWorldPos) / scale;
         }
 
         /// <summary>
@@ -782,51 +898,38 @@ namespace Project001.Gameplay.Collectors
         /// world position; ConveyorSystem already keeps it exactly there)
         /// plus ConveyorBeltCalibration.ComputeOffset, the measured
         /// world-space X/Y delta between that logical point and where the
-        /// belt ART actually renders there. Only X/Y are corrected - Z is
-        /// deliberately left at whatever GroundAnchor's own baseline Z
-        /// already is, so this never interferes with Visual's own separate
-        /// depth-pull mechanics (queue row depth, terminal foreground).
-        ///
-        /// Solves directly for the exact PresentationOffset.localPosition
-        /// that puts GroundAnchor exactly there, rather than nudging toward
-        /// it incrementally: because PresentationOffset only ever
-        /// translates (see its own field remarks - never rotated, never
-        /// scaled), moving it by a given WORLD delta moves every descendant,
-        /// including GroundAnchor, by that exact same delta, regardless of
-        /// Visual's own current yaw. So GroundAnchor's world position at the
-        /// CURRENT PresentationOffset already tells us everything needed:
-        /// subtracting PresentationOffset's own current contribution
-        /// (localPosition * CollectorSpriteScale, the only scale between it
-        /// and world space) recovers exactly where GroundAnchor would sit
-        /// with zero correction, and the rest is one exact, non-iterative
-        /// solve for the localPosition that closes the remaining gap -
-        /// correct in a single assignment, every frame, regardless of
-        /// whatever PresentationOffset happened to be a moment ago.
+        /// belt ART actually renders there.
         /// </summary>
         private void ApplyConveyorPresentationOffset()
         {
-            if (_presentationOffset == null || _conveyorRider == null || _groundAnchor == null)
+            if (_conveyorRider == null)
                 return;
-
-            float scale = GameplayLayout.CollectorSpriteScale;
-
-            Vector3 currentAnchorWorldPos = _groundAnchor.WorldPosition;
-            Vector3 zeroOffsetAnchorWorldPos = currentAnchorWorldPos - _presentationOffset.localPosition * scale;
 
             Vector3 pathPoint = transform.position;
             Vector2 beltOffsetWorld = ConveyorBeltCalibration.ComputeOffset(_conveyorRider.RidingOrientation);
-            Vector3 targetAnchorWorldPos = new Vector3(
-                pathPoint.x + beltOffsetWorld.x,
-                pathPoint.y + beltOffsetWorld.y,
-                zeroOffsetAnchorWorldPos.z);
+            ApplyGroundAnchorCorrection(new Vector2(pathPoint.x + beltOffsetWorld.x, pathPoint.y + beltOffsetWorld.y));
+        }
 
-            _presentationOffset.localPosition = (targetAnchorWorldPos - zeroOffsetAnchorWorldPos) / scale;
+        /// <summary>
+        /// The sole owner of PresentationOffset's localPosition while
+        /// grounded at a fixed point (see SetGroundedPosition) - the WaitingLine
+        /// counterpart to ApplyConveyorPresentationOffset, targeting a
+        /// static world position instead of a moving path point.
+        /// </summary>
+        private void ApplyFixedGroundCorrection()
+        {
+            if (!_isGroundedAtFixedPoint)
+                return;
+
+            ApplyGroundAnchorCorrection(new Vector2(_groundedTargetPosition.x, _groundedTargetPosition.y));
         }
 
         private void Update()
         {
             if (_isRidingConveyor)
                 ApplyConveyorPresentationOffset();
+            else if (_isGroundedAtFixedPoint)
+                ApplyFixedGroundCorrection();
         }
 
         /// <summary>

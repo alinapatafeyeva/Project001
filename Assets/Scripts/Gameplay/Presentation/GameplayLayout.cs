@@ -95,7 +95,43 @@ namespace Project001.Gameplay.Presentation
         // calculation that needs the visible character's actual extent
         // (Conveyor rider clearance, queue row placement) reads
         // CollectorVisibleWidth/Height, never CollectorSpriteScale directly.
-        public const float CollectorSpriteScale = 1.9f;
+        //
+        // Reduced from 1.9 to 1.75 (~8%) as a deliberate, secondary
+        // complement to GridToClusterSpacing's own fix below (see its
+        // remarks for the full "collectors outgrew the composition" root
+        // cause) - NOT a substitute for it: even a much larger trim leaves
+        // GridToClusterSpacing needing to roughly double, so the primary
+        // fix is still deriving that gap from CollectorVisibleHeight. This
+        // trim only reduces how much the whole composition/camera needs to
+        // grow to accommodate that derived gap comfortably, and secondarily
+        // eases the "collectors read as too big" side of the same crowding
+        // complaint. Every downstream quantity that already keyed off
+        // CollectorVisibleHeight/Width (QueueRowStep's own tap-selection
+        // non-overlap margin, ConveyorRiderMinimumSpacing's boarding
+        // clearance) shrinks proportionally and automatically - re-checked
+        // by hand for QueueRowStep specifically, since that one is a hard
+        // correctness constraint, not just a visual preference: adjacent
+        // rows' CircleCollider2D radii still sum to 1.75 world units against
+        // a QueueRowStep of 1.8825, a 0.13 unit margin (was 0.10 before this
+        // change) - if anything safer than before, not tighter.
+        //
+        // Raised again, from 1.75 to 1.83 (~4.6%), after the Conveyor visual
+        // recalibration pass (see ConveyorBeltCalibration.VisualScale) made
+        // collectors read as slightly undersized against the now-larger
+        // belt - a real Game View review asked for collectors to "regain
+        // visual presence" without crowding PixelGrid or cramping iPhone
+        // portrait. Landed inside the requested ~1.83-1.84 range rather
+        // than jumping back to the old pre-trim 1.9 - re-verified
+        // QueueRowStep's own hard non-overlap margin still holds at this
+        // scale (adjacent CircleCollider2D radii sum to 1.83, QueueRowStep
+        // 1.9457 - a 0.116 unit margin, still comfortably positive).
+        // GridToClusterBreathingRoom below is deliberately reduced in the
+        // same pass to hold GridToClusterSpacing - and therefore
+        // ConveyorSize - numerically fixed despite this increase (see its
+        // own remarks): the Conveyor visual/size was explicitly accepted as
+        // final this pass and must not move again just because the
+        // collector driving its own clearance math got taller.
+        public const float CollectorSpriteScale = 1.83f;
 
         // CollectorVisibleHeightRatio is the single shared body-height
         // target CharacterAssetBuilder scales every species to (see its own
@@ -156,34 +192,63 @@ namespace Project001.Gameplay.Presentation
         // path never changes once boarding is behind them, on straight
         // sections and rounded corners alike.
         //
-        // Derived from CollectorVisibleHeight plus ConveyorRiderVisualGap, an
-        // explicit breathing-room margin sized to comfortably absorb the
+        // ----- ConveyorRiderMaxVisualFootprint -----
+        // The conservative maximum on-screen footprint (world units) ANY
+        // current roster collector can present while actively RIDING the
+        // Conveyor, across any facing/orientation - a single roster-wide
+        // worst case, never a per-species table (mirrors
+        // CollectorVisibleWidthRatio's own established convention: "the
+        // queue adapts to the characters, not the opposite" - here, the
+        // Conveyor's own spacing adapts to the roster the same way).
+        //
+        // Replaces the previous CollectorVisibleHeight basis, which assumed
+        // a "close to circular" footprint - true for the old single-species
+        // placeholder, never re-verified once real species were added. Two
+        // real measurements now confirm that assumption was wrong, in the
+        // same direction, by a wide margin:
+        //   - Turtle: CollectorVisibleWidthRatio's own build-log measurement
+        //     (1.037 unscaled, ~1.898 world units at today's
+        //     CollectorSpriteScale) already showed a species reading
+        //     noticeably wider than CollectorVisibleHeight (1.4457).
+        //   - Crab: CharacterVerification.cs's own live measurement records
+        //     ~2.03 world units for Crab's ACTUAL Conveyor riding pose
+        //     (claws in their wide, authored bind pose - CharacterAssetBuilder.
+        //     ApplyCrabPosePresentation only tucks them for the Waiting
+        //     pose, never the Conveyor one) - wider even than Turtle, and
+        //     the true current worst case, superseding the older, now-stale
+        //     "Crab: 0.888" figure in CollectorVisibleWidthRatio's own
+        //     remarks (that figure was measured under a build pipeline that
+        //     permanently baked a claw-narrowing adjustment at build time;
+        //     that adjustment was later deleted in favor of the runtime
+        //     pose-switcher CharacterPosePresentation now uses, so today's
+        //     baked/measured Crab pose is the wide one, not the narrow one
+        //     that comment still describes).
+        //
+        // 1.9 is a deliberately CONSERVATIVE first pass, not the full
+        // measured worst case (~2.03): the goal here is substantially
+        // reducing ugly body/claw overlap while keeping boarding cadence
+        // reasonably quick, not a mathematical zero-overlap guarantee - see
+        // ConveyorRiderVisualGap's own remarks for how this combines with
+        // the corner-squeeze margin below. Revisit upward (toward the full
+        // ~2.03, or re-measure via CharacterAssetBuilder.BuildAll's own log
+        // once it is re-run against the current pipeline) if this first
+        // pass still reads as insufficient in real Play Mode review.
+        public const float ConveyorRiderMaxVisualFootprint = 1.9f;
+
+        // Explicit breathing-room margin on top of
+        // ConveyorRiderMaxVisualFootprint, sized to comfortably absorb the
         // small chord-vs-arc "squeeze" a tight corner introduces (two points
         // separated by a given arc length sit slightly closer together in a
         // straight line while both are inside the same rounded corner) — at
         // ConveyorPath's authored cornerRadius (1 world unit, see
         // BootstrapSceneCreator.CreateConveyor), the worst case is only
-        // about a 10% reduction, well inside this margin.
-        //
-        // Deliberately left keyed to height, not updated to the new
-        // per-species measured widths (see CollectorVisibleWidthRatio's own
-        // remarks) - conveyor spacing/behaviour was explicitly out of scope
-        // for the shared-height-scaling change this accompanies. Worth
-        // flagging honestly rather than silently: this was originally sized
-        // assuming a "close to circular" mesh footprint (true for the old
-        // single-species placeholder, no longer true for Turtle specifically -
-        // measured scaled width 1.037 vs the height this spacing is keyed
-        // to, 0.79, an aspect ratio of ~1.31), so on a conveyor edge whose
-        // fixed facing angle happens to align a Turtle rider's wide axis
-        // with the direction of travel, two adjacent Turtle riders'
-        // combined footprint can exceed this spacing's own margin by a few
-        // percent. Confirmed via real Play Mode observation not to read as
-        // an actual visible overlap in practice (see this change's own
-        // verification notes) - called out here for whoever revisits
-        // conveyor spacing next, not fixed now.
+        // about a 10% reduction, well inside this margin. Unchanged in
+        // value from its own prior history — only what it is now added ON
+        // TOP OF changed (ConveyorRiderMaxVisualFootprint, not
+        // CollectorVisibleHeight — see that constant's own remarks for why).
         public const float ConveyorRiderVisualGap = 0.35f;
 
-        public static float ConveyorRiderMinimumSpacing => CollectorVisibleHeight + ConveyorRiderVisualGap;
+        public static float ConveyorRiderMinimumSpacing => ConveyorRiderMaxVisualFootprint + ConveyorRiderVisualGap;
 
         // ----- WaitingLine's own presentation tokens -------------------------
         // WaitingSlotSize is independent of CollectorSpriteScale: WaitingLine
@@ -198,7 +263,74 @@ namespace Project001.Gameplay.Presentation
         // size and spacing total 7.2 world units, well inside the ~9.27-unit
         // frame).
         public const float WaitingSlotSize = 1.2f;
-        public const float WaitingSlotSpacing = 0.3f;
+
+        // Widened from 0.3 to 0.4, then to 0.48 after a follow-up real
+        // Game View review found the COLLECTORS themselves (not just the
+        // slot art) still read as visually crowded at 0.4 - expected, since
+        // a standing collector's own rendered width (GameplayLayout.
+        // CollectorVisibleWidth, ~1.98 world units) is wider than either
+        // step value, so some body-to-body closeness between neighbours is
+        // an unavoidable consequence of fitting WaitingLineCapacity
+        // collectors in the fixed Conveyor-derived CameraFrameWidth - not
+        // something this constant alone can fully eliminate without either
+        // shrinking collectors (out of scope - CollectorSpriteScale is
+        // shared gameplay-wide, not WaitingLine-specific) or narrowing the
+        // camera frame itself (explicitly out of scope for a presentation-
+        // only change).
+        //
+        // 0.48 is the highest value that still keeps a full 6-slot row
+        // (step * 5 + WaitingSlotSize * WaitingSlotVisualScale) inside
+        // CameraFrameWidth (~9.88) with a small positive margin (~0.1 world
+        // units) rather than exactly zero - the 6-slot case is the binding
+        // constraint, not the 5-slot default (5 slots alone would tolerate
+        // a substantially larger value, up to ~0.83, before CameraFrameWidth
+        // became the limit). Confirmed via real capture at both an
+        // iPhone-portrait 1080x1920 aspect and an iPad-portrait aspect: 5
+        // slots read with genuinely more breathing room than 0.4, and 6
+        // slots still fit on screen without clipping.
+        public const float WaitingSlotSpacing = 0.48f;
+
+        // WaitingSlotVisualScale is a pure presentation multiplier applied
+        // ONLY by WaitingSlotVisual's own child-local Transform.localScale —
+        // never read by WaitingLine.GenerateSlots, never applied to the
+        // WaitingSlot GameObject itself. WaitingSlotSize/WaitingSlotSpacing
+        // above stay the sole source of truth for slot CENTER positions and
+        // the gap between them (GenerateSlots' stepX/offsetX math never
+        // reads this value), so growing this constant makes each slot's art
+        // visually larger without moving a single logical slot position or
+        // narrowing the authored gap between them.
+        //
+        // Hard ceiling: WaitingSlot.png's own alpha content fills its
+        // imported square nearly edge to edge (~98%, negligible built-in
+        // transparent margin - see WaitingSlot.png's own alpha bounds), so
+        // this value cannot exceed step/WaitingSlotSize = (WaitingSlotSize +
+        // WaitingSlotSpacing) / WaitingSlotSize = 1.25 without adjacent
+        // slots' opaque art actually overlapping - confirmed the hard way:
+        // an initial 1.7 attempt looked like five clean, separated cells in
+        // a real Game View capture, but pixel-measuring that screenshot
+        // against the known step showed adjacent sprites truly overlapping
+        // by roughly a quarter of their own width, with the clean-looking
+        // seam only an accident of opaque draw-order masking (both slots
+        // share the same Z push and sortingOrder, so which one paints over
+        // the other at the overlap is undefined) - not real spacing, and not
+        // something to rely on.
+        //
+        // 1.15 keeps every slot's full width (1.2 * 1.15 = 1.38) safely
+        // under that 1.5 non-overlap ceiling, leaving a real ~0.12 world
+        // unit (~8% of the 1.5 step) visible gap confirmed in a real Game
+        // View capture at both an iPhone-portrait 1080x1920 aspect and an
+        // iPad-portrait aspect. Measured against what a real Unity Editor
+        // Game View actually rendered before this fix - WaitingSlot.png's
+        // own pixel dimensions changed after this project's sprite import
+        // settings were first authored (785x787, not the 1024x1024 they
+        // were calibrated against - see WaitingSlot.png.meta), so every
+        // slot was silently rendering at 1.2 * (785/1024) = 0.92 world
+        // units, not the intended 1.2 - this constant's own 1.15 factor
+        // lands at 1.38 world units, ~1.5x that actually-observed 0.92,
+        // matching the requested starting direction once measured against
+        // what Play Mode genuinely showed rather than the never-actually-
+        // rendered 1.2 design intent.
+        public const float WaitingSlotVisualScale = 1.15f;
 
         // ----- Queue row rhythm -----------------------------------------------
         // QueueRowStep is the vertical distance between consecutive
@@ -338,13 +470,52 @@ namespace Project001.Gameplay.Presentation
         // margin share one authored value instead of two numbers that would
         // otherwise need to be kept in sync by hand.
         //
+        // This gap is measured from the Conveyor's path line to PixelGrid's
+        // own ALLOCATED region boundary (GridRegionWidth/Height), never from
+        // a level's actual smaller rendered grid content - true regardless
+        // of level (level_001's 6x6 grid renders at a 2.95-unit natural
+        // size, level_002's 4x8 at 1.95x3.95, both far under the 6-unit
+        // allocation on every side), so this can never be satisfied by a
+        // level simply having a smaller grid.
+        //
+        // Was a flat, standalone-authored 0.8 - never referencing collector
+        // size at all - until a real Game View review found collectors
+        // reading as almost touching PixelGrid above and cramped for room
+        // side-to-side on the Conveyor. Root cause: collector size grew
+        // through later, independent passes (the shared-height-scaling
+        // migration, CollectorVisibleWidthRatio's own widening for Turtle)
+        // without this gap ever being revisited to match, so a grounded
+        // Conveyor rider's own real reach toward the grid quietly outgrew
+        // it - on the Bottom straight, a full CollectorVisibleHeight (see
+        // CameraFrameTop's own remarks for why grounding means "full
+        // height", not half); on Left/Right, CollectorVisibleWidth*0.5 (a
+        // plain symmetric fact, unrelated to grounding - a standing
+        // character's width is centered on its own root regardless).
+        // CollectorVisibleHeight is the larger of the two, so it is the
+        // binding case this gap must clear.
+        //
+        // Now derives from that same existing per-character data instead of
+        // a standalone number, plus GridToClusterBreathingRoom - the one
+        // genuinely new authored constant this fix needed, since "how much
+        // MORE than the bare non-overlap minimum feels comfortable" is a
+        // real design judgment, not something any existing measurement
+        // already encodes (see its own remarks for exactly what it
+        // represents). Growing this necessarily grows ConveyorSize and the
+        // whole camera frame with it (see ComputeOrthographicSize) - the
+        // correct, honest consequence of a composition that was undersized
+        // for today's collectors, not something to route around with
+        // another shift elsewhere.
+        //
         // ConveyorToWaitingLineGap is the single explicit, positive gap
-        // between the lowest visible edge of a Conveyor rider travelling the
-        // bottom straightaway and WaitingLine's own top edge — not the
-        // Conveyor path line itself. A rider is centered on the path, so its
-        // visible bottom reaches CollectorVisibleHeight*0.5 below that line
-        // (see WaitingLinePositionY); this gap is purely the breathing room
-        // beyond that, never the distance to the path line.
+        // between the Conveyor's own bottom-straightaway path line and a
+        // WaitingLine occupant's own real visible top edge — see
+        // WaitingLinePositionY's own remarks for why BOTH of those are now
+        // GroundAnchor-derived quantities (a grounded Conveyor rider's own
+        // lowest point IS the path line, and a grounded WaitingLine
+        // occupant's own highest point is a full CollectorVisibleHeight
+        // above this row's Y), not the pre-grounding "half-height on each
+        // side, plus the slot marker's own edge" quantities this gap used
+        // to be measured between.
         //
         // ClusterInnerSpacing is the single explicit, positive gap between
         // WaitingLine's own visible bottom edge and CollectorQueueBoard's
@@ -381,13 +552,172 @@ namespace Project001.Gameplay.Presentation
         // below the collector board. HorizontalCompositionPadding is the
         // camera's reserved breathing room to either side of the Conveyor
         // (including a rider on its side edges) — see CameraFrameWidth.
-        public const float GridToClusterSpacing = 0.8f;
-        public const float ConveyorToWaitingLineGap = 0.3f;
+        // The one genuinely new authored constant GridToClusterSpacing's own
+        // fix needed (see its remarks): explicit breathing room ABOVE the
+        // bare geometric minimum (CollectorVisibleHeight - the distance a
+        // grounded Bottom-straight rider's own body reaches toward the
+        // grid, the binding case). Without this, GridToClusterSpacing would
+        // equal CollectorVisibleHeight exactly - zero actual overlap, but a
+        // rider's own silhouette would graze PixelGrid's allocated boundary
+        // with no visible daylight, the same "geometrically correct but
+        // reads as touching" problem the exact-margin fixes elsewhere in
+        // this file already ran into. 0.25 was chosen to read as genuinely
+        // comfortable without inflating ConveyorSize (and therefore the
+        // camera's own zoom) more than necessary - confirmed via real Game
+        // View review, not assumed from the number alone.
+        //
+        // Raised from 0.25 after a follow-up manual review found riders
+        // still reading as too close to PixelGrid even with that margin in
+        // place. Root cause of why 0.25 undershot: it is the ONLY clearance
+        // term shared by all four Conveyor sides, but the four sides are
+        // not equally tight - a Bottom/Top rider's own body reaches a full
+        // CollectorVisibleHeight toward the grid (the binding case this
+        // value is sized against), while a Left/Right rider's body only
+        // reaches CollectorVisibleWidth*0.5, a genuinely smaller number -
+        // so Top/Bottom riders were left with only the bare 0.25 itself as
+        // real daylight, while Left/Right already had roughly 3x that
+        // (GridToClusterSpacing - CollectorVisibleWidth*0.5 ≈ 0.72). The
+        // previous pass's own real Game View review evidently judged the
+        // easier Left/Right case, not the actually-binding Top/Bottom one.
+        //
+        // There is no cheaper lever than this one: ConveyorPath's riding
+        // line sits exactly on ConveyorSize's own outer edge (confirmed
+        // against ConveyorPath.cs), so the distance from that line to
+        // PixelGrid's own boundary IS this gap, by construction - not a
+        // number that can be recovered from Conveyor.png's own art
+        // calibration (ConveyorVisual is scale-independent of ConveyorPath/
+        // ConveyorSize, confirmed against ConveyorVisual.cs/
+        // BootstrapSceneCreator.CreateConveyor - re-authoring the belt art
+        // could change how tight the BELT ITSELF looks, but not the real
+        // distance between a rider's silhouette and the grid). Growing this
+        // value therefore still grows ConveyorSize and the camera frame
+        // with it (see GridToClusterSpacing's own remarks) - the same
+        // honest, unavoidable consequence as before, not something this
+        // pass tries to hide behind new art or a second constant. Kept
+        // deliberately as the smallest increase that read as genuinely
+        // comfortable on the actually-binding Top/Bottom/corner case in a
+        // real Game View review (0.45, not a much larger round number) so
+        // the resulting zoom-out is no bigger than necessary.
+        //
+        // Reduced from 0.45 to 0.3868 when CollectorSpriteScale rose from
+        // 1.75 to 1.83 (see its own remarks) - a deliberate, exact
+        // arithmetic offset (old GridToClusterSpacing at 1.75, 1.8325,
+        // minus CollectorVisibleHeight at the new 1.83 scale, 1.4457), not
+        // a fresh visual re-tuning: the Conveyor visual/size were
+        // explicitly accepted as final this pass ("do not change
+        // ConveyorSize again"), so this value's only job here is to absorb
+        // CollectorVisibleHeight's own increase and hold GridToClusterSpacing
+        // - and therefore ConveyorSize - numerically frozen at its previous
+        // 1.8325 / 9.665. Still comfortably positive (real, visible
+        // daylight above a grounded Top/Bottom rider remains, just
+        // slightly less than 0.45) - confirmed via real Game View review
+        // that this still reads as comfortable, not merely non-negative.
+        public const float GridToClusterBreathingRoom = 0.3868f;
+
+        public static float GridToClusterSpacing => CollectorVisibleHeight + GridToClusterBreathingRoom;
+
+        // Widened from 0.3 to 0.55 after a real Game View review found
+        // WaitingLine collectors still visually intruding into the
+        // Conveyor's own region above them, even though the grounding-model
+        // fix (see WaitingLinePositionY's own remarks) already correctly
+        // sized this gap's own endpoints. The gap itself simply read too
+        // thin as a genuine breathing band between the two clusters,
+        // especially once CollectorSpriteScale's own increase (see its
+        // remarks) made a grounded WaitingLine occupant's own upward reach
+        // (CollectorVisibleHeight) taller too, eating further into the same
+        // fixed 0.3. Changed here, in GameplayLayout - the single
+        // structural owner of WaitingLine's own Y position (see
+        // WaitingLinePositionY) - rather than nudging individual WaitingLine
+        // occupants, which would silently break the "every WaitingLine
+        // occupant stands exactly on its own WaitingSlot" contract
+        // GroundAnchor grounding depends on.
+        //
+        // Raised again, from 0.55 to 0.70, after a further real Play Mode
+        // review found WaitingLine collectors still slightly intruding into
+        // the Conveyor with the tops of their bodies. Deliberately a small,
+        // conservative bump (+0.15, ~27%) rather than a full re-derivation:
+        // an earlier attempt jumped to 1.08 (fully compensating
+        // ConveyorBeltCalibration's own Bottom-edge belt-art correction on
+        // top of restoring the old 0.55 real gap) and was confirmed too
+        // large in real Play Mode review, pushing WaitingLine visibly
+        // further away than intended.
+        //
+        // Raised again, from 0.70 to 0.90, after a further real Play Mode
+        // review found 0.70 still not enough - WaitingLine collectors
+        // still read as too close to the Conveyor, with the whole
+        // downstream queue cluster (CollectorQueueBoard, carried along
+        // through CollectorQueueBoardPositionY's own dependency on this
+        // value) still reading as too high as a result. 0.90 is the low
+        // end of that pass's own requested ~0.90-0.95 starting target -
+        // the smallest value in that range, kept deliberately close to
+        // the low end rather than jumping to the high end or back toward
+        // 1.08, consistent with this constant's own history of small,
+        // confirmed-by-review increments rather than large corrective
+        // jumps.
+        //
+        // Raised again, from 0.90 to 1.05, after a further real Play Mode
+        // review found the WaitingLine and the entire downstream cluster
+        // still needed to sit slightly lower.
+        //
+        // Raised again, from 1.05 to 1.15, after a further real Play Mode
+        // review found the WaitingLine and downstream queue still needed
+        // a little more vertical breathing room. Direction confirmed
+        // correct, but still not enough.
+        //
+        // Raised again, from 1.15 to 1.45, this time aimed at a specific
+        // visual TARGET rather than another small nudge: the existing
+        // ClusterInnerSpacing relationship, read as a VISUAL gap rather
+        // than a raw constant. ClusterInnerSpacing (0.65) is not itself
+        // that visual gap - CollectorQueueBoard's row 0 is lifted toward
+        // WaitingLine by QueueUpwardPresentationOffset (0.2), so the real
+        // visible gap between WaitingLine's own WaitingSlot platform
+        // (bottom edge WaitingLinePositionY - WaitingSlotSize*0.5) and row
+        // 0's own static top edge is ClusterInnerSpacing -
+        // QueueUpwardPresentationOffset = 0.65 - 0.2 = 0.45 world units -
+        // see QueueUpwardPresentationOffset's own remarks for the same
+        // arithmetic. This pass's goal is making the Conveyor<->WaitingLine
+        // gap read as that same ~0.45 world units, not raw ClusterInnerSpacing.
+        //
+        // Unlike that WaitingLine<->queue gap, this one cannot be derived
+        // to the same exactness purely from GameplayLayout's own
+        // constants: WaitingSlotSize*0.5 gives Gap2's upper edge a real,
+        // modeled "platform footprint" term, but nothing in this file (or
+        // in scope for this pass - ConveyorVisual/ConveyorBeltCalibration
+        // were explicitly not touched) models the Conveyor's own rendered
+        // visual footprint below its bottom-straightaway path line the
+        // same way. WaitingLinePositionY's formula already cleanly cancels
+        // CollectorVisibleHeight against the grounded WaitingLine
+        // occupant's own upward reach, so this constant maps 1:1 onto that
+        // gap only if the Conveyor's true visual edge sat exactly on the
+        // mathematical path line - real Play Mode review already showed
+        // that assumption undershoots (1.15 still read as insufficient
+        // against this ~0.45 target), meaning the Conveyor's actual
+        // rendered footprint extends a real, currently-unmodeled amount
+        // below that line. 1.45 = 0.45 (the derived target gap) + 1.0 (a
+        // reasoned estimate for that unmodeled Conveyor-side extent, not a
+        // measured value) - a genuine step past 1.15 rather than another
+        // marginal nudge, but still an ESTIMATE pending real Play Mode
+        // confirmation, not a guaranteed exact match the way the 0.45
+        // figure itself is.
+        public const float ConveyorToWaitingLineGap = 1.45f;
         public const float ClusterInnerSpacing = 0.65f;
         public const float TopCompositionPadding = 0.2f;
         public const float BottomCompositionPadding = 0.2f;
         public const float HorizontalCompositionPadding = 0.15f;
 
+        // PixelGrid stays centered at the world origin - see class remarks.
+        // (A previous pass introduced CompositionDownwardShift/
+        // WaitingLineExtraDownwardShift here - two empirically-tuned
+        // translations that shifted the whole composition and WaitingLine
+        // specifically to paper over a top-clipping bug and a WaitingLine-
+        // overlaps-Conveyor bug. Both bugs shared one real cause: CameraFrameTop
+        // and WaitingLinePositionY below were sized for a collector centered
+        // on its anchor line, but grounded collectors - conveyor riders and,
+        // as of last pass, WaitingLine occupants - are aligned by GroundAnchor
+        // instead, which reaches a full CollectorVisibleHeight above their
+        // anchor line, not CollectorVisibleHeight*0.5. Fixing that margin at
+        // its source below removes the need for either shift - see
+        // CameraFrameTop's and WaitingLinePositionY's own remarks.)
         public const float PixelGridPositionY = 0f;
 
         // ----- Conveyor's authored extent ------------------------------------
@@ -404,28 +734,61 @@ namespace Project001.Gameplay.Presentation
         private static float ConveyorHalfSize => ConveyorSize * 0.5f;
 
         /// <summary>
-        /// WaitingLine's center. A rider on the Conveyor's bottom
-        /// straightaway is centered on the path line (-ConveyorHalfSize), not
-        /// resting on top of it, so its own visible bottom edge reaches a
-        /// further CollectorVisibleHeight*0.5 below that line — the sprite's
-        /// actual visible extent, not CollectorSpriteScale (a transform scale
-        /// is not the visible sprite height; see CollectorVisibleHeight).
-        /// WaitingLine's top edge sits ConveyorToWaitingLineGap below THAT
-        /// visible edge, an explicit positive gap rather than the two
-        /// touching directly.
+        /// WaitingLine's center (every slot shares this Y - see
+        /// WaitingLine.GenerateSlots). A rider on the Conveyor's bottom
+        /// straightaway is GROUNDED there (see CameraFrameTop's own remarks
+        /// for the full mechanism), not centered on it: its GroundAnchor
+        /// sits exactly ON the path line, and its own body extends upward
+        /// from there, toward the grid - never downward, toward WaitingLine.
+        /// So the path line itself (-ConveyorHalfSize), not
+        /// "-CollectorVisibleHeight*0.5 below the path line," is the real
+        /// lowest point ConveyorToWaitingLineGap's own breathing room is
+        /// measured from.
+        ///
+        /// The collector THIS line grounds is symmetric to that: a
+        /// WaitingLine occupant's own GroundAnchor sits exactly at this slot
+        /// row's own Y (see CollectorLifecycle.ResolveLap and
+        /// CollectorView.SetGroundedPosition), and its body extends a full
+        /// CollectorVisibleHeight upward FROM there - toward the Conveyor -
+        /// for the identical structural reason CameraFrameTop's own remarks
+        /// document (GroundAnchor reaches a full height above its anchor
+        /// line, not half). That upward reach is what ConveyorToWaitingLineGap
+        /// must actually clear, not WaitingSlotSize*0.5 (the SLOT MARKER's
+        /// own half-height, a separate, smaller quantity that the taller
+        /// grounded collector already exceeds - see WaitingSlotSize's own
+        /// remarks on why the marker is deliberately not sized to the
+        /// collector).
+        ///
+        /// Was previously computed assuming both ends were center-anchored
+        /// (CollectorVisibleHeight*0.5 below the Conveyor's path line, plus
+        /// WaitingSlotSize*0.5 to reach this row's own center from a
+        /// "WaitingLine top edge" that no longer exists as a useful
+        /// intermediate once grounding, not the slot marker, owns the real
+        /// boundary) - patched afterward with two empirically-tuned
+        /// downward shifts (CompositionDownwardShift, WaitingLineExtraDownward
+        /// Shift) that this formula no longer needs, since it now derives
+        /// the correct gap directly from CollectorVisibleHeight, the same
+        /// existing per-character data CameraFrameTop uses.
         /// </summary>
         public static float WaitingLinePositionY =>
-            -ConveyorHalfSize - CollectorVisibleHeight * 0.5f - ConveyorToWaitingLineGap - WaitingSlotSize * 0.5f;
+            -ConveyorHalfSize - ConveyorToWaitingLineGap - CollectorVisibleHeight;
 
         /// <summary>
         /// Unlike WaitingLinePositionY, this is the board region's true top
         /// edge, not a center — CollectorQueueBoard places row 0's own center
         /// half a CollectorVisibleHeight below this value (see
         /// CollectorQueueBoard.GenerateBoard), so the row's actual visible
-        /// top edge lands exactly here, ClusterInnerSpacing below
-        /// WaitingLine's bottom edge. Treating this value as a center instead
-        /// (a previous bug) silently ate part of that gap and let the first
-        /// queue row intrude into WaitingLine.
+        /// top edge lands ClusterInnerSpacing below WaitingLine's own SLOT
+        /// MARKER's bottom edge (WaitingLinePositionY - WaitingSlotSize*0.5) -
+        /// the marker, not the grounded collector standing on it, is what
+        /// CollectorQueueBoard must clear here, since (unlike the Conveyor
+        /// side above) a WaitingLine occupant's own GroundAnchor sits AT
+        /// this row's Y and never reaches below it - the slot marker's own
+        /// art, centered on that same Y, is the actual lowest visible point
+        /// of this row. CollectorQueueBoard itself is unaffected by
+        /// grounding (see CollectorQueueBoard.RowLocalPosition - still a
+        /// plain center-anchored placement), so nothing about its own
+        /// region needs to change here.
         /// </summary>
         public static float CollectorQueueBoardPositionY =>
             WaitingLinePositionY - WaitingSlotSize * 0.5f - ClusterInnerSpacing;
@@ -440,14 +803,39 @@ namespace Project001.Gameplay.Presentation
         // (ConveyorHalfSize), not from GridRegionHeight: the Conveyor always
         // encloses PixelGrid (ConveyorHalfSize = grid half-height +
         // GridToClusterSpacing), so a frame that clears the Conveyor's top
-        // edge always clears the grid's top edge too. A collector riding the
-        // Conveyor's top edge is centered exactly on that edge, so its own
-        // visible top reaches CollectorVisibleHeight*0.5 further up (the
-        // sprite's actual visible extent, not CollectorSpriteScale) — that
-        // term is what guarantees a travelling rider is never clipped.
+        // edge always clears the grid's top edge too.
+        //
+        // A collector riding the Conveyor's top edge is GROUNDED there, not
+        // centered on it: CollectorView.ApplyConveyorPresentationOffset
+        // aligns this rider's GroundAnchor (its own baked feet-contact
+        // point, see CharacterAssetBuilder.CreateGroundAnchor) with the path
+        // line, never its root/body center. Because only Visual's YAW ever
+        // rotates a rider (CollectorAnimation drives facing around the Y
+        // axis only - no pitch/roll), a character's own head-to-feet axis
+        // stays vertically aligned regardless of which edge it is on, so
+        // GroundAnchor sits a fixed CollectorVisibleHeight*0.5 below this
+        // model's own vertical center whenever PresentationOffset is zero
+        // (GroundAnchorHeightFraction = 1.0 in CharacterAssetBuilder places
+        // it exactly at the model's own lowest measured point, i.e.
+        // "center minus one full half-height"). Grounding pulls that point
+        // UP to the path line, which pushes the model's own TOP up by that
+        // same half-height beyond where a center-anchored rider's head
+        // would have reached - so a grounded rider's real visible top
+        // reaches a full CollectorVisibleHeight above the path line, not
+        // CollectorVisibleHeight*0.5. This is the single, structural reason
+        // a top rider was clipping despite this frame's own top padding:
+        // the reserved margin was sized for a center-anchored rider that no
+        // longer exists once grounding was introduced, not a magic-number
+        // shortfall to patch with an extra shift.
         private static float CameraFrameTop =>
-            ConveyorHalfSize + CollectorVisibleHeight * 0.5f + TopCompositionPadding;
+            ConveyorHalfSize + CollectorVisibleHeight + TopCompositionPadding;
 
+        // CollectorQueueBoard is unaffected by grounding (see
+        // CollectorQueueBoardPositionY's own remarks - still plain
+        // center-anchored placement), so this reserved margin needs no
+        // correction of its own; it simply inherits whatever real change
+        // WaitingLinePositionY's own fix above produces, through
+        // CollectorQueueBoardPositionY's existing dependency on it.
         private static float CameraFrameBottom =>
             CollectorQueueBoardPositionY - CollectorQueueBoardRegionHeight - BottomCompositionPadding;
 
@@ -569,10 +957,13 @@ namespace Project001.Gameplay.Presentation
         //   GameplayBackground (BootstrapSceneCreator.GameplayBackgroundLocalDepth,
         //   15 - far deeper than every distance below combined)
         //     -> ConveyorVisual (ConveyorVisualDepthPush, pushed AWAY from camera)
-        //       -> ContactShadow (ContactShadowDepthPush, pushed AWAY from camera)
-        //         -> Character baseline (0 - the shared Z=0 gameplay plane
-        //            every ConveyorRider/collector root actually sits on)
-        //           -> EnergyBar (EnergyBarDepthPull, pulled TOWARD camera)
+        //       -> WaitingSlotVisual (WaitingSlotVisualDepthPush, pushed AWAY
+        //          from camera - a slot's own backdrop must sit behind both
+        //          the contact shadow and the collector standing in it)
+        //         -> ContactShadow (ContactShadowDepthPush, pushed AWAY from camera)
+        //           -> Character baseline (0 - the shared Z=0 gameplay plane
+        //              every ConveyorRider/collector root actually sits on)
+        //             -> EnergyBar (EnergyBarDepthPull, pulled TOWARD camera)
         //
         // Each step only needs to clear the previous layer by more than a
         // collector's own real camera-facing depth extent (~0.35-0.45 world
@@ -601,6 +992,24 @@ namespace Project001.Gameplay.Presentation
         // full +1 unit of comfortable headroom instead of a thin margin,
         // still far short of the camera's far clip plane.
         public const float ConveyorVisualDepthPush = 5.0f;
+
+        // A slot's own backdrop art (WaitingSlotVisual) must sit behind both
+        // the collector standing in it AND that collector's own contact
+        // shadow, which itself only clears the character baseline by
+        // ContactShadowDepthPush (0.15). Set to comfortably exceed that same
+        // value, by the same margin ContactShadowDepthPush itself already
+        // uses over the character baseline (0.15), so the three-way order
+        // (WaitingSlotVisual behind ContactShadow behind Character) holds
+        // with the same margin discipline throughout, not a smaller one.
+        // Expressed in WaitingSlotVisual's own LOCAL space - it is parented
+        // under a WaitingSlot GameObject carrying WaitingSlotSize as its own
+        // localScale (see WaitingSlotVisual's own remarks), so the real
+        // world-space push is this value times WaitingSlotSize, the same
+        // deliberate parent-scale convention QueueRowDepthStep already
+        // documents above.
+        public const float WaitingSlotVisualDepthPush = 0.3f;
+
+
 
         // The scrolling belt-marker ribbon (ConveyorBeltAnimation) sits
         // between ConveyorVisual (5.0, the static frame/belt art) and
