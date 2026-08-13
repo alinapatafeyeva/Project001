@@ -5,29 +5,31 @@ using UnityEngine;
 namespace Project001.Gameplay.WaitingLine
 {
     /// <summary>
-    /// Generates horizontal WaitingSlot objects on Initialize, using a single
-    /// shared runtime-generated square-outline sprite reused by every slot.
-    /// Slot count comes from the capacity passed to Initialize — a fixed
-    /// global gameplay setting (see GameplayConstants.WaitingLineCapacity),
-    /// not level data, since Waiting Line capacity must stay constant across
-    /// every level. Each slot renders at GameplayLayout.WaitingSlotSize —
-    /// deliberately independent of GameplayLayout.CollectorSpriteScale, since
-    /// a slot is only ever a landing marker an arriving collector's world
-    /// position snaps to (see CollectorLifecycle.ResolveLap): the collector
-    /// keeps its own scale, so the slot's own size is a free visual choice,
-    /// not something that must equal or bound it.
+    /// Generates horizontal WaitingSlot objects on Initialize, each carrying
+    /// its own child WaitingSlotVisual instance showing the Classic theme
+    /// WaitingSlot.png sprite (see WaitingSlotVisual) — one sprite per slot,
+    /// never a single merged image, so a future capacity change (see
+    /// slotCount) just generates more independently-positioned instances of
+    /// the same asset. Slot count comes from the capacity passed to
+    /// Initialize — a fixed global gameplay setting (see
+    /// GameplayConstants.WaitingLineCapacity), not level data, since Waiting
+    /// Line capacity must stay constant across every level. Each slot
+    /// occupies GameplayLayout.WaitingSlotSize — deliberately independent of
+    /// GameplayLayout.CollectorSpriteScale, since a slot is only ever a
+    /// landing marker an arriving collector's world position snaps to (see
+    /// CollectorLifecycle.ResolveLap): the collector keeps its own scale, so
+    /// the slot's own size is a free visual choice, not something that must
+    /// equal or bound it.
     /// </summary>
     public class WaitingLine : MonoBehaviour, ICollectorSource
     {
-        private const int SpriteSizePixels = 32;
-        private const int OutlineThicknessPixels = 3;
-
         [SerializeField, Tooltip("Number of waiting slots to generate.")]
         [Min(1)]
         private int slotCount = 5;
 
-        private Texture2D _sharedTexture;
-        private Sprite _sharedSprite;
+        [SerializeField, Tooltip("The Classic theme waiting slot sprite (WaitingSlot.png), applied to every generated slot's own WaitingSlotVisual child.")]
+        private Sprite slotSprite;
+
         private WaitingSlot[] _slots;
         private bool _isInitialized;
 
@@ -54,44 +56,8 @@ namespace Project001.Gameplay.WaitingLine
             }
 
             slotCount = Mathf.Max(1, capacity);
-            CreateSharedSprite();
             GenerateSlots();
             _isInitialized = true;
-        }
-
-        private void CreateSharedSprite()
-        {
-            _sharedTexture = new Texture2D(SpriteSizePixels, SpriteSizePixels, TextureFormat.RGBA32, false)
-            {
-                filterMode = FilterMode.Point,
-                wrapMode = TextureWrapMode.Clamp
-            };
-
-            var pixels = new Color32[SpriteSizePixels * SpriteSizePixels];
-
-            for (int y = 0; y < SpriteSizePixels; y++)
-            {
-                for (int x = 0; x < SpriteSizePixels; x++)
-                {
-                    bool isBorder = x < OutlineThicknessPixels
-                        || y < OutlineThicknessPixels
-                        || x >= SpriteSizePixels - OutlineThicknessPixels
-                        || y >= SpriteSizePixels - OutlineThicknessPixels;
-
-                    pixels[y * SpriteSizePixels + x] = isBorder
-                        ? new Color32(255, 255, 255, 255)
-                        : new Color32(255, 255, 255, 0);
-                }
-            }
-
-            _sharedTexture.SetPixels32(pixels);
-            _sharedTexture.Apply();
-
-            _sharedSprite = Sprite.Create(
-                _sharedTexture,
-                new Rect(0f, 0f, SpriteSizePixels, SpriteSizePixels),
-                new Vector2(0.5f, 0.5f),
-                SpriteSizePixels);
         }
 
         private void GenerateSlots()
@@ -108,11 +74,29 @@ namespace Project001.Gameplay.WaitingLine
                 slotObject.transform.localPosition = new Vector3(index * stepX - offsetX, 0f, 0f);
                 slotObject.transform.localScale = new Vector3(GameplayLayout.WaitingSlotSize, GameplayLayout.WaitingSlotSize, 1f);
 
-                var spriteRenderer = slotObject.GetComponent<SpriteRenderer>();
-                spriteRenderer.sprite = _sharedSprite;
+                CreateSlotVisual(slotObject.transform);
 
                 _slots[index] = slotObject.GetComponent<WaitingSlot>();
             }
+        }
+
+        /// <summary>
+        /// A child of the slot GameObject, never a component on it directly
+        /// — WaitingSlot's own transform.position is what an arriving
+        /// collector snaps to (see CollectorLifecycle.ResolveLap), so the
+        /// visual's own depth push (see WaitingSlotVisual) must apply to a
+        /// separate child transform, exactly mirroring how ConveyorVisual is
+        /// parented under Conveyor rather than added to it directly.
+        /// </summary>
+        private void CreateSlotVisual(Transform slotTransform)
+        {
+            var visualObject = new GameObject(
+                "WaitingSlotVisual",
+                typeof(SpriteRenderer),
+                typeof(WaitingSlotVisual));
+            visualObject.transform.SetParent(slotTransform, false);
+
+            visualObject.GetComponent<WaitingSlotVisual>().Initialize(slotSprite);
         }
 
         /// <summary>
@@ -211,14 +195,5 @@ namespace Project001.Gameplay.WaitingLine
         /// boarding attempt (this line never actually released the view).
         /// </summary>
         void ICollectorSource.RestorePresentationDepth(CollectorView collectorView) => collectorView?.Presentation.ClearPresentationDepth();
-
-        private void OnDestroy()
-        {
-            if (_sharedSprite != null)
-                Destroy(_sharedSprite);
-
-            if (_sharedTexture != null)
-                Destroy(_sharedTexture);
-        }
     }
 }

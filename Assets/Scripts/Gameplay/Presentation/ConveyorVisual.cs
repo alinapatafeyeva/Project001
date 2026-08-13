@@ -15,12 +15,22 @@ namespace Project001.Gameplay.Presentation
     /// Unlike GameplayBackground, this needs no runtime Fit(): the art is
     /// fixed gameplay content at the shared Z=0 plane (like PixelGrid and
     /// ConveyorPath itself), not something that must cover the viewport at
-    /// any aspect ratio. Its size instead comes from the sprite's own import
+    /// any aspect ratio. Its BASE size comes from the sprite's own import
     /// calibration - Pixels Per Unit and pivot chosen so the belt's drawn
-    /// centerline lines up with ConveyorPath's authored footprint
-    /// (GameplayLayout.ConveyorSize) at localScale (1,1,1) - so this stays in
-    /// sync with GameplayLayout the same way ConveyorPath's own width/height
-    /// does, without duplicating that constant here.
+    /// centerline lined up with ConveyorPath's authored footprint at
+    /// ConveyorBeltCalibration.CalibratedConveyorSize, the ConveyorSize in
+    /// effect when that calibration was done (localScale (1,1,1) at that
+    /// size only - see ConveyorBeltCalibration's own remarks).
+    ///
+    /// ConveyorSize has since grown beyond that calibrated size (composition
+    /// passes that widened GridToClusterSpacing), so a uniform
+    /// ConveyorBeltCalibration.VisualScale is applied here on top of that
+    /// base calibration - the same ratio ConveyorBeltCalibration.
+    /// ComputeOffset itself now scales its own small path-vs-art
+    /// corrections by, so the visible belt's rendered footprint and the
+    /// measured offset riding collectors/the belt animation align to it
+    /// both stay mutually consistent at any ConveyorSize, growing and
+    /// shrinking together rather than one silently drifting from the other.
     ///
     /// Placed on the dedicated "Conveyor" Sorting Layer (Project Settings >
     /// Tags and Layers), ordered after "Background" and before "Default" -
@@ -98,6 +108,15 @@ namespace Project001.Gameplay.Presentation
             // QueueGroundingZone computes explicitly, without needing this
             // component to read its own parent's transform.
             transform.localPosition = GameplayLayout.CameraForward * DepthPushDistanceValue;
+
+            // Rescales this sprite's calibrated base size up to today's
+            // actual ConveyorSize - see this class's own remarks and
+            // ConveyorBeltCalibration.VisualScale. Uniform, so the art's
+            // own aspect ratio is always preserved; applied here (Awake),
+            // not baked as a fixed scene value, so it can never drift stale
+            // if ConveyorSize is tuned again later without this file being
+            // touched.
+            transform.localScale = Vector3.one * ConveyorBeltCalibration.VisualScale;
         }
     }
 }

@@ -75,6 +75,28 @@ namespace Project001.Gameplay.Collectors
     /// "remains completely fixed" in the sense the conveyor loop requires,
     /// not merely close to fixed.
     /// </summary>
+    ///
+    /// ----- Execution order (DefaultExecutionOrder) -----
+    /// Must run its own Update() BEFORE CollectorView's: this component owns
+    /// Visual's yaw (advanced toward its target every frame via
+    /// RotateTowards - never instant, see remarks above), and GroundAnchor
+    /// is a rigid descendant of Visual, so its live WorldPosition reflects
+    /// whichever rotation this component has applied SO FAR this frame.
+    /// CollectorView.ApplyConveyorPresentationOffset (called from its own
+    /// Update()) reads that same live GroundAnchor.WorldPosition to solve
+    /// PresentationOffset for the current frame - with no explicit ordering,
+    /// Unity's default script order is unspecified and can shift whenever
+    /// the project's compiled script set changes (e.g. adding an unrelated
+    /// new MonoBehaviour elsewhere), silently flipping which of these two
+    /// Update() calls runs first. When CollectorView's happens to run
+    /// first, it solves against LAST frame's rotation - a real, live
+    /// one-frame-stale read, not a rounding error - which is invisible on a
+    /// straight edge (yaw is constant there, so "stale" equals "current")
+    /// but visible every frame while cornering, since that is exactly when
+    /// RotateTowards is actively advancing yaw fastest. This attribute
+    /// makes the required order explicit and immune to future script
+    /// additions, rather than relying on Unity's undocumented default.
+    [DefaultExecutionOrder(-100)]
     public class CollectorAnimation : MonoBehaviour
     {
         // Live-tunable in the Inspector, including on a live-selected

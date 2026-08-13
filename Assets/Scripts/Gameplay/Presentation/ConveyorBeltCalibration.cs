@@ -53,10 +53,66 @@ namespace Project001.Gameplay.Presentation
     /// </summary>
     public static class ConveyorBeltCalibration
     {
-        private static readonly Vector2 TopOffset = new Vector2(0.017f, -0.124f);
-        private static readonly Vector2 BottomOffset = new Vector2(0.017f, -0.256f);
+        // The GameplayLayout.ConveyorSize in effect when Conveyor.png's own
+        // import (Pixels Per Unit, pivot) and every measured offset below
+        // were calibrated: GridRegionHeight (6) + 2 * 0.8, the flat,
+        // standalone GridToClusterSpacing value that predated it being
+        // derived from CollectorVisibleHeight (see GameplayLayout.
+        // GridToClusterSpacing's own remarks for that history) - not an
+        // arbitrary magic number, the actual composition size this belt art
+        // was drawn/measured against.
+        //
+        // ConveyorSize has since grown twice (composition/collector-scale
+        // passes) without Conveyor.png itself, or this calibration data,
+        // ever being redrawn or re-measured - so both now need to be scaled
+        // up by the same ratio to stay correct, rather than silently
+        // rendering a belt sized for the old, smaller loop under today's
+        // larger ConveyorPath.
+        public const float CalibratedConveyorSize = 7.6f;
+
+        /// <summary>
+        /// Uniform scale factor that maps this calibration's own authored
+        /// size to GameplayLayout's CURRENT ConveyorSize - the single ratio
+        /// both ConveyorVisual (the static belt sprite) and every offset
+        /// ComputeOffset returns below must scale by, so the belt art's
+        /// rendered footprint AND the small measured path-vs-art correction
+        /// riding collectors/the belt animation both read grow together,
+        /// staying mutually consistent at any ConveyorSize rather than one
+        /// silently drifting relative to the other.
+        /// </summary>
+        public static float VisualScale => GameplayLayout.ConveyorSize / CalibratedConveyorSize;
+
+        // The two horizontal straights' own small "along-belt" (X) measured
+        // components, unchanged from the original calibration - only their
+        // cross-belt (Y) component is corrected below.
+        private static readonly Vector2 TopOffsetMeasured = new Vector2(0.017f, -0.124f);
+        private static readonly Vector2 BottomOffsetMeasured = new Vector2(0.017f, -0.256f);
         private static readonly Vector2 LeftOffset = new Vector2(0.055f, -0.208f);
         private static readonly Vector2 RightOffset = new Vector2(-0.035f, -0.208f);
+
+        // A real Game View review found riders on BOTH horizontal straights
+        // (Top and Bottom) sitting too high relative to the belt's own
+        // rendered band - their contact point landing near the band's
+        // vertical CENTER instead of clearly within/on it (confirmed via a
+        // direct measurement: a rider's own GroundAnchor, logged through
+        // Camera.main.WorldToScreenPoint, landed almost exactly on the
+        // belt band's own measured midline, not toward its nearer surface).
+        // Left/Right were not reported as wrong and are left untouched.
+        //
+        // This is expressed as ONE shared correction along the direction
+        // common to any horizontal straight's own cross-belt axis (world
+        // Y - the axis perpendicular to travel on Top/Bottom, exactly the
+        // "belt normal" a rider's contact point must sit correctly along),
+        // applied identically to both edges via EdgeOffset below, rather
+        // than as two more independently-tuned TopOffset/BottomOffset Y
+        // magic numbers that happened to both need the same fix. In
+        // CALIBRATED (pre-VisualScale) units, like every other offset here.
+        private const float HorizontalStraightContactCorrection = -0.157f;
+
+        private static readonly Vector2 TopOffset =
+            TopOffsetMeasured + new Vector2(0f, HorizontalStraightContactCorrection);
+        private static readonly Vector2 BottomOffset =
+            BottomOffsetMeasured + new Vector2(0f, HorizontalStraightContactCorrection);
 
         // Corner midpoints, named by the two straights they connect (see
         // ConveyorPath's own EdgeBeforeCorner/EdgeAfterCorner visit order).
@@ -66,6 +122,15 @@ namespace Project001.Gameplay.Presentation
         private static readonly Vector2 BottomToRightCornerMid = new Vector2(-0.029f, -0.201f);
 
         public static Vector2 ComputeOffset(ConveyorOrientationSample orientation)
+        {
+            return ComputeOffsetAtCalibratedSize(orientation) * VisualScale;
+        }
+
+        // The original per-edge/per-corner blend, exactly as measured at
+        // CalibratedConveyorSize - VisualScale above is what the public
+        // ComputeOffset applies on top so callers always get a correction
+        // sized for today's actual ConveyorSize.
+        private static Vector2 ComputeOffsetAtCalibratedSize(ConveyorOrientationSample orientation)
         {
             Vector2 fromOffset = EdgeOffset(orientation.FromEdge);
 
