@@ -192,34 +192,63 @@ namespace Project001.Gameplay.Presentation
         // path never changes once boarding is behind them, on straight
         // sections and rounded corners alike.
         //
-        // Derived from CollectorVisibleHeight plus ConveyorRiderVisualGap, an
-        // explicit breathing-room margin sized to comfortably absorb the
+        // ----- ConveyorRiderMaxVisualFootprint -----
+        // The conservative maximum on-screen footprint (world units) ANY
+        // current roster collector can present while actively RIDING the
+        // Conveyor, across any facing/orientation - a single roster-wide
+        // worst case, never a per-species table (mirrors
+        // CollectorVisibleWidthRatio's own established convention: "the
+        // queue adapts to the characters, not the opposite" - here, the
+        // Conveyor's own spacing adapts to the roster the same way).
+        //
+        // Replaces the previous CollectorVisibleHeight basis, which assumed
+        // a "close to circular" footprint - true for the old single-species
+        // placeholder, never re-verified once real species were added. Two
+        // real measurements now confirm that assumption was wrong, in the
+        // same direction, by a wide margin:
+        //   - Turtle: CollectorVisibleWidthRatio's own build-log measurement
+        //     (1.037 unscaled, ~1.898 world units at today's
+        //     CollectorSpriteScale) already showed a species reading
+        //     noticeably wider than CollectorVisibleHeight (1.4457).
+        //   - Crab: CharacterVerification.cs's own live measurement records
+        //     ~2.03 world units for Crab's ACTUAL Conveyor riding pose
+        //     (claws in their wide, authored bind pose - CharacterAssetBuilder.
+        //     ApplyCrabPosePresentation only tucks them for the Waiting
+        //     pose, never the Conveyor one) - wider even than Turtle, and
+        //     the true current worst case, superseding the older, now-stale
+        //     "Crab: 0.888" figure in CollectorVisibleWidthRatio's own
+        //     remarks (that figure was measured under a build pipeline that
+        //     permanently baked a claw-narrowing adjustment at build time;
+        //     that adjustment was later deleted in favor of the runtime
+        //     pose-switcher CharacterPosePresentation now uses, so today's
+        //     baked/measured Crab pose is the wide one, not the narrow one
+        //     that comment still describes).
+        //
+        // 1.9 is a deliberately CONSERVATIVE first pass, not the full
+        // measured worst case (~2.03): the goal here is substantially
+        // reducing ugly body/claw overlap while keeping boarding cadence
+        // reasonably quick, not a mathematical zero-overlap guarantee - see
+        // ConveyorRiderVisualGap's own remarks for how this combines with
+        // the corner-squeeze margin below. Revisit upward (toward the full
+        // ~2.03, or re-measure via CharacterAssetBuilder.BuildAll's own log
+        // once it is re-run against the current pipeline) if this first
+        // pass still reads as insufficient in real Play Mode review.
+        public const float ConveyorRiderMaxVisualFootprint = 1.9f;
+
+        // Explicit breathing-room margin on top of
+        // ConveyorRiderMaxVisualFootprint, sized to comfortably absorb the
         // small chord-vs-arc "squeeze" a tight corner introduces (two points
         // separated by a given arc length sit slightly closer together in a
         // straight line while both are inside the same rounded corner) — at
         // ConveyorPath's authored cornerRadius (1 world unit, see
         // BootstrapSceneCreator.CreateConveyor), the worst case is only
-        // about a 10% reduction, well inside this margin.
-        //
-        // Deliberately left keyed to height, not updated to the new
-        // per-species measured widths (see CollectorVisibleWidthRatio's own
-        // remarks) - conveyor spacing/behaviour was explicitly out of scope
-        // for the shared-height-scaling change this accompanies. Worth
-        // flagging honestly rather than silently: this was originally sized
-        // assuming a "close to circular" mesh footprint (true for the old
-        // single-species placeholder, no longer true for Turtle specifically -
-        // measured scaled width 1.037 vs the height this spacing is keyed
-        // to, 0.79, an aspect ratio of ~1.31), so on a conveyor edge whose
-        // fixed facing angle happens to align a Turtle rider's wide axis
-        // with the direction of travel, two adjacent Turtle riders'
-        // combined footprint can exceed this spacing's own margin by a few
-        // percent. Confirmed via real Play Mode observation not to read as
-        // an actual visible overlap in practice (see this change's own
-        // verification notes) - called out here for whoever revisits
-        // conveyor spacing next, not fixed now.
+        // about a 10% reduction, well inside this margin. Unchanged in
+        // value from its own prior history — only what it is now added ON
+        // TOP OF changed (ConveyorRiderMaxVisualFootprint, not
+        // CollectorVisibleHeight — see that constant's own remarks for why).
         public const float ConveyorRiderVisualGap = 0.35f;
 
-        public static float ConveyorRiderMinimumSpacing => CollectorVisibleHeight + ConveyorRiderVisualGap;
+        public static float ConveyorRiderMinimumSpacing => ConveyorRiderMaxVisualFootprint + ConveyorRiderVisualGap;
 
         // ----- WaitingLine's own presentation tokens -------------------------
         // WaitingSlotSize is independent of CollectorSpriteScale: WaitingLine
