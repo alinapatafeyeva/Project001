@@ -1026,6 +1026,6 @@ namespace Project001.Gameplay.Presentation
         // that ordering too.
         public const float ConveyorBeltAnimationDepthPush = 4.5f;
         public const float ContactShadowDepthPush = 0.15f;
-        public const float EnergyBarDepthPull = 0.5f;
+        public const float EnergyBarDepthPull = 0.8f;
     }
 }
