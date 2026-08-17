@@ -7,15 +7,18 @@ namespace Project001.Gameplay.Pixels
 {
     /// <summary>
     /// Generates a centred grid of PixelCell objects from a PixelLayoutDefinition,
-    /// using a single shared runtime-generated 1x1 sprite. Dimensions and per-cell
-    /// MatchTypeId/MatchId come entirely from the injected layout; visual colour
-    /// is resolved directly from each cell's own MatchId via
-    /// ColorPalette.TryGetByMatchId — the same permanent Match ID -&gt;
-    /// canonical colour source CharacterDatabase resolves a collector's
-    /// Character_XX prefab from, so a pixel and the collector meant to eat it
-    /// always agree on colour by construction. No injected/caller-supplied
-    /// colour mapping any more (see MatchTypePresentation's removal) — there
-    /// is exactly one presentation colour source in the project now.
+    /// each rendered as its own instance of a single shared PixelBlock mesh
+    /// (see pixelBlockSource/pixelBlockMaterial and PixelCell.CreateVisual) —
+    /// one shared Mesh and one shared Material for the whole grid, never
+    /// duplicated per cell. Dimensions and per-cell MatchTypeId/MatchId come
+    /// entirely from the injected layout; visual colour is resolved directly
+    /// from each cell's own MatchId via ColorPalette.TryGetByMatchId — the
+    /// same permanent Match ID -&gt; canonical colour source CharacterDatabase
+    /// resolves a collector's Character_XX prefab from, so a pixel and the
+    /// collector meant to eat it always agree on colour by construction. No
+    /// injected/caller-supplied colour mapping any more (see
+    /// MatchTypePresentation's removal) — there is exactly one presentation
+    /// colour source in the project now.
     /// </summary>
     public class PixelGrid : MonoBehaviour
     {
@@ -35,8 +38,12 @@ namespace Project001.Gameplay.Pixels
         [Min(0f)]
         private float maxGridWorldHeight = 6f;
 
-        private Texture2D _sharedTexture;
-        private Sprite _sharedSprite;
+        [SerializeField, Tooltip("Shared PixelBlock.fbx root every cell instantiates its own Visual child from (see PixelCell.CreateVisual) — one Mesh asset shared by every instance, never duplicated per cell.")]
+        private GameObject pixelBlockSource;
+
+        [SerializeField, Tooltip("Shared material every cell's Visual uses. Per-cell colour is applied via MaterialPropertyBlock, never a material instance, so this stays the only material asset regardless of cell count.")]
+        private Material pixelBlockMaterial;
+
         private PixelCell[,] _cells;
         private int _remainingPixelCount;
         private bool _isInitialized;
@@ -132,13 +139,18 @@ namespace Project001.Gameplay.Pixels
                 return;
             }
 
+            if (pixelBlockSource == null || pixelBlockMaterial == null)
+            {
+                Debug.LogError($"PixelGrid: '{name}' is missing pixelBlockSource and/or pixelBlockMaterial; aborting to avoid generating cells with no visual.", this);
+                return;
+            }
+
             if (!TryComputeCellMetrics(layout, out float cellSize, out float gap))
                 return;
 
             CellSize = cellSize;
             CellGap = gap;
 
-            CreateSharedSprite();
             GenerateGrid(layout, cellSize, gap);
             _isInitialized = true;
         }
@@ -198,23 +210,6 @@ namespace Project001.Gameplay.Pixels
             return true;
         }
 
-        private void CreateSharedSprite()
-        {
-            _sharedTexture = new Texture2D(1, 1, TextureFormat.RGBA32, false)
-            {
-                filterMode = FilterMode.Point,
-                wrapMode = TextureWrapMode.Clamp
-            };
-            _sharedTexture.SetPixel(0, 0, Color.white);
-            _sharedTexture.Apply();
-
-            _sharedSprite = Sprite.Create(
-                _sharedTexture,
-                new Rect(0f, 0f, 1f, 1f),
-                new Vector2(0.5f, 0.5f),
-                pixelsPerUnit: 1f);
-        }
-
         private void GenerateGrid(PixelLayoutDefinition layout, float cellSize, float gap)
         {
             Width = layout.Width;
@@ -236,10 +231,6 @@ namespace Project001.Gameplay.Pixels
                     var cellObject = new GameObject($"Pixel_{x}_{y}", typeof(PixelCell));
                     cellObject.transform.SetParent(transform, false);
                     cellObject.transform.localPosition = new Vector3(localPosition.x, localPosition.y, 0f);
-                    cellObject.transform.localScale = new Vector3(cellSize, cellSize, 1f);
-
-                    var spriteRenderer = cellObject.GetComponent<SpriteRenderer>();
-                    spriteRenderer.sprite = _sharedSprite;
 
                     MatchTypeId matchTypeId = layout.GetMatchTypeId(x, y);
                     int matchId = layout.GetMatchId(x, y);
@@ -247,6 +238,7 @@ namespace Project001.Gameplay.Pixels
 
                     var cell = cellObject.GetComponent<PixelCell>();
                     cell.Initialize(x, y, localPosition, matchTypeId, matchId, color);
+                    cell.CreateVisual(pixelBlockSource, pixelBlockMaterial, cellSize);
 
                     _cells[x, y] = cell;
                     _remainingPixelCount++;
@@ -445,13 +437,5 @@ namespace Project001.Gameplay.Pixels
             return cell != null && cell.IsActive;
         }
 
-        private void OnDestroy()
-        {
-            if (_sharedSprite != null)
-                Destroy(_sharedSprite);
-
-            if (_sharedTexture != null)
-                Destroy(_sharedTexture);
-        }
     }
 }

@@ -295,15 +295,34 @@ public static class BootstrapSceneCreator
         RenderSettings.ambientIntensity = 1f;
     }
 
+    private const string PixelBlockFbxPath = "Assets/Art/Gameplay/PixelBlock.fbx";
+    private const string PixelBlockMaterialPath = "Assets/Art/Gameplay/Materials/PixelBlock.mat";
+
+    /// <summary>
+    /// Wires PixelGrid's shared PixelBlock mesh/material source (see
+    /// PixelCell.CreateVisual) - the same two assets every cell across the
+    /// whole grid instances/shares, never duplicated per cell. Scene-owned,
+    /// exactly like every other cross-reference in this class.
+    /// </summary>
     private static PixelGrid CreatePixelGrid()
     {
         var pixelGridObject = new GameObject("PixelGrid", typeof(PixelGrid));
         pixelGridObject.transform.position = new Vector3(0f, GameplayLayout.PixelGridPositionY, 0f);
 
+        var fbxRoot = AssetDatabase.LoadAssetAtPath<GameObject>(PixelBlockFbxPath);
+        if (fbxRoot == null)
+            Debug.LogError($"BootstrapSceneCreator: could not load '{PixelBlockFbxPath}'; PixelGrid cells will have no visual.");
+
+        var material = AssetDatabase.LoadAssetAtPath<Material>(PixelBlockMaterialPath);
+        if (material == null)
+            Debug.LogError($"BootstrapSceneCreator: could not load '{PixelBlockMaterialPath}'; PixelGrid cells will have no visual.");
+
         var pixelGrid = pixelGridObject.GetComponent<PixelGrid>();
         var serializedPixelGrid = new SerializedObject(pixelGrid);
         serializedPixelGrid.FindProperty("preferredCellSize").floatValue = GameplayLayout.GridPreferredCellSize;
         serializedPixelGrid.FindProperty("preferredGap").floatValue = GameplayLayout.GridPreferredGap;
+        serializedPixelGrid.FindProperty("pixelBlockSource").objectReferenceValue = fbxRoot;
+        serializedPixelGrid.FindProperty("pixelBlockMaterial").objectReferenceValue = material;
         serializedPixelGrid.ApplyModifiedPropertiesWithoutUndo();
 
         // The field's outer bound goes through the public runtime seam
