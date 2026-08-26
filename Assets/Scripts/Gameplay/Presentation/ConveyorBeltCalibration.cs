@@ -82,6 +82,44 @@ namespace Project001.Gameplay.Presentation
         /// </summary>
         public static float VisualScale => GameplayLayout.ConveyorSize / CalibratedConveyorSize;
 
+        // Small non-uniform, visual-only correction on top of VisualScale so
+        // the new Conveyor.png's own rendered belt lines up with
+        // ConveyorPath's already-correct, unchanged geometry: the art's
+        // drawn band currently reads a touch too wide (X) and too short (Y)
+        // relative to the path. This is a PNG-fit correction only - it never
+        // touches ConveyorPath/ConveyorSystem or any offset in
+        // ComputeOffset above, and applies uniformly to Z (depth) so the
+        // sprite's flat Z=0 footprint/depth push are unaffected. Starting
+        // values from a first Game View calibration pass; nudge these two
+        // constants (not the call sites) if a later pass finds the belt
+        // still off on any edge/corner.
+        public const float VisualWidthScale = 0.94f;
+        public const float VisualHeightScale = 1.05f;
+
+        /// <summary>
+        /// The final non-uniform local scale ConveyorVisual/
+        /// CreateConveyorVisual must both apply to the belt sprite so Scene
+        /// View and runtime match exactly - VisualScale for the size
+        /// tracking GameplayLayout.ConveyorSize, times the small per-axis
+        /// PNG-fit correction above, X/Y only (Z stays uniform).
+        /// </summary>
+        public static Vector3 VisualScaleVector => new Vector3(
+            VisualScale * VisualWidthScale,
+            VisualScale * VisualHeightScale,
+            VisualScale);
+
+        // Small visual-only vertical nudge on top of VisualScaleVector so
+        // the belt art's rendered band sits flush with ConveyorPath's
+        // already-correct, unchanged geometry: a Game View review after the
+        // 0.94/1.05 fit found the PNG reading slightly high. World-space Y
+        // (added directly to ConveyorVisual's local position - see its own
+        // remarks; its parent Conveyor sits at world origin with identity
+        // rotation, so local Y here is exactly world Y), never touches
+        // ConveyorPath/ConveyorSystem/rider position or the existing
+        // CameraForward depth push. Purely an art placement correction, not
+        // a gameplay geometry change.
+        public const float VisualVerticalOffset = -0.10f;
+
         // The two horizontal straights' own small "along-belt" (X) measured
         // components, unchanged from the original calibration - only their
         // cross-belt (Y) component is corrected below.

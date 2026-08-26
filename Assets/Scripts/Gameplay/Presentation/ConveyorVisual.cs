@@ -31,6 +31,13 @@ namespace Project001.Gameplay.Presentation
     /// measured offset riding collectors/the belt animation align to it
     /// both stay mutually consistent at any ConveyorSize, growing and
     /// shrinking together rather than one silently drifting from the other.
+    /// On top of that uniform scale, ConveyorBeltCalibration.
+    /// VisualScaleVector also applies a small non-uniform X/Y-only
+    /// correction (VisualWidthScale/VisualHeightScale) so a Conveyor.png
+    /// whose own drawn proportions don't perfectly match ConveyorPath's
+    /// geometry can be fit to the path without ever touching the path
+    /// itself - purely a sprite-rendering correction, never gameplay
+    /// geometry.
     ///
     /// Placed on the dedicated "Conveyor" Sorting Layer (Project Settings >
     /// Tags and Layers), ordered after "Background" and before "Default" -
@@ -106,17 +113,25 @@ namespace Project001.Gameplay.Presentation
             // rotation (see BootstrapSceneCreator.CreateConveyor), so this
             // local-space offset is exactly the same world-space push
             // QueueGroundingZone computes explicitly, without needing this
-            // component to read its own parent's transform.
-            transform.localPosition = GameplayLayout.CameraForward * DepthPushDistanceValue;
+            // component to read its own parent's transform. The small
+            // world-space Y term on top is a visual-only art placement nudge
+            // (ConveyorBeltCalibration.VisualVerticalOffset) - it never
+            // touches the Conveyor GameObject/ConveyorPath, so it cannot
+            // affect rider positions, only where this sprite itself is
+            // drawn.
+            transform.localPosition = GameplayLayout.CameraForward * DepthPushDistanceValue
+                + new Vector3(0f, ConveyorBeltCalibration.VisualVerticalOffset, 0f);
 
             // Rescales this sprite's calibrated base size up to today's
             // actual ConveyorSize - see this class's own remarks and
-            // ConveyorBeltCalibration.VisualScale. Uniform, so the art's
-            // own aspect ratio is always preserved; applied here (Awake),
-            // not baked as a fixed scene value, so it can never drift stale
-            // if ConveyorSize is tuned again later without this file being
-            // touched.
-            transform.localScale = Vector3.one * ConveyorBeltCalibration.VisualScale;
+            // ConveyorBeltCalibration.VisualScale - then applies the small
+            // non-uniform PNG-fit correction (VisualWidthScale/
+            // VisualHeightScale) so the belt art's rendered band lines up
+            // with ConveyorPath's own unchanged geometry. Applied here
+            // (Awake), not baked as a fixed scene value, so it can never
+            // drift stale if ConveyorSize or the fit correction is tuned
+            // again later without this file being touched.
+            transform.localScale = ConveyorBeltCalibration.VisualScaleVector;
         }
     }
 }

@@ -10,6 +10,7 @@ using Project001.Gameplay.Presentation;
 using Project001.Gameplay.Recovery;
 using Project001.Gameplay.Victory;
 using Project001.UI.Failure;
+using Project001.UI.Hud;
 using Project001.UI.Victory;
 using UnityEditor;
 using UnityEditor.SceneManagement;
@@ -78,6 +79,11 @@ public static class BootstrapSceneCreator
         CreateEventSystem();
         CreateVictoryUI(victoryController, victoryFlowController);
         CreateFailureUI(failureController, failureRecoveryController);
+
+        GameplaySpeedController gameplaySpeedController = CreateGameplaySpeedController();
+        PauseFlowController pauseFlowController = CreatePauseFlowController(gameplayFlowController);
+        LevelExitFlowController levelExitFlowController = CreateLevelExitFlowController(gameplayFlowController);
+        CreateTopGameplayHud(levelProgressionController, gameplaySpeedController, pauseFlowController, levelExitFlowController);
 
         string directory = Path.GetDirectoryName(ScenePath);
         if (!Directory.Exists(directory))
@@ -390,9 +396,10 @@ public static class BootstrapSceneCreator
     /// import settings (Pixels Per Unit, pivot — see Conveyor.png.meta) are
     /// calibrated so its drawn belt lines up with ConveyorPath's authored
     /// footprint at ConveyorBeltCalibration.CalibratedConveyorSize, then
-    /// uniformly rescaled by ConveyorBeltCalibration.VisualScale to track
-    /// GameplayLayout.ConveyorSize's current (possibly larger) value — see
-    /// ConveyorVisual's own remarks. Sprite/sortingLayer/scale are set
+    /// rescaled by ConveyorBeltCalibration.VisualScaleVector — the uniform
+    /// VisualScale that tracks GameplayLayout.ConveyorSize's current
+    /// (possibly larger) value, times the small non-uniform X/Y PNG-fit
+    /// correction — see ConveyorVisual's own remarks. Sprite/sortingLayer/scale are set
     /// directly on the SpriteRenderer/Transform (baking a scene-view
     /// preview, mirroring CreateGameplayBackground) as well as on
     /// ConveyorVisual's own serialized field (what Awake re-applies at
@@ -413,11 +420,13 @@ public static class BootstrapSceneCreator
             typeof(ConveyorVisual));
         visualObject.transform.SetParent(conveyorTransform, false);
         // Baked here purely for an accurate scene-view preview - ConveyorVisual.Awake()
-        // re-applies this exact same push and scale (see its own remarks)
-        // at runtime regardless of what is saved in the scene.
-        visualObject.transform.localPosition = GameplayLayout.CameraForward * ConveyorVisual.DepthPushDistanceValue;
+        // re-applies this exact same depth push, vertical art offset, and
+        // scale (see its own remarks) at runtime regardless of what is saved
+        // in the scene.
+        visualObject.transform.localPosition = GameplayLayout.CameraForward * ConveyorVisual.DepthPushDistanceValue
+            + new Vector3(0f, ConveyorBeltCalibration.VisualVerticalOffset, 0f);
         visualObject.transform.localRotation = Quaternion.identity;
-        visualObject.transform.localScale = Vector3.one * ConveyorBeltCalibration.VisualScale;
+        visualObject.transform.localScale = ConveyorBeltCalibration.VisualScaleVector;
 
         var spriteRenderer = visualObject.GetComponent<SpriteRenderer>();
         spriteRenderer.sprite = sprite;
@@ -951,5 +960,373 @@ public static class BootstrapSceneCreator
         serializedBootstrapper.FindProperty("endgameCleanupController").objectReferenceValue = endgameCleanupController;
         serializedBootstrapper.FindProperty("levelProgressionController").objectReferenceValue = levelProgressionController;
         serializedBootstrapper.ApplyModifiedPropertiesWithoutUndo();
+    }
+
+    // ================= Top Gameplay HUD =================
+
+    /// <summary>
+    /// Sole owner of the selected 1x/2x gameplay speed (see its own
+    /// remarks). No dependencies of its own to wire — TopHudUI reads from
+    /// it, but this controller depends on neither TopHudUI nor
+    /// GameplayFlowController.
+    /// </summary>
+    private static GameplaySpeedController CreateGameplaySpeedController()
+    {
+        var speedControllerObject = new GameObject("GameplaySpeedController", typeof(GameplaySpeedController));
+        return speedControllerObject.GetComponent<GameplaySpeedController>();
+    }
+
+    /// <summary>
+    /// Owns what the top HUD's Pause button and the Pause modal's Continue
+    /// button actually do (pause/resume through gameplayFlowController) —
+    /// presentation only ever calls its OpenPause/ContinuePause API.
+    /// </summary>
+    private static PauseFlowController CreatePauseFlowController(GameplayFlowController gameplayFlowController)
+    {
+        var pauseFlowControllerObject = new GameObject("PauseFlowController", typeof(PauseFlowController));
+
+        var pauseFlowController = pauseFlowControllerObject.GetComponent<PauseFlowController>();
+        var serializedPauseFlowController = new SerializedObject(pauseFlowController);
+        serializedPauseFlowController.FindProperty("gameplayFlowController").objectReferenceValue = gameplayFlowController;
+        serializedPauseFlowController.ApplyModifiedPropertiesWithoutUndo();
+
+        return pauseFlowController;
+    }
+
+    /// <summary>
+    /// Owns what the Exit confirmation dialog actually does, regardless of
+    /// which of its two entry points (top HUD Exit, Pause modal Exit Level)
+    /// opened it — presentation only ever calls its
+    /// OpenExitConfirmation/CancelExit/ConfirmExit API. ConfirmExit is
+    /// currently a stub — see its own remarks for why (no destination scene
+    /// or navigation controller exists yet in this project).
+    /// </summary>
+    private static LevelExitFlowController CreateLevelExitFlowController(GameplayFlowController gameplayFlowController)
+    {
+        var levelExitFlowControllerObject = new GameObject("LevelExitFlowController", typeof(LevelExitFlowController));
+
+        var levelExitFlowController = levelExitFlowControllerObject.GetComponent<LevelExitFlowController>();
+        var serializedLevelExitFlowController = new SerializedObject(levelExitFlowController);
+        serializedLevelExitFlowController.FindProperty("gameplayFlowController").objectReferenceValue = gameplayFlowController;
+        serializedLevelExitFlowController.ApplyModifiedPropertiesWithoutUndo();
+
+        return levelExitFlowController;
+    }
+
+    /// <summary>
+    /// Builds the Pause and Exit confirmation modals first (GameplayModalCanvas,
+    /// sortingOrder 10 — above TopHudCanvas's default 0, so either modal's own
+    /// full-screen backdrop reliably blocks clicks to the HUD row underneath
+    /// it, with no separate CanvasGroup/interactable bookkeeping needed on
+    /// the HUD side), then the top HUD row itself (TopHudCanvas), wired to
+    /// both modals plus the gameplay-layer controllers already created by
+    /// the caller.
+    /// </summary>
+    private static void CreateTopGameplayHud(
+        LevelProgressionController levelProgressionController,
+        GameplaySpeedController gameplaySpeedController,
+        PauseFlowController pauseFlowController,
+        LevelExitFlowController levelExitFlowController)
+    {
+        (PauseUI pauseUI, ExitConfirmationUI exitConfirmationUI) = CreateGameplayModalUI(pauseFlowController, levelExitFlowController);
+        CreateTopHudCanvas(levelProgressionController, gameplaySpeedController, levelExitFlowController, pauseFlowController, exitConfirmationUI, pauseUI);
+    }
+
+    /// <summary>
+    /// One Canvas hosting both the Pause and Exit confirmation panels as
+    /// siblings — both start inactive, only ever one visible at a time (see
+    /// PauseUI.OnExitLevelPressed/ExitConfirmationUI.Open) — rather than two
+    /// separate canvases, since both share the same "modal above the HUD"
+    /// sorting concern. PauseUI/ExitConfirmationUI live on this canvas
+    /// object itself, never on their own panel — the canvas stays active for
+    /// the whole scene (only the child panels toggle), exactly like
+    /// VictoryUI/FailureUI living on their own always-active canvas rather
+    /// than on VictoryPanel/FailurePanel: a component placed directly on an
+    /// initially-inactive GameObject would not run Awake (and therefore
+    /// would not wire up its own button listeners) until that GameObject was
+    /// first activated, one frame after the very panel-show call meant to
+    /// reveal it.
+    /// </summary>
+    private static (PauseUI pauseUI, ExitConfirmationUI exitConfirmationUI) CreateGameplayModalUI(
+        PauseFlowController pauseFlowController,
+        LevelExitFlowController levelExitFlowController)
+    {
+        var canvasObject = new GameObject(
+            "GameplayModalCanvas",
+            typeof(Canvas),
+            typeof(CanvasScaler),
+            typeof(GraphicRaycaster),
+            typeof(PauseUI),
+            typeof(ExitConfirmationUI));
+
+        var canvas = canvasObject.GetComponent<Canvas>();
+        canvas.renderMode = RenderMode.ScreenSpaceOverlay;
+        canvas.sortingOrder = 10;
+
+        var exitConfirmationUI = canvasObject.GetComponent<ExitConfirmationUI>();
+        CreateExitConfirmPanel(canvasObject.transform, exitConfirmationUI, levelExitFlowController);
+
+        var pauseUI = canvasObject.GetComponent<PauseUI>();
+        CreatePausePanel(canvasObject.transform, pauseUI, pauseFlowController, exitConfirmationUI);
+
+        return (pauseUI, exitConfirmationUI);
+    }
+
+    private static void CreatePausePanel(Transform parent, PauseUI pauseUI, PauseFlowController pauseFlowController, ExitConfirmationUI exitConfirmationUI)
+    {
+        GameObject panel = CreateModalBackdrop(parent, "PausePanel");
+        GameObject dialogBox = CreateDialogBox(panel.transform, new Vector2(560f, 360f));
+
+        CreateCenteredText(dialogBox.transform, "Paused", new Vector2(0f, 110f), new Vector2(400f, 60f), 30, Color.white);
+        Button continueButton = CreateDialogButton(dialogBox.transform, "ContinueButton", "Continue", new Vector2(0f, -10f));
+        Button exitLevelButton = CreateDialogButton(dialogBox.transform, "ExitLevelButton", "Exit Level", new Vector2(0f, -90f));
+
+        var serializedPauseUI = new SerializedObject(pauseUI);
+        serializedPauseUI.FindProperty("panel").objectReferenceValue = panel;
+        serializedPauseUI.FindProperty("continueButton").objectReferenceValue = continueButton;
+        serializedPauseUI.FindProperty("exitLevelButton").objectReferenceValue = exitLevelButton;
+        serializedPauseUI.FindProperty("pauseFlowController").objectReferenceValue = pauseFlowController;
+        serializedPauseUI.FindProperty("exitConfirmationUI").objectReferenceValue = exitConfirmationUI;
+        serializedPauseUI.ApplyModifiedPropertiesWithoutUndo();
+    }
+
+    private static void CreateExitConfirmPanel(Transform parent, ExitConfirmationUI exitConfirmationUI, LevelExitFlowController levelExitFlowController)
+    {
+        GameObject panel = CreateModalBackdrop(parent, "ExitConfirmPanel");
+        GameObject dialogBox = CreateDialogBox(panel.transform, new Vector2(620f, 380f));
+
+        CreateCenteredText(dialogBox.transform, "Exit level?", new Vector2(0f, 120f), new Vector2(500f, 60f), 30, Color.white);
+        CreateCenteredText(dialogBox.transform, "Your current progress will be lost.", new Vector2(0f, 60f), new Vector2(520f, 60f), 20, Color.white);
+        Button stayButton = CreateDialogButton(dialogBox.transform, "StayButton", "Stay", new Vector2(-110f, -110f));
+        Button exitButton = CreateDialogButton(dialogBox.transform, "ExitButton", "Exit", new Vector2(110f, -110f));
+
+        var serializedExitConfirmationUI = new SerializedObject(exitConfirmationUI);
+        serializedExitConfirmationUI.FindProperty("panel").objectReferenceValue = panel;
+        serializedExitConfirmationUI.FindProperty("stayButton").objectReferenceValue = stayButton;
+        serializedExitConfirmationUI.FindProperty("exitButton").objectReferenceValue = exitButton;
+        serializedExitConfirmationUI.FindProperty("levelExitFlowController").objectReferenceValue = levelExitFlowController;
+        serializedExitConfirmationUI.ApplyModifiedPropertiesWithoutUndo();
+    }
+
+    /// <summary>
+    /// A full-screen, semi-transparent, raycast-blocking Image — the modal
+    /// "panel" a PauseUI/ExitConfirmationUI toggles active/inactive, unlike
+    /// VictoryPanel/FailurePanel's own small floating box: those two modals
+    /// live on their own dedicated top-of-everything canvas
+    /// (GameplayModalCanvas, sortingOrder 10) specifically so this backdrop
+    /// can reliably intercept clicks aimed at the top HUD row underneath it
+    /// while either modal is open, with no separate CanvasGroup/interactable
+    /// bookkeeping needed on TopHudUI's own buttons.
+    /// </summary>
+    private static GameObject CreateModalBackdrop(Transform parent, string name)
+    {
+        var backdropObject = new GameObject(name, typeof(Image));
+        backdropObject.transform.SetParent(parent, false);
+
+        var rectTransform = backdropObject.GetComponent<RectTransform>();
+        rectTransform.anchorMin = Vector2.zero;
+        rectTransform.anchorMax = Vector2.one;
+        rectTransform.offsetMin = Vector2.zero;
+        rectTransform.offsetMax = Vector2.zero;
+
+        var image = backdropObject.GetComponent<Image>();
+        image.color = new Color(0f, 0f, 0f, 0.6f);
+
+        backdropObject.SetActive(false);
+
+        return backdropObject;
+    }
+
+    private static GameObject CreateDialogBox(Transform parent, Vector2 size)
+    {
+        var dialogObject = new GameObject("DialogBox", typeof(Image));
+        dialogObject.transform.SetParent(parent, false);
+
+        var rectTransform = dialogObject.GetComponent<RectTransform>();
+        rectTransform.anchorMin = new Vector2(0.5f, 0.5f);
+        rectTransform.anchorMax = new Vector2(0.5f, 0.5f);
+        rectTransform.pivot = new Vector2(0.5f, 0.5f);
+        rectTransform.sizeDelta = size;
+        rectTransform.anchoredPosition = Vector2.zero;
+
+        var image = dialogObject.GetComponent<Image>();
+        image.color = new Color(0f, 0f, 0f, 0.85f);
+
+        return dialogObject;
+    }
+
+    private static Button CreateDialogButton(Transform parent, string name, string label, Vector2 anchoredPosition)
+    {
+        var buttonObject = new GameObject(name, typeof(Image), typeof(Button));
+        buttonObject.transform.SetParent(parent, false);
+
+        var rectTransform = buttonObject.GetComponent<RectTransform>();
+        rectTransform.anchorMin = new Vector2(0.5f, 0.5f);
+        rectTransform.anchorMax = new Vector2(0.5f, 0.5f);
+        rectTransform.pivot = new Vector2(0.5f, 0.5f);
+        rectTransform.sizeDelta = new Vector2(200f, 64f);
+        rectTransform.anchoredPosition = anchoredPosition;
+
+        var image = buttonObject.GetComponent<Image>();
+        image.color = Color.white;
+
+        CreateCenteredText(buttonObject.transform, label, Vector2.zero, new Vector2(200f, 64f), 20, Color.black);
+
+        return buttonObject.GetComponent<Button>();
+    }
+
+    private const string HudExitSpritePath = "Assets/Art/UI/Classic/HUD/HudExit.png";
+    private const string HudPauseSpritePath = "Assets/Art/UI/Classic/HUD/HudPause.png";
+    private const string HudSpeed1xSpritePath = "Assets/Art/UI/Classic/HUD/HudSpeed1x.png";
+    private const string HudSpeed2xSpritePath = "Assets/Art/UI/Classic/HUD/HudSpeed2x.png";
+    private const string LevelLabelSpritePath = "Assets/Art/UI/Classic/HUD/Level/LevelLabel.png";
+    private const string LevelDigitSpritePathFormat = "Assets/Art/UI/Classic/HUD/Level/Digit{0}.png";
+
+    /// <summary>
+    /// The always-visible top HUD row: Exit (left), "LEVEL {number}"
+    /// (center), speed toggle + Pause (right) — see TopHudUI's own remarks.
+    /// Anchored to its own canvas corners/top-center (never a bare absolute
+    /// screen position) so the row stays correctly placed across aspect
+    /// ratios beyond the 1080x1920 portrait reference, the same corner-anchor
+    /// convention EnergyBarView's own fill anchoring already establishes for
+    /// resolution-independent UI in this project. Does not move or resize
+    /// PixelGrid, Conveyor, WaitingLine, collectors, or EnergyBars — none of
+    /// GameplayLayout's world-space composition reserves a top HUD region,
+    /// so this row is purely an overlay on top of the existing gameplay
+    /// frame, not a change to it.
+    /// </summary>
+    private static void CreateTopHudCanvas(
+        LevelProgressionController levelProgressionController,
+        GameplaySpeedController gameplaySpeedController,
+        LevelExitFlowController levelExitFlowController,
+        PauseFlowController pauseFlowController,
+        ExitConfirmationUI exitConfirmationUI,
+        PauseUI pauseUI)
+    {
+        var canvasObject = new GameObject(
+            "TopHudCanvas",
+            typeof(Canvas),
+            typeof(CanvasScaler),
+            typeof(GraphicRaycaster),
+            typeof(TopHudUI));
+
+        var canvas = canvasObject.GetComponent<Canvas>();
+        canvas.renderMode = RenderMode.ScreenSpaceOverlay;
+
+        var hudExitSprite = AssetDatabase.LoadAssetAtPath<Sprite>(HudExitSpritePath);
+        if (hudExitSprite == null)
+            Debug.LogError($"BootstrapSceneCreator: could not load a Sprite at '{HudExitSpritePath}'; the top HUD Exit button will show no icon. Check its TextureImporter Texture Type is set to 'Sprite (2D and UI)'.");
+
+        var hudPauseSprite = AssetDatabase.LoadAssetAtPath<Sprite>(HudPauseSpritePath);
+        if (hudPauseSprite == null)
+            Debug.LogError($"BootstrapSceneCreator: could not load a Sprite at '{HudPauseSpritePath}'; the top HUD Pause button will show no icon. Check its TextureImporter Texture Type is set to 'Sprite (2D and UI)'.");
+
+        var hudSpeed1xSprite = AssetDatabase.LoadAssetAtPath<Sprite>(HudSpeed1xSpritePath);
+        if (hudSpeed1xSprite == null)
+            Debug.LogError($"BootstrapSceneCreator: could not load a Sprite at '{HudSpeed1xSpritePath}'; the top HUD Speed button will show no icon at 1x. Check its TextureImporter Texture Type is set to 'Sprite (2D and UI)'.");
+
+        var hudSpeed2xSprite = AssetDatabase.LoadAssetAtPath<Sprite>(HudSpeed2xSpritePath);
+        if (hudSpeed2xSprite == null)
+            Debug.LogError($"BootstrapSceneCreator: could not load a Sprite at '{HudSpeed2xSpritePath}'; the top HUD Speed button will show no icon at 2x. Check its TextureImporter Texture Type is set to 'Sprite (2D and UI)'.");
+
+        var levelLabelSprite = AssetDatabase.LoadAssetAtPath<Sprite>(LevelLabelSpritePath);
+        if (levelLabelSprite == null)
+            Debug.LogError($"BootstrapSceneCreator: could not load a Sprite at '{LevelLabelSpritePath}'; the top HUD level display will show no label icon. Check its TextureImporter Texture Type is set to 'Sprite (2D and UI)'.");
+
+        var levelDigitSprites = new Sprite[10];
+        for (int digit = 0; digit < levelDigitSprites.Length; digit++)
+        {
+            string digitSpritePath = string.Format(LevelDigitSpritePathFormat, digit);
+            levelDigitSprites[digit] = AssetDatabase.LoadAssetAtPath<Sprite>(digitSpritePath);
+            if (levelDigitSprites[digit] == null)
+                Debug.LogError($"BootstrapSceneCreator: could not load a Sprite at '{digitSpritePath}'; the top HUD level display will show no icon for digit {digit}. Check its TextureImporter Texture Type is set to 'Sprite (2D and UI)'.");
+        }
+
+        Button backButton = CreateCornerButton(canvasObject.transform, "BackButton", hudExitSprite, new Vector2(0f, 1f), new Vector2(48f, -60f), new Vector2(72f, 72f), out _);
+        RectTransform levelDisplayContainer = CreateAnchoredContainer(canvasObject.transform, "LevelDisplay", new Vector2(0.5f, 1f), new Vector2(0f, -96f));
+        Button pauseButton = CreateCornerButton(canvasObject.transform, "PauseButton", hudPauseSprite, new Vector2(1f, 1f), new Vector2(-48f, -60f), new Vector2(72f, 72f), out _);
+        Button speedButton = CreateCornerButton(canvasObject.transform, "SpeedButton", hudSpeed1xSprite, new Vector2(1f, 1f), new Vector2(-48f - 72f - 16f, -48f), new Vector2(96f, 96f), out Image speedButtonIcon);
+
+        var topHudUI = canvasObject.GetComponent<TopHudUI>();
+        var serializedTopHudUI = new SerializedObject(topHudUI);
+        serializedTopHudUI.FindProperty("levelDisplayContainer").objectReferenceValue = levelDisplayContainer;
+        serializedTopHudUI.FindProperty("levelLabelSprite").objectReferenceValue = levelLabelSprite;
+
+        var levelDigitSpritesProperty = serializedTopHudUI.FindProperty("levelDigitSprites");
+        levelDigitSpritesProperty.arraySize = levelDigitSprites.Length;
+        for (int digit = 0; digit < levelDigitSprites.Length; digit++)
+            levelDigitSpritesProperty.GetArrayElementAtIndex(digit).objectReferenceValue = levelDigitSprites[digit];
+
+        serializedTopHudUI.FindProperty("backButton").objectReferenceValue = backButton;
+        serializedTopHudUI.FindProperty("speedButton").objectReferenceValue = speedButton;
+        serializedTopHudUI.FindProperty("speedButtonIcon").objectReferenceValue = speedButtonIcon;
+        serializedTopHudUI.FindProperty("speedNormalSprite").objectReferenceValue = hudSpeed1xSprite;
+        serializedTopHudUI.FindProperty("speedFastSprite").objectReferenceValue = hudSpeed2xSprite;
+        serializedTopHudUI.FindProperty("pauseButton").objectReferenceValue = pauseButton;
+        serializedTopHudUI.FindProperty("levelProgressionController").objectReferenceValue = levelProgressionController;
+        serializedTopHudUI.FindProperty("gameplaySpeedController").objectReferenceValue = gameplaySpeedController;
+        serializedTopHudUI.FindProperty("levelExitFlowController").objectReferenceValue = levelExitFlowController;
+        serializedTopHudUI.FindProperty("pauseFlowController").objectReferenceValue = pauseFlowController;
+        serializedTopHudUI.FindProperty("exitConfirmationUI").objectReferenceValue = exitConfirmationUI;
+        serializedTopHudUI.FindProperty("pauseUI").objectReferenceValue = pauseUI;
+        serializedTopHudUI.ApplyModifiedPropertiesWithoutUndo();
+    }
+
+    /// <summary>
+    /// A button anchored/pivoted to one of the canvas's own corners
+    /// (anchorMin == anchorMax == pivot), positioned by a pixel offset from
+    /// that corner rather than an absolute screen position — the offset
+    /// stays a small, fixed inset regardless of canvas size, unlike a
+    /// center-anchored placement (CreateContinueButton's own convention),
+    /// which is why this is a separate helper rather than a reuse of that
+    /// one. The button's own Image *is* the icon (icon may be null if its
+    /// sprite failed to load — the button still exists, just blank) with
+    /// preserveAspect on, per the Classic HUD icons' own square, transparent-
+    /// background art: no separate background rect and no interior text
+    /// label, unlike CreateContinueButton/CreateFailureActionButton's own
+    /// text buttons.
+    /// </summary>
+    private static Button CreateCornerButton(Transform parent, string name, Sprite icon, Vector2 anchor, Vector2 anchoredPosition, Vector2 size, out Image iconImage)
+    {
+        var buttonObject = new GameObject(name, typeof(Image), typeof(Button));
+        buttonObject.transform.SetParent(parent, false);
+
+        var rectTransform = buttonObject.GetComponent<RectTransform>();
+        rectTransform.anchorMin = anchor;
+        rectTransform.anchorMax = anchor;
+        rectTransform.pivot = anchor;
+        rectTransform.sizeDelta = size;
+        rectTransform.anchoredPosition = anchoredPosition;
+
+        var image = buttonObject.GetComponent<Image>();
+        image.sprite = icon;
+        image.color = Color.white;
+        image.preserveAspect = true;
+
+        iconImage = image;
+        return buttonObject.GetComponent<Button>();
+    }
+
+    /// <summary>
+    /// A standalone, zero-size anchor point pinned to one of the canvas's
+    /// own corners/edges (unlike CreateCenteredText, which is always
+    /// center-anchored on its parent) — used as the top-center anchor that
+    /// TopHudUI.BuildLevelDisplay builds the LevelLabel + digit icons under
+    /// at runtime, since only TopHudUI knows the current level's digit count
+    /// and can center that row on this single point regardless of it.
+    /// </summary>
+    private static RectTransform CreateAnchoredContainer(Transform parent, string name, Vector2 anchor, Vector2 anchoredPosition)
+    {
+        var containerObject = new GameObject(name, typeof(RectTransform));
+        containerObject.transform.SetParent(parent, false);
+
+        var rectTransform = containerObject.GetComponent<RectTransform>();
+        rectTransform.anchorMin = anchor;
+        rectTransform.anchorMax = anchor;
+        rectTransform.pivot = anchor;
+        rectTransform.sizeDelta = Vector2.zero;
+        rectTransform.anchoredPosition = anchoredPosition;
+
+        return rectTransform;
     }
 }
