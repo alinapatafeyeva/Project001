@@ -12,6 +12,7 @@ using Project001.Gameplay.Victory;
 using Project001.UI.Failure;
 using Project001.UI.Hud;
 using Project001.UI.Victory;
+using TMPro;
 using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
@@ -941,6 +942,36 @@ public static class BootstrapSceneCreator
         text.color = color;
     }
 
+    /// <summary>
+    /// TextMeshPro counterpart to CreateCenteredText, used only where a
+    /// specific TMP_FontAsset (e.g. Fredoka) must be assigned explicitly —
+    /// currently just the Exit confirmation modal's title/description/
+    /// button labels. Deliberately a separate helper rather than converting
+    /// CreateCenteredText itself, so every other caller (Pause panel,
+    /// Victory/Failure panels, top HUD) keeps rendering with the legacy
+    /// UI.Text/default font exactly as before.
+    /// </summary>
+    private static void CreateCenteredTMPText(Transform parent, string content, Vector2 anchoredPosition, Vector2 size, float fontSize, Color color, TMP_FontAsset font)
+    {
+        var textObject = new GameObject("Text", typeof(TextMeshProUGUI));
+        textObject.transform.SetParent(parent, false);
+
+        var rectTransform = textObject.GetComponent<RectTransform>();
+        rectTransform.anchorMin = new Vector2(0.5f, 0.5f);
+        rectTransform.anchorMax = new Vector2(0.5f, 0.5f);
+        rectTransform.pivot = new Vector2(0.5f, 0.5f);
+        rectTransform.sizeDelta = size;
+        rectTransform.anchoredPosition = anchoredPosition;
+
+        var text = textObject.GetComponent<TextMeshProUGUI>();
+        text.text = content;
+        if (font != null)
+            text.font = font;
+        text.fontSize = fontSize;
+        text.alignment = TextAlignmentOptions.Center;
+        text.color = color;
+    }
+
     private static void CreateLevelBootstrapper(
         PixelGrid pixelGrid,
         ConveyorSystem conveyorSystem,
@@ -1035,9 +1066,10 @@ public static class BootstrapSceneCreator
     /// <summary>
     /// One Canvas hosting both the Pause and Exit confirmation panels as
     /// siblings — both start inactive, only ever one visible at a time (see
-    /// PauseUI.OnExitLevelPressed/ExitConfirmationUI.Open) — rather than two
-    /// separate canvases, since both share the same "modal above the HUD"
-    /// sorting concern. PauseUI/ExitConfirmationUI live on this canvas
+    /// TopHudUI's own Exit entry point/ExitConfirmationUI.Open; Pause's MVP
+    /// composition currently has no Exit Level button of its own — see
+    /// CreatePausePanel) — rather than two separate canvases, since both
+    /// share the same "modal above the HUD" sorting concern. PauseUI/ExitConfirmationUI live on this canvas
     /// object itself, never on their own panel — the canvas stays active for
     /// the whole scene (only the child panels toggle), exactly like
     /// VictoryUI/FailureUI living on their own always-active canvas rather
@@ -1072,33 +1104,328 @@ public static class BootstrapSceneCreator
         return (pauseUI, exitConfirmationUI);
     }
 
+    /// <summary>
+    /// MVP Pause composition per reference/UI/PauseModalTarget.png: title,
+    /// two-line description, single Continue button — reusing the exact
+    /// same ConfirmationModal.png artwork/ResponsiveModalBox sizing and
+    /// title/description styling as CreateExitConfirmPanel (see the shared
+    /// ConfirmationModal* constants) rather than a second, unrelated set of
+    /// magic numbers, so Pause and Exit read as the same physical panel.
+    /// Deliberately does not create an Exit Level button — leaving
+    /// PauseUI's exitLevelButton field unassigned (null) below is enough,
+    /// since PauseUI already null-checks it in Awake/OnExitLevelPressed;
+    /// the top HUD's own Exit entry point (TopHudUI.OnBackPressed ->
+    /// ExitConfirmationUI) is unaffected and still reachable independently
+    /// of Pause. This is a scene-composition choice, not a PauseUI.cs
+    /// behavior change — that file is untouched.
+    /// </summary>
     private static void CreatePausePanel(Transform parent, PauseUI pauseUI, PauseFlowController pauseFlowController, ExitConfirmationUI exitConfirmationUI)
     {
         GameObject panel = CreateModalBackdrop(parent, "PausePanel");
-        GameObject dialogBox = CreateDialogBox(panel.transform, new Vector2(560f, 360f));
 
-        CreateCenteredText(dialogBox.transform, "Paused", new Vector2(0f, 110f), new Vector2(400f, 60f), 30, Color.white);
-        Button continueButton = CreateDialogButton(dialogBox.transform, "ContinueButton", "Continue", new Vector2(0f, -10f));
-        Button exitLevelButton = CreateDialogButton(dialogBox.transform, "ExitLevelButton", "Exit Level", new Vector2(0f, -90f));
+        var confirmationModalSprite = AssetDatabase.LoadAssetAtPath<Sprite>(ConfirmationModalSpritePath);
+        if (confirmationModalSprite == null)
+            Debug.LogError($"BootstrapSceneCreator: could not load a Sprite at '{ConfirmationModalSpritePath}'; the Pause modal will show no background artwork. Check its TextureImporter Texture Type is set to 'Sprite (2D and UI)'.");
+
+        Transform content = CreateResponsiveModalArtworkBox(
+            panel.transform,
+            confirmationModalSprite,
+            ConfirmationModalWidthFraction,
+            ConfirmationModalMaxWidth,
+            ConfirmationModalVerticalOffsetFraction,
+            ConfirmationModalContentReferenceWidth);
+
+        var fredokaSemiBold = AssetDatabase.LoadAssetAtPath<TMP_FontAsset>(FredokaSemiBoldFontAssetPath);
+        if (fredokaSemiBold == null)
+            Debug.LogError($"BootstrapSceneCreator: could not load a TMP_FontAsset at '{FredokaSemiBoldFontAssetPath}'; the Pause modal's title/button label will fall back to TMP's default font. Run Tools/UI/Generate Fredoka Font Assets.");
+
+        var fredokaMedium = AssetDatabase.LoadAssetAtPath<TMP_FontAsset>(FredokaMediumFontAssetPath);
+        if (fredokaMedium == null)
+            Debug.LogError($"BootstrapSceneCreator: could not load a TMP_FontAsset at '{FredokaMediumFontAssetPath}'; the Pause modal's description will fall back to TMP's default font. Run Tools/UI/Generate Fredoka Font Assets.");
+
+        // Positions/sizes below are authored against
+        // ConfirmationModalContentReferenceWidth and placed under content —
+        // see ExitConfirmButtonHeight's remarks for the shared convention.
+        // Proportions were measured directly off
+        // reference/UI/PauseModalTarget.png.
+        CreateCenteredTMPText(content, "Paused", new Vector2(0f, PauseTitleOffsetY), new Vector2(840f, 95f), ConfirmationModalTitleFontSize, ConfirmationModalTitleColor, fredokaSemiBold);
+        CreateCenteredTMPText(content, "Take a moment,\nthen get back to it!", new Vector2(0f, PauseDescriptionOffsetY), new Vector2(840f, 80f), ConfirmationModalDescriptionFontSize, ConfirmationModalDescriptionColor, fredokaMedium);
+
+        var primaryButtonSprite = AssetDatabase.LoadAssetAtPath<Sprite>(PrimaryButtonSpritePath);
+        if (primaryButtonSprite == null)
+            Debug.LogError($"BootstrapSceneCreator: could not load a Sprite at '{PrimaryButtonSpritePath}'; the Continue button will show no background artwork. Check its TextureImporter Texture Type is set to 'Sprite (2D and UI)'.");
+
+        Vector2 continueButtonSize = ResolveButtonArtworkSize(primaryButtonSprite, PauseButtonHeight);
+
+        Button continueButton = CreateDialogButton(content, "ContinueButton", "Continue", new Vector2(0f, PauseButtonOffsetY), continueButtonSize, PauseButtonLabelFontSize, primaryButtonSprite, fredokaSemiBold, ConfirmationModalButtonLabelColor);
 
         var serializedPauseUI = new SerializedObject(pauseUI);
         serializedPauseUI.FindProperty("panel").objectReferenceValue = panel;
         serializedPauseUI.FindProperty("continueButton").objectReferenceValue = continueButton;
-        serializedPauseUI.FindProperty("exitLevelButton").objectReferenceValue = exitLevelButton;
         serializedPauseUI.FindProperty("pauseFlowController").objectReferenceValue = pauseFlowController;
         serializedPauseUI.FindProperty("exitConfirmationUI").objectReferenceValue = exitConfirmationUI;
         serializedPauseUI.ApplyModifiedPropertiesWithoutUndo();
     }
 
+    private const string ConfirmationModalSpritePath = "Assets/Art/UI/Classic/ConfirmationModal.png";
+
+    /// <summary>
+    /// Reference-resolution width this project's UI is authored/reviewed
+    /// against everywhere else (see GameplayLayout, CharacterVerification,
+    /// PixelGridScalingVerification's own 1080x1920 portrait comments).
+    /// Used only to seed DialogBox's initial baked sizeDelta.y so the saved
+    /// scene shows a sensible value before the panel is ever activated —
+    /// AspectRatioFitter recomputes the real height live from the
+    /// RectTransform's actual resolved width the moment the panel becomes
+    /// active (ExitConfirmationUI.Open), so this constant never hardcodes
+    /// the runtime size.
+    /// </summary>
+    private const float ExitConfirmReferenceCanvasWidth = 1080f;
+
+    /// <summary>
+    /// Target fraction of the available Canvas/backdrop width a
+    /// ConfirmationModal.png-backed modal occupies — not a fixed pixel
+    /// width, and not the final width by itself either: ResponsiveModalBox
+    /// (attached by CreateResponsiveModalArtworkBox) resolves the actual
+    /// width every frame as min(availableWidth * this fraction,
+    /// ConfirmationModalMaxWidth), so the modal tracks whatever the Canvas
+    /// actually renders at on a phone, but stops growing past the ceiling
+    /// on a wider/tablet screen. Shared by the Exit confirmation and Pause
+    /// panels (see CreateExitConfirmPanel/CreatePausePanel) so both read as
+    /// the same physical panel rather than each authoring its own sizing.
+    /// 0.90 keeps portrait phones at ~88-90% of their width (unclamped —
+    /// see ConfirmationModalMaxWidth's own remarks for where the ceiling
+    /// starts to bite).
+    /// </summary>
+    private const float ConfirmationModalWidthFraction = 0.90f;
+
+    /// <summary>
+    /// Absolute ceiling on a ConfirmationModal.png-backed modal's width, in
+    /// the same units as ExitConfirmReferenceCanvasWidth (this project's
+    /// Canvas is left at CanvasScaler's default Constant Pixel Size, so
+    /// those units are actual screen pixels) — shared by Exit and Pause,
+    /// see ConfirmationModalWidthFraction's remarks. Below ~1556px-wide
+    /// canvases (every realistic phone, portrait or landscape-ish tall)
+    /// this never engages and ConfirmationModalWidthFraction alone decides
+    /// the width; above it — iPad portrait's 1668px being the case this
+    /// project must support — this caps the modal instead of letting it
+    /// keep growing with the screen. 1400 is chosen so the iPad-portrait
+    /// result (1400/1668 ≈ 84% of screen width) visually resembles
+    /// reference/UI/ExitConfirmationTarget.png's own proportions (measured
+    /// directly off that reference image: the modal there occupies ~83% of
+    /// its iPad-portrait screenshot's width), rather than an arbitrary
+    /// number.
+    /// </summary>
+    private const float ConfirmationModalMaxWidth = 1400f;
+
+    /// <summary>
+    /// The contentRoot width every modal's fixed pixel positions/sizes are
+    /// authored against — specifically a ConfirmationModal.png-backed
+    /// modal's own width on a 1080-wide portrait canvas (this project's
+    /// authoring reference — see ExitConfirmReferenceCanvasWidth) at
+    /// ConfirmationModalWidthFraction, i.e. 1080 * 0.90. ResponsiveModalBox
+    /// scales contentRoot by (resolvedWidth / this constant) every frame,
+    /// so those fixed values stay in the same visual proportion to the
+    /// modal at any resolved width — including the clamped tablet case —
+    /// instead of only the artwork box resizing while its contents stayed a
+    /// fixed pixel size. Shared by Exit and Pause: both use the identical
+    /// artwork/sizing formula, so both resolve to the same box at any given
+    /// canvas size.
+    /// </summary>
+    private const float ConfirmationModalContentReferenceWidth = 972f;
+
+    /// <summary>
+    /// Fraction of the available Canvas/backdrop height a
+    /// ConfirmationModal.png-backed modal (artwork + all its content, since
+    /// they're children of DialogBox and move with it) is nudged upward
+    /// from exact geometric vertical center, for a better optical center —
+    /// expressed the same way ConfirmationModalWidthFraction expresses
+    /// horizontal size: a fraction of the live Canvas, not a fixed pixel
+    /// offset, so it stays "~100px at 1080x1920" proportionally on any
+    /// resolution. Shared by Exit and Pause, per the "consistent with the
+    /// finished Exit-modal positioning philosophy" requirement. 100 / 1920
+    /// (this project's 1080x1920 portrait reference height) ≈ 5.2%, within
+    /// the requested 5-6% band.
+    /// </summary>
+    private const float ConfirmationModalVerticalOffsetFraction = 100f / 1920f;
+
+    private const string PrimaryButtonSpritePath = "Assets/Art/UI/Classic/PrimaryButton.png";
+    private const string SecondaryButtonSpritePath = "Assets/Art/UI/Classic/SecondaryButton.png";
+
+    /// <summary>
+    /// Generated by FredokaFontAssetBuilder (Tools/UI/Generate Fredoka Font
+    /// Assets) from the source .ttf files under the same folder. Loaded by
+    /// path and assigned explicitly to this modal's title/button labels
+    /// (SemiBold) and description (Medium) — never set as a global TMP
+    /// Settings default font, so no other TMP text in the project is
+    /// affected by these two assets existing.
+    /// </summary>
+    private const string FredokaSemiBoldFontAssetPath = "Assets/Art/UI/Fonts/Fredoka/Fredoka-SemiBold SDF.asset";
+    private const string FredokaMediumFontAssetPath = "Assets/Art/UI/Fonts/Fredoka/Fredoka-Medium SDF.asset";
+
+    /// <summary>
+    /// All fixed pixel positions/sizes on both the Exit confirmation and
+    /// Pause panels (this file's ExitConfirm*/Pause* offset and size
+    /// constants, plus the shared ConfirmationModalTitleFontSize/
+    /// ConfirmationModalDescriptionFontSize/color constants below) are
+    /// authored against ConfirmationModalContentReferenceWidth/its implied
+    /// height (contentReferenceWidth / the artwork's own aspect ratio) and
+    /// live under contentRoot, which ResponsiveModalBox scales uniformly to
+    /// match each modal's own actual resolved width — see that constant's
+    /// and ResponsiveModalBox's own remarks. Proportions (offsets/sizes as
+    /// a fraction of that reference box) were measured directly off
+    /// reference/UI/ExitConfirmationTarget.png and reference/UI/PauseModalTarget.png
+    /// respectively, rather than guessed, then converted to fixed pixels at
+    /// this one shared reference width — this is what lets Pause reuse
+    /// Exit's sizing infrastructure instead of inventing its own unrelated
+    /// set of magic numbers.
+    ///
+    /// This one specifically: fixed footprint height shared by the Stay/Exit
+    /// button artwork. Each button's width is then derived per-sprite from
+    /// its own native aspect ratio (see ResolveButtonArtworkSize), never a
+    /// shared fixed width, so PrimaryButton.png and SecondaryButton.png are
+    /// each shown at their true proportions even though their aspect ratios
+    /// differ slightly. Pause's single Continue button intentionally uses
+    /// its own, taller PauseButtonHeight instead of this one — see its
+    /// remarks — so it reads as more prominent than one individual
+    /// half-width Exit button, per PauseModalTarget.png.
+    /// </summary>
+    private const float ExitConfirmButtonHeight = 118f;
+
+    /// <summary>
+    /// Horizontal offset (from center) of each Exit button's
+    /// anchoredPosition — see ExitConfirmButtonHeight's remarks for the
+    /// shared authoring reference. The pair stays symmetric about x=0
+    /// (horizontally centered as a pair). Pause has only one button, so it
+    /// has no equivalent constant — see PauseButtonOffsetY.
+    /// </summary>
+    private const float ExitConfirmButtonHorizontalOffset = 189f;
+
+    /// <summary>Shared vertical anchoredPosition for both Exit buttons (see ExitConfirmButtonHeight's remarks).</summary>
+    private const float ExitConfirmButtonOffsetY = -116f;
+
+    /// <summary>Font size for the Stay/Exit button labels (see ExitConfirmButtonHeight's remarks). Pause's Continue label is bigger — see PauseButtonLabelFontSize.</summary>
+    private const int ExitConfirmButtonLabelFontSize = 38;
+
+    /// <summary>
+    /// Light cream/off-white label color shared by every button on both
+    /// modals (Stay/Exit/Continue) — each button's own artwork (sage green
+    /// / warm orange) is dark enough that white or near-white text is what
+    /// reference/UI/ExitConfirmationTarget.png and reference/UI/PauseModalTarget.png
+    /// both use for readable contrast; this is deliberately not reused for
+    /// the title/description, which sit on the light cream panel body
+    /// instead.
+    /// </summary>
+    private static readonly Color ConfirmationModalButtonLabelColor = new Color(1f, 250f / 255f, 240f / 255f);
+
+    /// <summary>Vertical anchoredPosition of the "Exit level?" title (see ExitConfirmButtonHeight's remarks). Pause's own title offset is PauseTitleOffsetY.</summary>
+    private const float ExitConfirmTitleOffsetY = 124f;
+
+    /// <summary>Font size shared by the "Exit level?" and "Paused" titles — each modal's strongest text element (see ExitConfirmButtonHeight's remarks).</summary>
+    private const float ConfirmationModalTitleFontSize = 76f;
+
+    /// <summary>
+    /// Dark muted sage/green title color belonging to this UI's existing
+    /// palette (sampled off reference/UI/ExitConfirmationTarget.png, and
+    /// confirmed against reference/UI/PauseModalTarget.png's own title) —
+    /// shared by both modals' titles, deliberately not white, which would
+    /// sit poorly on the cream panel.
+    /// </summary>
+    private static readonly Color ConfirmationModalTitleColor = new Color(72f / 255f, 85f / 255f, 42f / 255f);
+
+    /// <summary>Vertical anchoredPosition of the Exit description line (see ExitConfirmButtonHeight's remarks). Pause's own description offset is PauseDescriptionOffsetY.</summary>
+    private const float ExitConfirmDescriptionOffsetY = 30f;
+
+    /// <summary>Font size shared by the Exit and Pause descriptions — clearly smaller than the title, still comfortably readable (see ExitConfirmButtonHeight's remarks).</summary>
+    private const float ConfirmationModalDescriptionFontSize = 32f;
+
+    /// <summary>
+    /// Soft muted neutral/sage-brown description color (sampled off
+    /// reference/UI/ExitConfirmationTarget.png, confirmed against
+    /// reference/UI/PauseModalTarget.png) — shared by both modals'
+    /// descriptions; enough contrast against the cream panel without the
+    /// harder contrast of the title color.
+    /// </summary>
+    private static readonly Color ConfirmationModalDescriptionColor = new Color(155f / 255f, 146f / 255f, 127f / 255f);
+
+    /// <summary>Vertical anchoredPosition of the "Paused" title (see ExitConfirmButtonHeight's remarks for the shared authoring reference).</summary>
+    private const float PauseTitleOffsetY = 132f;
+
+    /// <summary>Vertical anchoredPosition of the (two-line) Pause description block, centered as a whole via TMP's own vertical-middle alignment across both lines.</summary>
+    private const float PauseDescriptionOffsetY = 21f;
+
+    /// <summary>
+    /// Fixed footprint height for the single Continue button — deliberately
+    /// its own constant rather than ExitConfirmButtonHeight, taller so the
+    /// sprite-aspect-derived width comes out noticeably wider than one
+    /// individual Exit button (per PauseModalTarget.png's single, prominent
+    /// action button — see ResolveButtonArtworkSize, which derives width
+    /// from this height and PrimaryButton.png's own aspect ratio, never an
+    /// independent width).
+    /// </summary>
+    private const float PauseButtonHeight = 175f;
+
+    /// <summary>Vertical anchoredPosition of the Continue button.</summary>
+    private const float PauseButtonOffsetY = -137f;
+
+    /// <summary>
+    /// Font size for the Continue label — bigger than ExitConfirmButtonLabelFontSize
+    /// in the same proportion PauseButtonHeight is bigger than
+    /// ExitConfirmButtonHeight, so the label keeps the same visual weight
+    /// relative to its own (larger) button as Stay/Exit's labels do to
+    /// theirs.
+    /// </summary>
+    private const int PauseButtonLabelFontSize = 56;
+
     private static void CreateExitConfirmPanel(Transform parent, ExitConfirmationUI exitConfirmationUI, LevelExitFlowController levelExitFlowController)
     {
         GameObject panel = CreateModalBackdrop(parent, "ExitConfirmPanel");
-        GameObject dialogBox = CreateDialogBox(panel.transform, new Vector2(620f, 380f));
 
-        CreateCenteredText(dialogBox.transform, "Exit level?", new Vector2(0f, 120f), new Vector2(500f, 60f), 30, Color.white);
-        CreateCenteredText(dialogBox.transform, "Your current progress will be lost.", new Vector2(0f, 60f), new Vector2(520f, 60f), 20, Color.white);
-        Button stayButton = CreateDialogButton(dialogBox.transform, "StayButton", "Stay", new Vector2(-110f, -110f));
-        Button exitButton = CreateDialogButton(dialogBox.transform, "ExitButton", "Exit", new Vector2(110f, -110f));
+        var confirmationModalSprite = AssetDatabase.LoadAssetAtPath<Sprite>(ConfirmationModalSpritePath);
+        if (confirmationModalSprite == null)
+            Debug.LogError($"BootstrapSceneCreator: could not load a Sprite at '{ConfirmationModalSpritePath}'; the Exit confirmation modal will show no background artwork. Check its TextureImporter Texture Type is set to 'Sprite (2D and UI)'.");
+
+        Transform content = CreateResponsiveModalArtworkBox(
+            panel.transform,
+            confirmationModalSprite,
+            ConfirmationModalWidthFraction,
+            ConfirmationModalMaxWidth,
+            ConfirmationModalVerticalOffsetFraction,
+            ConfirmationModalContentReferenceWidth);
+
+        var fredokaSemiBold = AssetDatabase.LoadAssetAtPath<TMP_FontAsset>(FredokaSemiBoldFontAssetPath);
+        if (fredokaSemiBold == null)
+            Debug.LogError($"BootstrapSceneCreator: could not load a TMP_FontAsset at '{FredokaSemiBoldFontAssetPath}'; the Exit confirmation modal's title/button labels will fall back to TMP's default font. Run Tools/UI/Generate Fredoka Font Assets.");
+
+        var fredokaMedium = AssetDatabase.LoadAssetAtPath<TMP_FontAsset>(FredokaMediumFontAssetPath);
+        if (fredokaMedium == null)
+            Debug.LogError($"BootstrapSceneCreator: could not load a TMP_FontAsset at '{FredokaMediumFontAssetPath}'; the Exit confirmation modal's description will fall back to TMP's default font. Run Tools/UI/Generate Fredoka Font Assets.");
+
+        // Positions/sizes below are authored against contentReferenceWidth
+        // (ConfirmationModalContentReferenceWidth) and placed under content, which
+        // ResponsiveModalBox scales as a whole to match the modal's actual
+        // resolved width — see ExitConfirmButtonHeight's remarks. They stay
+        // comfortably inside the artwork's inner cream "safe" region
+        // (measured from the source pixels, avoiding the rounded-corner/
+        // top-tab decorative frame), following the same
+        // fixed-pixel-at-a-reference-width convention already used
+        // throughout this file's other UI (HUD icons, Pause panel, etc.).
+        CreateCenteredTMPText(content, "Exit level?", new Vector2(0f, ExitConfirmTitleOffsetY), new Vector2(840f, 95f), ConfirmationModalTitleFontSize, ConfirmationModalTitleColor, fredokaSemiBold);
+        CreateCenteredTMPText(content, "Your current progress will be lost.", new Vector2(0f, ExitConfirmDescriptionOffsetY), new Vector2(840f, 44f), ConfirmationModalDescriptionFontSize, ConfirmationModalDescriptionColor, fredokaMedium);
+
+        var primaryButtonSprite = AssetDatabase.LoadAssetAtPath<Sprite>(PrimaryButtonSpritePath);
+        if (primaryButtonSprite == null)
+            Debug.LogError($"BootstrapSceneCreator: could not load a Sprite at '{PrimaryButtonSpritePath}'; the Stay button will show no background artwork. Check its TextureImporter Texture Type is set to 'Sprite (2D and UI)'.");
+
+        var secondaryButtonSprite = AssetDatabase.LoadAssetAtPath<Sprite>(SecondaryButtonSpritePath);
+        if (secondaryButtonSprite == null)
+            Debug.LogError($"BootstrapSceneCreator: could not load a Sprite at '{SecondaryButtonSpritePath}'; the Exit button will show no background artwork. Check its TextureImporter Texture Type is set to 'Sprite (2D and UI)'.");
+
+        Vector2 stayButtonSize = ResolveButtonArtworkSize(primaryButtonSprite, ExitConfirmButtonHeight);
+        Vector2 exitButtonSize = ResolveButtonArtworkSize(secondaryButtonSprite, ExitConfirmButtonHeight);
+
+        Button stayButton = CreateDialogButton(content, "StayButton", "Stay", new Vector2(-ExitConfirmButtonHorizontalOffset, ExitConfirmButtonOffsetY), stayButtonSize, ExitConfirmButtonLabelFontSize, primaryButtonSprite, fredokaSemiBold, ConfirmationModalButtonLabelColor);
+        Button exitButton = CreateDialogButton(content, "ExitButton", "Exit", new Vector2(ExitConfirmButtonHorizontalOffset, ExitConfirmButtonOffsetY), exitButtonSize, ExitConfirmButtonLabelFontSize, secondaryButtonSprite, fredokaSemiBold, ConfirmationModalButtonLabelColor);
 
         var serializedExitConfirmationUI = new SerializedObject(exitConfirmationUI);
         serializedExitConfirmationUI.FindProperty("panel").objectReferenceValue = panel;
@@ -1137,40 +1464,142 @@ public static class BootstrapSceneCreator
         return backdropObject;
     }
 
-    private static GameObject CreateDialogBox(Transform parent, Vector2 size)
+    /// <summary>
+    /// Exit confirmation's dialog box, sized as min(availableWidth *
+    /// widthFraction, maxWidth) rather than a fixed pixel number or an
+    /// uncapped fraction — see ResponsiveModalBox, attached below, which
+    /// owns that live computation every frame against availableAreaSource
+    /// (ExitConfirmPanel, itself anchored to fill the Canvas — see
+    /// CreateModalBackdrop) and also uniformly scales the returned content
+    /// container to match. Anchors here are a single point (not a stretch)
+    /// on both axes, since ResponsiveModalBox — not the anchor itself —
+    /// is what's authoritative for sizeDelta.x; the vertical anchor is
+    /// offset from the Canvas's exact vertical center (0.5) by
+    /// verticalCenterOffsetFraction — a fraction of Canvas height, so the
+    /// nudge scales the same responsive way the width does.
+    ///
+    /// AspectRatioFitter (WidthControlsHeight) derives the height live from
+    /// whatever width ResponsiveModalBox resolves and the artwork's own
+    /// pixel aspect ratio, so the art is never independently stretched on X
+    /// or Y; Image.preserveAspect stays on as a second safeguard. sizeDelta
+    /// is seeded with the same min(...) formula purely so the saved scene
+    /// shows a sane value before the panel is ever activated (both
+    /// ResponsiveModalBox and AspectRatioFitter only recompute once their
+    /// GameObject is active, which happens on ExitConfirmationUI.Open) — it
+    /// is not the authoritative runtime value.
+    /// </summary>
+    private static Transform CreateResponsiveModalArtworkBox(
+        Transform parent,
+        Sprite artwork,
+        float widthFraction,
+        float maxWidth,
+        float verticalCenterOffsetFraction,
+        float contentReferenceWidth)
     {
-        var dialogObject = new GameObject("DialogBox", typeof(Image));
+        var dialogObject = new GameObject("DialogBox", typeof(Image), typeof(AspectRatioFitter), typeof(ResponsiveModalBox));
         dialogObject.transform.SetParent(parent, false);
 
+        float aspectRatio = 1.5f;
+        if (artwork != null && artwork.rect.height > 0f)
+            aspectRatio = artwork.rect.width / artwork.rect.height;
+
+        float seededWidth = Mathf.Min(ExitConfirmReferenceCanvasWidth * widthFraction, maxWidth);
+        float seededHeight = seededWidth / aspectRatio;
+        float verticalAnchor = 0.5f + verticalCenterOffsetFraction;
+
         var rectTransform = dialogObject.GetComponent<RectTransform>();
-        rectTransform.anchorMin = new Vector2(0.5f, 0.5f);
-        rectTransform.anchorMax = new Vector2(0.5f, 0.5f);
+        rectTransform.anchorMin = new Vector2(0.5f, verticalAnchor);
+        rectTransform.anchorMax = new Vector2(0.5f, verticalAnchor);
         rectTransform.pivot = new Vector2(0.5f, 0.5f);
-        rectTransform.sizeDelta = size;
+        rectTransform.sizeDelta = new Vector2(seededWidth, seededHeight);
         rectTransform.anchoredPosition = Vector2.zero;
 
         var image = dialogObject.GetComponent<Image>();
-        image.color = new Color(0f, 0f, 0f, 0.85f);
+        image.sprite = artwork;
+        image.color = Color.white;
+        image.preserveAspect = true;
 
-        return dialogObject;
+        var aspectRatioFitter = dialogObject.GetComponent<AspectRatioFitter>();
+        aspectRatioFitter.aspectMode = AspectRatioFitter.AspectMode.WidthControlsHeight;
+        aspectRatioFitter.aspectRatio = aspectRatio;
+
+        var contentObject = new GameObject("Content", typeof(RectTransform));
+        contentObject.transform.SetParent(dialogObject.transform, false);
+        var contentRect = contentObject.GetComponent<RectTransform>();
+        contentRect.anchorMin = new Vector2(0.5f, 0.5f);
+        contentRect.anchorMax = new Vector2(0.5f, 0.5f);
+        contentRect.pivot = new Vector2(0.5f, 0.5f);
+        contentRect.sizeDelta = new Vector2(contentReferenceWidth, contentReferenceWidth / aspectRatio);
+        contentRect.anchoredPosition = Vector2.zero;
+
+        var responsiveModalBox = dialogObject.GetComponent<ResponsiveModalBox>();
+        var serializedResponsiveModalBox = new SerializedObject(responsiveModalBox);
+        serializedResponsiveModalBox.FindProperty("availableAreaSource").objectReferenceValue = parent.GetComponent<RectTransform>();
+        serializedResponsiveModalBox.FindProperty("contentRoot").objectReferenceValue = contentRect;
+        serializedResponsiveModalBox.FindProperty("widthFraction").floatValue = widthFraction;
+        serializedResponsiveModalBox.FindProperty("maxWidth").floatValue = maxWidth;
+        serializedResponsiveModalBox.FindProperty("contentReferenceWidth").floatValue = contentReferenceWidth;
+        serializedResponsiveModalBox.ApplyModifiedPropertiesWithoutUndo();
+
+        return contentRect;
     }
 
-    private static Button CreateDialogButton(Transform parent, string name, string label, Vector2 anchoredPosition)
+    /// <summary>
+    /// Derives a button's RectTransform size from its own background
+    /// artwork's native pixel aspect ratio at a fixed height, so the sprite
+    /// is never independently stretched on X or Y. Falls back to the
+    /// previous flat-color button box's own ratio (254/76) if the sprite
+    /// failed to load, so the error-logging call site above still lays out
+    /// reasonably.
+    /// </summary>
+    private static Vector2 ResolveButtonArtworkSize(Sprite artwork, float height)
+    {
+        float aspectRatio = 254f / 76f;
+        if (artwork != null && artwork.rect.height > 0f)
+            aspectRatio = artwork.rect.width / artwork.rect.height;
+
+        return new Vector2(height * aspectRatio, height);
+    }
+
+    /// <summary>
+    /// size/fontSize default to the original fixed button footprint, and
+    /// backgroundSprite/tmpFont/labelColor default to null/black leaving the
+    /// flat white Image color and legacy UI.Text label untouched (identical
+    /// output to before these parameters existed) so the Pause panel's
+    /// Continue/Exit Level buttons are unaffected; the Exit confirmation
+    /// panel passes its own explicit size (from ResolveButtonArtworkSize)/
+    /// fontSize/backgroundSprite (PrimaryButton.png/SecondaryButton.png)/
+    /// tmpFont (Fredoka SemiBold)/labelColor (light cream, for contrast
+    /// against the buttons' own dark artwork) — supplying tmpFont switches
+    /// the label from CreateCenteredText to CreateCenteredTMPText.
+    /// </summary>
+    private static Button CreateDialogButton(Transform parent, string name, string label, Vector2 anchoredPosition, Vector2? size = null, int fontSize = 20, Sprite backgroundSprite = null, TMP_FontAsset tmpFont = null, Color? labelColor = null)
     {
         var buttonObject = new GameObject(name, typeof(Image), typeof(Button));
         buttonObject.transform.SetParent(parent, false);
+
+        Vector2 resolvedSize = size ?? new Vector2(200f, 64f);
 
         var rectTransform = buttonObject.GetComponent<RectTransform>();
         rectTransform.anchorMin = new Vector2(0.5f, 0.5f);
         rectTransform.anchorMax = new Vector2(0.5f, 0.5f);
         rectTransform.pivot = new Vector2(0.5f, 0.5f);
-        rectTransform.sizeDelta = new Vector2(200f, 64f);
+        rectTransform.sizeDelta = resolvedSize;
         rectTransform.anchoredPosition = anchoredPosition;
 
         var image = buttonObject.GetComponent<Image>();
         image.color = Color.white;
+        if (backgroundSprite != null)
+        {
+            image.sprite = backgroundSprite;
+            image.preserveAspect = true;
+        }
 
-        CreateCenteredText(buttonObject.transform, label, Vector2.zero, new Vector2(200f, 64f), 20, Color.black);
+        Color resolvedLabelColor = labelColor ?? Color.black;
+        if (tmpFont != null)
+            CreateCenteredTMPText(buttonObject.transform, label, Vector2.zero, resolvedSize, fontSize, resolvedLabelColor, tmpFont);
+        else
+            CreateCenteredText(buttonObject.transform, label, Vector2.zero, resolvedSize, fontSize, resolvedLabelColor);
 
         return buttonObject.GetComponent<Button>();
     }
