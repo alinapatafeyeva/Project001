@@ -701,7 +701,36 @@ namespace Project001.Gameplay.Presentation
         // figure itself is.
         public const float ConveyorToWaitingLineGap = 1.45f;
         public const float ClusterInnerSpacing = 0.65f;
-        public const float TopCompositionPadding = 0.2f;
+
+        // Raised from 0.2 to 1.2 after a real Game View review found the
+        // top HUD (Exit/Level/speed/Pause, a ScreenSpaceOverlay canvas with
+        // no reservation of its own in this composition — see
+        // BootstrapSceneCreator.CreateTopHudCanvas's own remarks) reading as
+        // almost touching the Conveyor's top edge, with no real breathing
+        // room between them.
+        //
+        // This is the single value that owns that gap: raising it grows
+        // CameraFrameTop, which — since CameraVerticalCenter is this frame's
+        // own midpoint (see CameraVerticalCenter below) — pulls the fixed
+        // aim point up and therefore shifts the ENTIRE composition (grid,
+        // Conveyor, WaitingLine, CollectorQueueBoard — everything on the
+        // shared Z=0 gameplay plane) down on screen as one coherent unit,
+        // with zero change to any internal spacing (ConveyorSize,
+        // GridToClusterSpacing, ConveyorToWaitingLineGap, ClusterInnerSpacing,
+        // QueueRowStep are all untouched) — exactly the "move the composition,
+        // not its parts" fix this file's own composition model is meant for.
+        //
+        // At the reference 1080x1920 portrait aspect (still width-bound
+        // afterward — confirmed by hand-computing ComputeOrthographicSize
+        // before and after: sizeToFitWidth stays the binding term up to
+        // TopCompositionPadding ~1.6-1.7, comfortably past 1.2), this reads
+        // as a ~39px larger gap between the Conveyor's top edge and the
+        // screen's top edge — nearly doubling the ~42px gap the HUD's own
+        // lowest element (SpeedButton, bottom edge 144px from the top at
+        // this aspect) previously had above the Conveyor, to ~81px — with
+        // NO orthographic zoom-out (the composition does not shrink; only
+        // where it sits on screen changes).
+        public const float TopCompositionPadding = 1.2f;
         public const float BottomCompositionPadding = 0.2f;
         public const float HorizontalCompositionPadding = 0.15f;
 
