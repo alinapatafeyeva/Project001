@@ -6,20 +6,28 @@ using UnityEngine.UI;
 namespace Project001.UI.Failure
 {
     /// <summary>
-    /// Prototype Failure screen. Listens to FailureController.OnFailure and
-    /// owns only panel visibility and Retry/Continue-button presentation.
-    /// FailureController has no reference to or knowledge of this class; this
-    /// is the only direction the dependency runs.
+    /// Level Failed screen. Listens to FailureController.OnFailure and owns
+    /// only panel visibility and button presentation (Continue, Exit level —
+    /// see reference/UI/LevelFailedModalTarget.png). FailureController has no
+    /// reference to or knowledge of this class; this is the only direction
+    /// the dependency runs.
     ///
-    /// Retry and Continue have different behavior (full level restart vs.
-    /// resuming the same level state), but this class does not decide either
-    /// — it only forwards each button press to FailureRecoveryController,
-    /// the gameplay-layer owner of what they actually do. This class never
-    /// touches Time.timeScale, FailureController, or scene loading directly.
+    /// Continue forwards to FailureRecoveryController, the gameplay-layer
+    /// owner of what it actually does (resuming the same level state); Exit
+    /// level instead forwards to LevelExitFlowController.ConfirmExit — the
+    /// same single Exit implementation the top HUD and Pause modal already
+    /// share, never a duplicate one. This class never touches Time.timeScale,
+    /// FailureController, or scene loading directly.
     ///
-    /// Deliberately minimal: a centered panel, "Level Failed" text, a Retry
-    /// button, and a Continue button. Continue is a free prototype hook for
-    /// a later monetized flow — no coins, ads, or rewards here yet.
+    /// retryButton is intentionally not wired by the current scene (see
+    /// BootstrapSceneCreator.CreateFailureUI): the polished modal's MVP scope
+    /// has no Retry action (booster rescue / Continue / Exit level only —
+    /// see reference/UI/LevelFailedModalTarget.png), but the field/method
+    /// stay here, null-checked exactly like every other optional button on
+    /// this class, so restoring Retry later needs no code change here, only
+    /// wiring a button back in the scene. Continue is still a free prototype
+    /// hook for a later monetized flow — no ad SDK or coins are wired up yet
+    /// (see BootstrapSceneCreator's own remarks on the ad-row placeholder).
     /// </summary>
     public class FailureUI : MonoBehaviour
     {
@@ -29,14 +37,20 @@ namespace Project001.UI.Failure
         [SerializeField, Tooltip("Owns what Retry/Continue actually do (full restart vs. resume) — this UI only forwards button presses to it and manages panel visibility.")]
         private FailureRecoveryController failureRecoveryController;
 
+        [SerializeField, Tooltip("Sole owner of what a confirmed Exit actually does — shared with the top HUD's and Pause modal's own Exit entry points, never a duplicate implementation.")]
+        private LevelExitFlowController levelExitFlowController;
+
         [SerializeField, Tooltip("Root panel object shown on failure and hidden again on Retry/Continue. Starts inactive.")]
         private GameObject panel;
 
-        [SerializeField, Tooltip("Restarts the current level completely from its initial state.")]
+        [SerializeField, Tooltip("Restarts the current level completely from its initial state. Not wired in the current scene — see class remarks.")]
         private Button retryButton;
 
         [SerializeField, Tooltip("Resumes the same existing level state, after rearming Failure detection.")]
         private Button continueButton;
+
+        [SerializeField, Tooltip("Forwards to LevelExitFlowController.ConfirmExit. Does not hide this panel — see OnExitLevelPressed's own remarks.")]
+        private Button exitLevelButton;
 
         private void Awake()
         {
@@ -51,6 +65,9 @@ namespace Project001.UI.Failure
 
             if (continueButton != null)
                 continueButton.onClick.AddListener(OnContinuePressed);
+
+            if (exitLevelButton != null)
+                exitLevelButton.onClick.AddListener(OnExitLevelPressed);
         }
 
         private void OnDestroy()
@@ -63,6 +80,9 @@ namespace Project001.UI.Failure
 
             if (continueButton != null)
                 continueButton.onClick.RemoveListener(OnContinuePressed);
+
+            if (exitLevelButton != null)
+                exitLevelButton.onClick.RemoveListener(OnExitLevelPressed);
         }
 
         private void Show()
@@ -91,6 +111,17 @@ namespace Project001.UI.Failure
                 panel.SetActive(false);
 
             Debug.Log("Continue after failure pressed");
+        }
+
+        private void OnExitLevelPressed()
+        {
+            if (levelExitFlowController != null)
+                levelExitFlowController.ConfirmExit();
+
+            // Deliberately left open, exactly like ExitConfirmationUI.OnExitPressed:
+            // ConfirmExit is currently a stub with nowhere to navigate to (see
+            // its own remarks) — hiding this panel here would silently imply
+            // something happened.
         }
     }
 }

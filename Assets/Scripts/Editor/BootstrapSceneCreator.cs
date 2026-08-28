@@ -79,11 +79,12 @@ public static class BootstrapSceneCreator
         CreateLevelBootstrapper(pixelGrid, conveyorSystem, waitingLine, collectorQueueBoard, endgameCleanupController, levelProgressionController);
         CreateEventSystem();
         CreateVictoryUI(victoryController, victoryFlowController);
-        CreateFailureUI(failureController, failureRecoveryController);
+
+        LevelExitFlowController levelExitFlowController = CreateLevelExitFlowController(gameplayFlowController);
+        CreateFailureUI(failureController, failureRecoveryController, levelExitFlowController);
 
         GameplaySpeedController gameplaySpeedController = CreateGameplaySpeedController();
         PauseFlowController pauseFlowController = CreatePauseFlowController(gameplayFlowController);
-        LevelExitFlowController levelExitFlowController = CreateLevelExitFlowController(gameplayFlowController);
         CreateTopGameplayHud(levelProgressionController, gameplaySpeedController, pauseFlowController, levelExitFlowController);
 
         string directory = Path.GetDirectoryName(ScenePath);
@@ -843,16 +844,288 @@ public static class BootstrapSceneCreator
         return buttonObject.GetComponent<Button>();
     }
 
+    private const string LevelFailedModalSpritePath = "Assets/Art/UI/Classic/LevelFailedModal.png";
+    private const string AdIconSpritePath = "Assets/Art/UI/Classic/Icons/AdIcon.png";
+
     /// <summary>
-    /// Prototype Failure screen: a Canvas holding an initially-inactive
-    /// centered panel ("Level Failed" text, a Retry button, and a Continue
-    /// button), with the FailureUI component wired to failureController and
-    /// failureRecoveryController. Reuses the existing EventSystem created for
-    /// Victory — one EventSystem serves every Canvas in the scene, so no
-    /// second one is created here. No real restart animation, coins, ads,
-    /// stars, or visual polish — establishing the architecture only.
+    /// Absolute width ceiling for the Level Failed modal specifically — its
+    /// own artwork (LevelFailedModal.png) is a much taller portrait card
+    /// (aspect ~0.646) than ConfirmationModal.png's ~1.384 landscape card
+    /// used by Exit/Pause, so reusing ConfirmationModalMaxWidth (1400)
+    /// unchanged would resolve to a ~2170-unit-tall modal on iPad portrait —
+    /// ~91% of that device's own 2388-unit canvas height, leaving almost no
+    /// dimmed backdrop margin above/below it (see CreateModalBackdrop — the
+    /// backdrop must stay visible per this task's own requirement). 1200
+    /// instead resolves to 1200/0.6457 ≈ 1859 units (~78% of the iPad
+    /// reference's 2388 height) — comfortably inside the same "modal
+    /// doesn't dominate the whole tablet screen" intent
+    /// ConfirmationModalMaxWidth already serves for Exit/Pause, just a
+    /// smaller ceiling because this card's own aspect ratio is taller, not a
+    /// different responsive philosophy. Width fraction, vertical offset, and
+    /// content reference width are still the exact same shared
+    /// ConfirmationModal* constants Exit/Pause use (see CreateFailureUI) —
+    /// only this one ceiling differs, and only because the artwork's own
+    /// shape differs.
     /// </summary>
-    private static void CreateFailureUI(FailureController failureController, FailureRecoveryController failureRecoveryController)
+    private const float LevelFailedModalMaxWidth = 1200f;
+
+    /// <summary>
+    /// All fixed pixel positions/sizes below are authored against
+    /// ConfirmationModalContentReferenceWidth exactly like Exit/Pause (see
+    /// ExitConfirmButtonHeight's remarks for that convention) — but note
+    /// this modal's own implied content HEIGHT differs from theirs, since it
+    /// shares their width but not their artwork's aspect ratio (see
+    /// LevelFailedModalMaxWidth's remarks). Proportions were measured
+    /// directly off reference/UI/LevelFailedModalTarget.png as a fraction of
+    /// its own total card height, then applied to this modal's own implied
+    /// height — the whole composition spans close to the full interior
+    /// (title near the top, Exit level near the bottom), matching the
+    /// reference's own vertically-balanced distribution, rather than
+    /// clustering everything near the top with dead space below.
+    ///
+    /// This one specifically: vertical anchoredPosition of the "No space
+    /// left!" title.
+    /// </summary>
+    private const float LevelFailedTitleOffsetY = 536f;
+
+    /// <summary>
+    /// Title is auto-sized (TMP enableAutoSizing — the same technique
+    /// EnergyBarPrefabBuilder.BuildValueText already uses in this project)
+    /// rather than a single fixed font size like Exit/Pause's own titles:
+    /// "No space left!" is meaningfully longer than "Exit level?"/"Paused",
+    /// so a single guessed fixed size risked either overflowing or being too
+    /// conservative. TMP instead solves for the largest size in
+    /// [LevelFailedTitleFontSizeMin, LevelFailedTitleFontSizeMax] that still
+    /// fits the title's own RectTransform width — word-wrap is disabled (see
+    /// CreateAutoSizedCenteredTMPText) so it only ever shrinks the single
+    /// line, never wraps it to two.
+    /// </summary>
+    private const float LevelFailedTitleFontSizeMin = 60f;
+
+    /// <summary>See LevelFailedTitleFontSizeMin's remarks.</summary>
+    private const float LevelFailedTitleFontSizeMax = 110f;
+
+    /// <summary>
+    /// Softer muted terracotta/dusty-brick failure colour, specified
+    /// directly by the task rather than sampled off the reference image —
+    /// the reference's own title uses a much brighter, more saturated red
+    /// than this project's muted palette calls for. Also reused for the ad
+    /// row's "3 / 3" count, which should read as the same "failure/urgency"
+    /// accent colour as the title, not a third distinct colour.
+    /// </summary>
+    private static readonly Color LevelFailedTitleColor = new Color(0xB8 / 255f, 0x5F / 255f, 0x52 / 255f);
+
+    /// <summary>Vertical anchoredPosition of the "The waiting line is full." description (see LevelFailedTitleOffsetY's remarks). Reuses ConfirmationModalDescriptionFontSize/Color — same supporting-text styling as Exit/Pause.</summary>
+    private const float LevelFailedDescriptionOffsetY = 430f;
+
+    /// <summary>Font size shared by this modal's own two section headings ("Use a booster:" and "One more chance?") — smaller than the title, reusing ConfirmationModalDescriptionColor rather than introducing a third text colour.</summary>
+    private const float LevelFailedHeadingFontSize = 30f;
+
+    /// <summary>Vertical anchoredPosition of the "Use a booster:" heading (see LevelFailedTitleOffsetY's remarks).</summary>
+    private const float LevelFailedBoosterHeadingOffsetY = 329f;
+
+    /// <summary>
+    /// Flanking decoration around "Use a booster:" (short line + ">>" on the
+    /// left, "&lt;&lt;" + short line on the right, both pointing inward) —
+    /// inspired by the reference, reproduced with a plain Image bar (see
+    /// CreateHorizontalSeparator) and ordinary ">>"/"&lt;&lt;" glyphs (safe on
+    /// any font, unlike a Unicode star — see LevelFailedSeparator1DotColor's
+    /// remarks) rather than a new art asset.
+    /// </summary>
+    private const float LevelFailedBoosterHeadingChevronOffsetX = 155f;
+
+    private const float LevelFailedBoosterHeadingLineOffsetX = 250f;
+    private const float LevelFailedBoosterHeadingLineWidth = 130f;
+    private const float LevelFailedBoosterHeadingChevronFontSize = 24f;
+
+    /// <summary>Shared thickness/colour for every plain decorative line in this modal (booster heading flanks, second separator) — low-contrast on purpose, per the task's own "decorative, not a hard divider" requirement.</summary>
+    private const float LevelFailedSeparatorThickness = 3f;
+
+    private static readonly Color LevelFailedSeparatorColor = new Color(210f / 255f, 180f / 255f, 150f / 255f, 0.6f);
+
+    /// <summary>Vertical anchoredPosition shared by all three booster placeholder circles (see LevelFailedTitleOffsetY's remarks).</summary>
+    private const float LevelFailedBoosterRowOffsetY = 166f;
+
+    /// <summary>
+    /// Diameter shared by all three booster placeholder circles — identical
+    /// size, per the task's own requirement. Booster mechanics/icons are not
+    /// implemented yet (see CreateFailureUI's remarks); these are pure
+    /// layout placeholders: a flat procedural fill circle (GenerateCircleSprite)
+    /// plus a dashed ring overlay (GenerateDashedRingSprite) at the same size,
+    /// rather than a new authored art asset.
+    /// </summary>
+    private const float LevelFailedBoosterSlotDiameter = 196f;
+
+    /// <summary>Centre-to-centre horizontal spacing between adjacent booster slots — the 3 slots sit at -spacing/0/+spacing around the content's own horizontal centre, so the row of three stays centered as a group regardless of this value.</summary>
+    private const float LevelFailedBoosterSlotSpacing = 256f;
+
+    private const int LevelFailedBoosterSlotCount = 3;
+
+    /// <summary>Muted dark taupe fill colour for the booster placeholder circles, sampled off reference/UI/LevelFailedModalTarget.png.</summary>
+    private static readonly Color LevelFailedBoosterPlaceholderColor = new Color(178f / 255f, 151f / 255f, 123f / 255f);
+
+    /// <summary>Lighter warm tan for the booster placeholders' dashed ring border (GenerateDashedRingSprite), so the dashes read against the darker taupe fill instead of blending into it.</summary>
+    private static readonly Color LevelFailedBoosterBorderColor = new Color(214f / 255f, 187f / 255f, 155f / 255f);
+
+    private const int LevelFailedBoosterBorderDashCount = 28;
+    private const float LevelFailedBoosterBorderDashDutyCycle = 0.55f;
+    private const float LevelFailedBoosterBorderThicknessFraction = 0.05f;
+
+    /// <summary>
+    /// First decorative separator, between the booster row and "One more
+    /// chance?" — a dotted line on either side of a small centred star
+    /// (GenerateStarSprite — see its own remarks), reusing the same
+    /// procedurally-generated circle sprite as the booster fill for the dots
+    /// at small tinted sizes rather than a new art asset. Deliberately low
+    /// contrast (see LevelFailedSeparator1DotColor) — decorative, not a hard
+    /// divider.
+    /// </summary>
+    private const float LevelFailedSeparator1OffsetY = -24f;
+
+    private const float LevelFailedSeparator1SegmentWidth = 300f;
+    private const float LevelFailedSeparator1CenterGap = 60f;
+    private const float LevelFailedSeparator1DotDiameter = 7f;
+    private const float LevelFailedSeparator1DotSpacing = 20f;
+    private const float LevelFailedSeparator1CenterStarDiameter = 26f;
+    private static readonly Color LevelFailedSeparator1DotColor = new Color(196f / 255f, 168f / 255f, 138f / 255f, 0.75f);
+
+    /// <summary>
+    /// Vertical anchoredPosition of the "One more chance?" heading (see
+    /// LevelFailedTitleOffsetY's remarks) — together with
+    /// LevelFailedAdContentOffsetY/LevelFailedContinueButtonOffsetY/
+    /// LevelFailedSeparator2OffsetY, refit as one lower-section pass so every
+    /// item below the first separator has a real, non-overlapping gap while
+    /// LevelFailedExitButtonOffsetY stays exactly where it already read
+    /// correctly.
+    /// </summary>
+    private const float LevelFailedSecondChanceHeadingOffsetY = -103f;
+
+    /// <summary>
+    /// Vertical anchoredPosition of the AdContent group as a whole (see
+    /// LevelFailedSecondChanceHeadingOffsetY's remarks) — AdIcon and both
+    /// text lines are children of that one layout container (see
+    /// CreateAdStatusCard), positioned relative to IT, never independently
+    /// against content or the screen, so the icon can never drift relative
+    /// to its text at any resolved modal size. The container carries no
+    /// visible background (no Image component at all) — the earlier large
+    /// tinted rounded-rect card read as a "giant pink banner" that both
+    /// overlapped "One more chance?" above it and visually competed with the
+    /// Continue button below it; the container's own size below exists
+    /// purely for layout/authoring, not for anything rendered.
+    /// </summary>
+    private const float LevelFailedAdContentOffsetY = -216f;
+
+    private const float LevelFailedAdContentWidth = 500f;
+    private const float LevelFailedAdContentHeight = 140f;
+
+    /// <summary>
+    /// Horizontal offset of AdIcon from the AdContent group's own centre
+    /// (see LevelFailedAdContentOffsetY's remarks) — AdIcon and the text
+    /// column are positioned so the pair reads as one compact, horizontally-
+    /// centered composition (icon left, text column right), rather than the
+    /// icon sitting far left while the text centers independently across the
+    /// whole modal.
+    /// </summary>
+    private const float LevelFailedAdIconOffsetX = -174f;
+
+    private const float LevelFailedAdIconHeight = 130f;
+
+    /// <summary>Horizontal offset of both ad text lines from the AdContent group's own centre (see LevelFailedAdContentOffsetY's remarks) — same X for both lines, so "3 / 3" centers directly above "Watch an ad to continue".</summary>
+    private const float LevelFailedAdTextOffsetX = 77f;
+
+    /// <summary>Vertical offset of "3 / 3" from the AdContent group's own centre — together with LevelFailedAdCaptionOffsetY, centers the two-line text block so its own vertical midpoint approximately aligns with AdIcon's (Y=0 in the same group).</summary>
+    private const float LevelFailedAdCountOffsetY = 22f;
+
+    private const float LevelFailedAdCaptionOffsetY = -37f;
+
+    /// <summary>"3 / 3" font size — kept prominent, comparable in weight to the Continue/Exit level button labels. Unchanged from the previous pass — only the surrounding layout moved.</summary>
+    private const float LevelFailedAdCountFontSize = 60f;
+
+    /// <summary>"Watch an ad to continue" font size — kept comfortably readable per the task's own explicit requirement not to shrink it back down; unchanged from the previous pass — only the surrounding layout moved.</summary>
+    private const float LevelFailedAdCaptionFontSize = 28f;
+
+    /// <summary>
+    /// Static placeholder for "remaining / total" ad-rewatch attempts —
+    /// presentation only (see CreateFailureUI's own remarks): no ad SDK
+    /// exists yet, and the required count may eventually depend on level
+    /// difficulty. Kept as this one named constant specifically so a future
+    /// dynamic system has exactly one value (or one call site) to replace,
+    /// rather than a string literal buried inside a CreateCenteredTMPText
+    /// call.
+    /// </summary>
+    private const string LevelFailedAdWatchCountLabel = "3 / 3";
+
+    /// <summary>
+    /// Fixed footprint height shared by the Continue/Exit level buttons —
+    /// its own constant (like Pause's PauseButtonHeight) rather than reusing
+    /// ExitConfirmButtonHeight, since these two stack vertically (not side by
+    /// side like Stay/Exit) and this modal has substantially more content
+    /// above them competing for vertical space than Pause's single button
+    /// does.
+    /// </summary>
+    private const float LevelFailedButtonHeight = 140f;
+
+    private const float LevelFailedContinueButtonOffsetY = -391f;
+    private const float LevelFailedExitButtonOffsetY = -610f;
+    private const int LevelFailedButtonLabelFontSize = 45;
+
+    /// <summary>
+    /// Second decorative separator, between Continue and Exit level — two
+    /// short solid line segments flanking a small centred dot, per the
+    /// task's own description ("short horizontal line — small centre dot —
+    /// short horizontal line"), reusing CreateHorizontalSeparator/the same
+    /// circle sprite rather than new art. Low contrast/decorative, not a
+    /// hard divider.
+    /// </summary>
+    private const float LevelFailedSeparator2OffsetY = -503f;
+
+    private const float LevelFailedSeparator2LineWidth = 150f;
+    private const float LevelFailedSeparator2LineOffsetX = 102f;
+    private const float LevelFailedSeparator2DotDiameter = 14f;
+
+    private const string CircleSpriteAssetPath = "Assets/Art/UI/Generated/CircleSprite.asset";
+    private const string BoosterDashedRingSpriteAssetPath = "Assets/Art/UI/Generated/BoosterDashedRing.asset";
+    private const string StarSpriteAssetPath = "Assets/Art/UI/Generated/StarSprite.asset";
+
+    /// <summary>
+    /// Source texture resolution shared by every procedurally-generated
+    /// circle in this modal (booster fill/border, both separators' dots) —
+    /// comfortably above the largest on-screen pixel size any of them could
+    /// actually render at (content is scaled up to ~1.44x on a clamped
+    /// tablet — see ResponsiveModalBox), so they stay crisp rather than
+    /// visibly upscale-blurred, the same concern EnergyBarPrefabBuilder's own
+    /// GenerateStadiumSprite remarks describe for Unity's built-in
+    /// UISprite.psd at large sizes. The same sprite is reused at every size
+    /// from LevelFailedBoosterSlotDiameter (196) down to
+    /// LevelFailedSeparator1DotDiameter (7) via each Image's own
+    /// RectTransform — downscaling a high-res source is always safe.
+    /// </summary>
+    private const int CircleTextureDiameter = 320;
+
+    /// <summary>
+    /// Level Failed modal: title, description, a "Use a booster:" heading
+    /// over three placeholder slots (no booster mechanics/icons yet — see
+    /// LevelFailedBoosterSlotDiameter's remarks), a separator, a "One more
+    /// chance?" heading over a presentation-only ad-rewatch status row (see
+    /// LevelFailedAdWatchCountLabel's remarks — no ad SDK is integrated),
+    /// then Continue/Exit level. Reuses the exact same responsive artwork
+    /// box/content-scaling infrastructure as Exit/Pause (see
+    /// CreateResponsiveModalArtworkBox) with only this modal's own width
+    /// ceiling differing (LevelFailedModalMaxWidth) — so it feels like the
+    /// same physical panel family despite LevelFailedModal.png's own taller
+    /// aspect ratio. FailureUI is wired to failureController,
+    /// failureRecoveryController, and now levelExitFlowController — the same
+    /// single Exit implementation the top HUD/Pause modal already share, per
+    /// this task's own "reuse existing level-exit flow" requirement. Retry
+    /// is intentionally not created — see FailureUI's own remarks on
+    /// retryButton staying null-safe. Reuses the existing EventSystem
+    /// created for Victory — one EventSystem serves every Canvas in the
+    /// scene, so no second one is created here. sortingOrder 10 (matching
+    /// GameplayModalCanvas) so this panel's own full-screen backdrop
+    /// reliably blocks clicks to the top HUD underneath it, exactly like the
+    /// Exit/Pause modal system.
+    /// </summary>
+    private static void CreateFailureUI(FailureController failureController, FailureRecoveryController failureRecoveryController, LevelExitFlowController levelExitFlowController)
     {
         var canvasObject = new GameObject(
             "FailureCanvas",
@@ -863,63 +1136,449 @@ public static class BootstrapSceneCreator
 
         var canvas = canvasObject.GetComponent<Canvas>();
         canvas.renderMode = RenderMode.ScreenSpaceOverlay;
+        canvas.sortingOrder = 10;
 
-        GameObject panel = CreateFailurePanel(canvasObject.transform);
-        Button retryButton = CreateFailureActionButton(panel.transform, "Retry", new Vector2(-90f, -60f));
-        Button continueButton = CreateFailureActionButton(panel.transform, "Continue", new Vector2(90f, -60f));
-        CreateCenteredText(panel.transform, "Level Failed", new Vector2(0f, 60f), new Vector2(360f, 60f), 28, Color.white);
+        GameObject panel = CreateModalBackdrop(canvasObject.transform, "FailurePanel");
+
+        var levelFailedModalSprite = AssetDatabase.LoadAssetAtPath<Sprite>(LevelFailedModalSpritePath);
+        if (levelFailedModalSprite == null)
+            Debug.LogError($"BootstrapSceneCreator: could not load a Sprite at '{LevelFailedModalSpritePath}'; the Level Failed modal will show no background artwork. Check its TextureImporter Texture Type is set to 'Sprite (2D and UI)'.");
+
+        Transform content = CreateResponsiveModalArtworkBox(
+            panel.transform,
+            levelFailedModalSprite,
+            ConfirmationModalWidthFraction,
+            LevelFailedModalMaxWidth,
+            ConfirmationModalVerticalOffsetFraction,
+            ConfirmationModalContentReferenceWidth);
+
+        var fredokaSemiBold = AssetDatabase.LoadAssetAtPath<TMP_FontAsset>(FredokaSemiBoldFontAssetPath);
+        if (fredokaSemiBold == null)
+            Debug.LogError($"BootstrapSceneCreator: could not load a TMP_FontAsset at '{FredokaSemiBoldFontAssetPath}'; the Level Failed modal's title/headings/button labels will fall back to TMP's default font. Run Tools/UI/Generate Fredoka Font Assets.");
+
+        var fredokaMedium = AssetDatabase.LoadAssetAtPath<TMP_FontAsset>(FredokaMediumFontAssetPath);
+        if (fredokaMedium == null)
+            Debug.LogError($"BootstrapSceneCreator: could not load a TMP_FontAsset at '{FredokaMediumFontAssetPath}'; the Level Failed modal's description/caption text will fall back to TMP's default font. Run Tools/UI/Generate Fredoka Font Assets.");
+
+        CreateAutoSizedCenteredTMPText(content, "No space left!", new Vector2(0f, LevelFailedTitleOffsetY), new Vector2(800f, 130f), LevelFailedTitleFontSizeMin, LevelFailedTitleFontSizeMax, LevelFailedTitleColor, fredokaSemiBold);
+        CreateCenteredTMPText(content, "The waiting line is full.", new Vector2(0f, LevelFailedDescriptionOffsetY), new Vector2(840f, 50f), ConfirmationModalDescriptionFontSize, ConfirmationModalDescriptionColor, fredokaMedium);
+        CreateCenteredTMPText(content, "Use a booster:", new Vector2(0f, LevelFailedBoosterHeadingOffsetY), new Vector2(260f, 44f), LevelFailedHeadingFontSize, ConfirmationModalDescriptionColor, fredokaSemiBold);
+        CreateBoosterHeadingDecoration(content, LevelFailedBoosterHeadingOffsetY, fredokaMedium);
+
+        Sprite circleSprite = GenerateCircleSprite();
+        Sprite dashedRingSprite = GenerateDashedRingSprite();
+        Sprite starSprite = GenerateStarSprite();
+        for (int i = 0; i < LevelFailedBoosterSlotCount; i++)
+        {
+            float offsetX = (i - 1) * LevelFailedBoosterSlotSpacing;
+            CreateBoosterPlaceholderSlot(content, $"BoosterSlot{i + 1}", new Vector2(offsetX, LevelFailedBoosterRowOffsetY), circleSprite, dashedRingSprite);
+        }
+
+        CreateSeparator1(content, circleSprite, starSprite);
+        CreateCenteredTMPText(content, "One more chance?", new Vector2(0f, LevelFailedSecondChanceHeadingOffsetY), new Vector2(700f, 46f), LevelFailedHeadingFontSize, ConfirmationModalDescriptionColor, fredokaSemiBold);
+
+        var adIconSprite = AssetDatabase.LoadAssetAtPath<Sprite>(AdIconSpritePath);
+        if (adIconSprite == null)
+            Debug.LogError($"BootstrapSceneCreator: could not load a Sprite at '{AdIconSpritePath}'; the Level Failed modal's ad card will show no icon. Check its TextureImporter Texture Type is set to 'Sprite (2D and UI)'.");
+
+        CreateAdStatusCard(content, adIconSprite, fredokaSemiBold, fredokaMedium);
+
+        var primaryButtonSprite = AssetDatabase.LoadAssetAtPath<Sprite>(PrimaryButtonSpritePath);
+        if (primaryButtonSprite == null)
+            Debug.LogError($"BootstrapSceneCreator: could not load a Sprite at '{PrimaryButtonSpritePath}'; the Continue button will show no background artwork. Check its TextureImporter Texture Type is set to 'Sprite (2D and UI)'.");
+
+        var secondaryButtonSprite = AssetDatabase.LoadAssetAtPath<Sprite>(SecondaryButtonSpritePath);
+        if (secondaryButtonSprite == null)
+            Debug.LogError($"BootstrapSceneCreator: could not load a Sprite at '{SecondaryButtonSpritePath}'; the Exit level button will show no background artwork. Check its TextureImporter Texture Type is set to 'Sprite (2D and UI)'.");
+
+        Vector2 continueButtonSize = ResolveButtonArtworkSize(primaryButtonSprite, LevelFailedButtonHeight);
+        Vector2 exitButtonSize = ResolveButtonArtworkSize(secondaryButtonSprite, LevelFailedButtonHeight);
+
+        Button continueButton = CreateDialogButton(content, "ContinueButton", "Continue", new Vector2(0f, LevelFailedContinueButtonOffsetY), continueButtonSize, LevelFailedButtonLabelFontSize, primaryButtonSprite, fredokaSemiBold, ConfirmationModalButtonLabelColor);
+        CreateSeparator2(content, circleSprite);
+        Button exitLevelButton = CreateDialogButton(content, "ExitLevelButton", "Exit level", new Vector2(0f, LevelFailedExitButtonOffsetY), exitButtonSize, LevelFailedButtonLabelFontSize, secondaryButtonSprite, fredokaSemiBold, ConfirmationModalButtonLabelColor);
 
         var failureUI = canvasObject.GetComponent<FailureUI>();
         var serializedFailureUI = new SerializedObject(failureUI);
         serializedFailureUI.FindProperty("failureController").objectReferenceValue = failureController;
         serializedFailureUI.FindProperty("failureRecoveryController").objectReferenceValue = failureRecoveryController;
+        serializedFailureUI.FindProperty("levelExitFlowController").objectReferenceValue = levelExitFlowController;
         serializedFailureUI.FindProperty("panel").objectReferenceValue = panel;
-        serializedFailureUI.FindProperty("retryButton").objectReferenceValue = retryButton;
         serializedFailureUI.FindProperty("continueButton").objectReferenceValue = continueButton;
+        serializedFailureUI.FindProperty("exitLevelButton").objectReferenceValue = exitLevelButton;
         serializedFailureUI.ApplyModifiedPropertiesWithoutUndo();
     }
 
-    private static GameObject CreateFailurePanel(Transform parent)
+    /// <summary>Booster placeholder: the tinted fill circle plus a dashed ring overlay at the same size/position — two stacked Images (see GenerateCircleSprite/GenerateDashedRingSprite), both children of parent, so they move together as one slot.</summary>
+    private static void CreateBoosterPlaceholderSlot(Transform parent, string name, Vector2 anchoredPosition, Sprite circleSprite, Sprite dashedRingSprite)
     {
-        var panelObject = new GameObject("FailurePanel", typeof(Image));
-        panelObject.transform.SetParent(parent, false);
+        var slotObject = new GameObject(name, typeof(RectTransform));
+        slotObject.transform.SetParent(parent, false);
 
-        var rectTransform = panelObject.GetComponent<RectTransform>();
-        rectTransform.anchorMin = new Vector2(0.5f, 0.5f);
-        rectTransform.anchorMax = new Vector2(0.5f, 0.5f);
-        rectTransform.pivot = new Vector2(0.5f, 0.5f);
-        rectTransform.sizeDelta = new Vector2(400f, 250f);
-        rectTransform.anchoredPosition = Vector2.zero;
+        var slotRect = (RectTransform)slotObject.transform;
+        slotRect.anchorMin = new Vector2(0.5f, 0.5f);
+        slotRect.anchorMax = new Vector2(0.5f, 0.5f);
+        slotRect.pivot = new Vector2(0.5f, 0.5f);
+        slotRect.sizeDelta = new Vector2(LevelFailedBoosterSlotDiameter, LevelFailedBoosterSlotDiameter);
+        slotRect.anchoredPosition = anchoredPosition;
 
-        var image = panelObject.GetComponent<Image>();
-        image.color = new Color(0f, 0f, 0f, 0.85f);
-
-        // Also authored inactive in the saved scene, not just hidden by
-        // FailureUI.Awake() at runtime — keeps the Editor scene view honest
-        // about the panel's default (hidden) state.
-        panelObject.SetActive(false);
-
-        return panelObject;
+        CreateFullRectImage(slotRect, "Fill", circleSprite, LevelFailedBoosterPlaceholderColor);
+        CreateFullRectImage(slotRect, "Border", dashedRingSprite, LevelFailedBoosterBorderColor);
     }
 
-    private static Button CreateFailureActionButton(Transform parent, string label, Vector2 anchoredPosition)
+    /// <summary>Child Image stretched to fill the given parent RectTransform exactly — used to stack a booster slot's fill/border as two same-sized layers without repeating anchor/size boilerplate.</summary>
+    private static Image CreateFullRectImage(RectTransform parent, string name, Sprite sprite, Color color)
     {
-        var buttonObject = new GameObject($"{label}Button", typeof(Image), typeof(Button));
-        buttonObject.transform.SetParent(parent, false);
+        var imageObject = new GameObject(name, typeof(Image));
+        imageObject.transform.SetParent(parent, false);
 
-        var rectTransform = buttonObject.GetComponent<RectTransform>();
+        var rectTransform = imageObject.GetComponent<RectTransform>();
+        rectTransform.anchorMin = Vector2.zero;
+        rectTransform.anchorMax = Vector2.one;
+        rectTransform.offsetMin = Vector2.zero;
+        rectTransform.offsetMax = Vector2.zero;
+
+        var image = imageObject.GetComponent<Image>();
+        image.sprite = sprite;
+        image.color = color;
+        return image;
+    }
+
+    private static void CreateHorizontalSeparator(Transform parent, Vector2 anchoredPosition, float width, float thickness, Color color)
+    {
+        var separatorObject = new GameObject("Separator", typeof(Image));
+        separatorObject.transform.SetParent(parent, false);
+
+        var rectTransform = separatorObject.GetComponent<RectTransform>();
         rectTransform.anchorMin = new Vector2(0.5f, 0.5f);
         rectTransform.anchorMax = new Vector2(0.5f, 0.5f);
         rectTransform.pivot = new Vector2(0.5f, 0.5f);
-        rectTransform.sizeDelta = new Vector2(140f, 50f);
+        rectTransform.sizeDelta = new Vector2(width, thickness);
         rectTransform.anchoredPosition = anchoredPosition;
 
-        var image = buttonObject.GetComponent<Image>();
-        image.color = Color.white;
+        var image = separatorObject.GetComponent<Image>();
+        image.color = color;
+    }
 
-        CreateCenteredText(buttonObject.transform, label, Vector2.zero, new Vector2(140f, 50f), 20, Color.black);
+    private static void CreateDot(Transform parent, Vector2 anchoredPosition, float diameter, Sprite circleSprite, Color color)
+    {
+        var dotObject = new GameObject("Dot", typeof(Image));
+        dotObject.transform.SetParent(parent, false);
 
-        return buttonObject.GetComponent<Button>();
+        var rectTransform = dotObject.GetComponent<RectTransform>();
+        rectTransform.anchorMin = new Vector2(0.5f, 0.5f);
+        rectTransform.anchorMax = new Vector2(0.5f, 0.5f);
+        rectTransform.pivot = new Vector2(0.5f, 0.5f);
+        rectTransform.sizeDelta = new Vector2(diameter, diameter);
+        rectTransform.anchoredPosition = anchoredPosition;
+
+        var image = dotObject.GetComponent<Image>();
+        image.sprite = circleSprite;
+        image.color = color;
+    }
+
+    /// <summary>
+    /// Flanking decoration around "Use a booster:" — short line + ">>" on
+    /// the left, "&lt;&lt;" + short line on the right, both pointing inward
+    /// (see LevelFailedBoosterHeadingChevronOffsetX's remarks).
+    /// </summary>
+    private static void CreateBoosterHeadingDecoration(Transform parent, float rowOffsetY, TMP_FontAsset fredokaMedium)
+    {
+        CreateHorizontalSeparator(parent, new Vector2(-LevelFailedBoosterHeadingLineOffsetX, rowOffsetY), LevelFailedBoosterHeadingLineWidth, LevelFailedSeparatorThickness, LevelFailedSeparatorColor);
+        CreateHorizontalSeparator(parent, new Vector2(LevelFailedBoosterHeadingLineOffsetX, rowOffsetY), LevelFailedBoosterHeadingLineWidth, LevelFailedSeparatorThickness, LevelFailedSeparatorColor);
+        CreateCenteredTMPText(parent, ">>", new Vector2(-LevelFailedBoosterHeadingChevronOffsetX, rowOffsetY), new Vector2(60f, 40f), LevelFailedBoosterHeadingChevronFontSize, ConfirmationModalDescriptionColor, fredokaMedium);
+        CreateCenteredTMPText(parent, "<<", new Vector2(LevelFailedBoosterHeadingChevronOffsetX, rowOffsetY), new Vector2(60f, 40f), LevelFailedBoosterHeadingChevronFontSize, ConfirmationModalDescriptionColor, fredokaMedium);
+    }
+
+    /// <summary>
+    /// First decorative separator (see LevelFailedSeparator1OffsetY's
+    /// remarks): a dotted line on each side of a small centred star
+    /// (GenerateStarSprite), matching the reference's own star-in-the-middle
+    /// treatment.
+    /// </summary>
+    private static void CreateSeparator1(Transform parent, Sprite circleSprite, Sprite starSprite)
+    {
+        float centerHalfGap = LevelFailedSeparator1CenterGap / 2f;
+        int dotsPerSegment = Mathf.Max(1, Mathf.RoundToInt(LevelFailedSeparator1SegmentWidth / LevelFailedSeparator1DotSpacing));
+
+        for (int side = -1; side <= 1; side += 2)
+        {
+            float segmentStart = side * centerHalfGap;
+            for (int i = 0; i < dotsPerSegment; i++)
+            {
+                float t = (i + 0.5f) / dotsPerSegment;
+                float x = segmentStart + side * t * LevelFailedSeparator1SegmentWidth;
+                CreateDot(parent, new Vector2(x, LevelFailedSeparator1OffsetY), LevelFailedSeparator1DotDiameter, circleSprite, LevelFailedSeparator1DotColor);
+            }
+        }
+
+        CreateDot(parent, new Vector2(0f, LevelFailedSeparator1OffsetY), LevelFailedSeparator1CenterStarDiameter, starSprite, LevelFailedSeparator1DotColor);
+    }
+
+    /// <summary>
+    /// Second decorative separator, between Continue and Exit level (see
+    /// LevelFailedSeparator2OffsetY's remarks): two short solid lines
+    /// flanking a small centred dot.
+    /// </summary>
+    private static void CreateSeparator2(Transform parent, Sprite circleSprite)
+    {
+        CreateHorizontalSeparator(parent, new Vector2(-LevelFailedSeparator2LineOffsetX, LevelFailedSeparator2OffsetY), LevelFailedSeparator2LineWidth, LevelFailedSeparatorThickness, LevelFailedSeparatorColor);
+        CreateHorizontalSeparator(parent, new Vector2(LevelFailedSeparator2LineOffsetX, LevelFailedSeparator2OffsetY), LevelFailedSeparator2LineWidth, LevelFailedSeparatorThickness, LevelFailedSeparatorColor);
+        CreateDot(parent, new Vector2(0f, LevelFailedSeparator2OffsetY), LevelFailedSeparator2DotDiameter, circleSprite, LevelFailedSeparator1DotColor);
+    }
+
+    /// <summary>
+    /// AdContent group: a pure-layout container (RectTransform only, no
+    /// Image/visible background at all — see LevelFailedAdContentOffsetY's
+    /// remarks) with AdIcon.png and both text lines as its OWN children,
+    /// positioned relative to the container's own centre — never content or
+    /// the screen — so the icon/count/caption always move together as one
+    /// compact, horizontally-centered composition (icon left, text column
+    /// right) and the icon can never drift relative to its text at any
+    /// resolved modal size.
+    /// </summary>
+    private static void CreateAdStatusCard(Transform parent, Sprite adIconSprite, TMP_FontAsset fredokaSemiBold, TMP_FontAsset fredokaMedium)
+    {
+        var contentObject = new GameObject("AdContent", typeof(RectTransform));
+        contentObject.transform.SetParent(parent, false);
+
+        var contentRect = (RectTransform)contentObject.transform;
+        contentRect.anchorMin = new Vector2(0.5f, 0.5f);
+        contentRect.anchorMax = new Vector2(0.5f, 0.5f);
+        contentRect.pivot = new Vector2(0.5f, 0.5f);
+        contentRect.sizeDelta = new Vector2(LevelFailedAdContentWidth, LevelFailedAdContentHeight);
+        contentRect.anchoredPosition = new Vector2(0f, LevelFailedAdContentOffsetY);
+
+        var iconObject = new GameObject("AdIcon", typeof(Image));
+        iconObject.transform.SetParent(contentRect, false);
+
+        float iconAspect = 1f;
+        if (adIconSprite != null && adIconSprite.rect.height > 0f)
+            iconAspect = adIconSprite.rect.width / adIconSprite.rect.height;
+
+        var iconRect = iconObject.GetComponent<RectTransform>();
+        iconRect.anchorMin = new Vector2(0.5f, 0.5f);
+        iconRect.anchorMax = new Vector2(0.5f, 0.5f);
+        iconRect.pivot = new Vector2(0.5f, 0.5f);
+        iconRect.sizeDelta = new Vector2(LevelFailedAdIconHeight * iconAspect, LevelFailedAdIconHeight);
+        iconRect.anchoredPosition = new Vector2(LevelFailedAdIconOffsetX, 0f);
+
+        var iconImage = iconObject.GetComponent<Image>();
+        iconImage.sprite = adIconSprite;
+        iconImage.preserveAspect = true;
+
+        CreateCenteredTMPText(
+            contentRect,
+            LevelFailedAdWatchCountLabel,
+            new Vector2(LevelFailedAdTextOffsetX, LevelFailedAdCountOffsetY),
+            new Vector2(320f, 70f),
+            LevelFailedAdCountFontSize,
+            LevelFailedTitleColor,
+            fredokaSemiBold);
+
+        CreateCenteredTMPText(
+            contentRect,
+            "Watch an ad to continue",
+            new Vector2(LevelFailedAdTextOffsetX, LevelFailedAdCaptionOffsetY),
+            new Vector2(320f, 40f),
+            LevelFailedAdCaptionFontSize,
+            ConfirmationModalDescriptionColor,
+            fredokaMedium);
+    }
+
+    /// <summary>
+    /// Procedurally draws a flat white circle into a new Texture2D via an
+    /// analytic signed-distance field (~1px antialiased edge) — a generic,
+    /// content-free UI primitive shape, the same category of thing as
+    /// EnergyBarPrefabBuilder's own GenerateStadiumSprite (a rounded-box SDF;
+    /// this is its simpler fully-round special case) and not "art" in the
+    /// sense of this task's "do not create new artwork" constraint. Reused,
+    /// tinted differently and at different RectTransform sizes, for the
+    /// booster fill, both separators' dots, and the second separator's
+    /// centre dot — one shape, many uses, rather than a texture per use.
+    ///
+    /// Saved as its own small .asset (CircleSpriteAssetPath) rather than
+    /// left as an in-memory-only Sprite, for the same reason
+    /// GenerateStadiumSprite's own remarks give: a referenced-but-never-
+    /// persisted Sprite/Texture2D silently serializes as a null reference
+    /// once the scene is saved. Deleting and recreating this asset on every
+    /// run keeps this tool idempotent/re-runnable like the rest of this
+    /// file's own build steps.
+    /// </summary>
+    private static Sprite GenerateCircleSprite()
+    {
+        var texture = new Texture2D(CircleTextureDiameter, CircleTextureDiameter, TextureFormat.RGBA32, false)
+        {
+            name = "CircleSprite",
+            wrapMode = TextureWrapMode.Clamp,
+            filterMode = FilterMode.Bilinear,
+        };
+
+        float radius = CircleTextureDiameter / 2f;
+        var pixels = new Color32[CircleTextureDiameter * CircleTextureDiameter];
+        for (int y = 0; y < CircleTextureDiameter; y++)
+        {
+            for (int x = 0; x < CircleTextureDiameter; x++)
+            {
+                float px = x + 0.5f - radius;
+                float py = y + 0.5f - radius;
+                float distance = Mathf.Sqrt(px * px + py * py) - radius;
+                float alpha = Mathf.Clamp01(0.5f - distance);
+                pixels[y * CircleTextureDiameter + x] = new Color32(255, 255, 255, (byte)(alpha * 255f));
+            }
+        }
+
+        return SaveGeneratedSprite(texture, pixels, CircleSpriteAssetPath, "CircleSprite");
+    }
+
+    /// <summary>
+    /// Procedurally draws a dashed ring (an annulus split into
+    /// LevelFailedBoosterBorderDashCount arc segments via an angular duty
+    /// cycle) into a new Texture2D — the booster placeholders' "subtle
+    /// dashed/dotted circular border", layered on top of GenerateCircleSprite's
+    /// solid fill at the same RectTransform size (see CreateBoosterPlaceholderSlot).
+    /// Same SDF-plus-antialiasing approach as GenerateCircleSprite, extended
+    /// with an angular mask; not "art" for the same reason that one isn't.
+    /// </summary>
+    private static Sprite GenerateDashedRingSprite()
+    {
+        var texture = new Texture2D(CircleTextureDiameter, CircleTextureDiameter, TextureFormat.RGBA32, false)
+        {
+            name = "BoosterDashedRing",
+            wrapMode = TextureWrapMode.Clamp,
+            filterMode = FilterMode.Bilinear,
+        };
+
+        float radius = CircleTextureDiameter / 2f;
+        float thickness = radius * LevelFailedBoosterBorderThicknessFraction;
+        float ringCenterRadius = radius - thickness * 0.5f;
+        var pixels = new Color32[CircleTextureDiameter * CircleTextureDiameter];
+        for (int y = 0; y < CircleTextureDiameter; y++)
+        {
+            for (int x = 0; x < CircleTextureDiameter; x++)
+            {
+                float px = x + 0.5f - radius;
+                float py = y + 0.5f - radius;
+                float distFromCenter = Mathf.Sqrt(px * px + py * py);
+                float ringDistance = Mathf.Abs(distFromCenter - ringCenterRadius) - thickness * 0.5f;
+                float bandAlpha = Mathf.Clamp01(0.5f - ringDistance);
+
+                byte alpha = 0;
+                if (bandAlpha > 0f)
+                {
+                    float angle01 = Mathf.Atan2(py, px) / (Mathf.PI * 2f) + 0.5f;
+                    float dashPhase = (angle01 * LevelFailedBoosterBorderDashCount) % 1f;
+                    if (dashPhase < LevelFailedBoosterBorderDashDutyCycle)
+                        alpha = (byte)(bandAlpha * 255f);
+                }
+
+                pixels[y * CircleTextureDiameter + x] = new Color32(255, 255, 255, alpha);
+            }
+        }
+
+        return SaveGeneratedSprite(texture, pixels, BoosterDashedRingSpriteAssetPath, "BoosterDashedRing");
+    }
+
+    /// <summary>
+    /// Procedurally draws a flat white 5-point star into a new Texture2D via
+    /// Inigo Quilez's analytic star signed-distance field (sdStar5 —
+    /// https://iquilezles.org/articles/distfunctions2d/), the same public
+    /// SDF category EnergyBarPrefabBuilder's own rounded-box SDF already
+    /// draws on for this project's "generate a flat UI primitive shape
+    /// procedurally, not art" convention. Used for the first decorative
+    /// separator's centre element (see CreateSeparator1), replacing a plain
+    /// dot with the reference's own star treatment — verified against a
+    /// standalone Python/PIL render of the same formula before porting it
+    /// here, rather than shipped unverified.
+    /// </summary>
+    private static Sprite GenerateStarSprite()
+    {
+        var texture = new Texture2D(CircleTextureDiameter, CircleTextureDiameter, TextureFormat.RGBA32, false)
+        {
+            name = "StarSprite",
+            wrapMode = TextureWrapMode.Clamp,
+            filterMode = FilterMode.Bilinear,
+        };
+
+        float outerRadius = CircleTextureDiameter * 0.42f;
+        const float innerRadiusRatio = 0.5f;
+        var pixels = new Color32[CircleTextureDiameter * CircleTextureDiameter];
+        for (int y = 0; y < CircleTextureDiameter; y++)
+        {
+            for (int x = 0; x < CircleTextureDiameter; x++)
+            {
+                float px = x + 0.5f - CircleTextureDiameter / 2f;
+                float py = y + 0.5f - CircleTextureDiameter / 2f;
+                float distance = SignedDistanceStar5(px, py, outerRadius, innerRadiusRatio);
+                float alpha = Mathf.Clamp01(0.5f - distance);
+                pixels[y * CircleTextureDiameter + x] = new Color32(255, 255, 255, (byte)(alpha * 255f));
+            }
+        }
+
+        return SaveGeneratedSprite(texture, pixels, StarSpriteAssetPath, "StarSprite");
+    }
+
+    /// <summary>See GenerateStarSprite's remarks — Inigo Quilez's sdStar5 formula, transcribed directly (k1/k2 are its own fixed constants for a regular 5-point star, not tunable parameters).</summary>
+    private static float SignedDistanceStar5(float px, float py, float outerRadius, float innerRadiusRatio)
+    {
+        const float k1X = 0.809016994375f;
+        const float k1Y = -0.587785252292f;
+        const float k2X = -k1X;
+        const float k2Y = k1Y;
+
+        px = Mathf.Abs(px);
+        float d = k1X * px + k1Y * py;
+        if (d > 0f)
+        {
+            px -= 2f * d * k1X;
+            py -= 2f * d * k1Y;
+        }
+
+        d = k2X * px + k2Y * py;
+        if (d > 0f)
+        {
+            px -= 2f * d * k2X;
+            py -= 2f * d * k2Y;
+        }
+
+        px = Mathf.Abs(px);
+        py -= outerRadius;
+
+        float baX = innerRadiusRatio * -k1Y;
+        float baY = innerRadiusRatio * k1X - 1f;
+        float h = Mathf.Clamp((px * baX + py * baY) / (baX * baX + baY * baY), 0f, outerRadius);
+        float dx = px - baX * h;
+        float dy = py - baY * h;
+        float sign = (py * baX - px * baY) < 0f ? 1f : -1f;
+        return Mathf.Sqrt(dx * dx + dy * dy) * sign;
+    }
+
+    /// <summary>Shared tail end of every GenerateXSprite method above: bakes pixels into the texture, (re)persists it as its own small .asset (see GenerateCircleSprite's remarks on why persistence matters), and returns the reloaded Sprite sub-asset.</summary>
+    private static Sprite SaveGeneratedSprite(Texture2D texture, Color32[] pixels, string assetPath, string spriteName)
+    {
+        texture.SetPixels32(pixels);
+        texture.Apply();
+
+        Sprite sprite = Sprite.Create(
+            texture,
+            new Rect(0f, 0f, texture.width, texture.height),
+            new Vector2(0.5f, 0.5f),
+            pixelsPerUnit: 100f);
+        sprite.name = spriteName;
+
+        string directory = Path.GetDirectoryName(assetPath);
+        if (!Directory.Exists(directory))
+            Directory.CreateDirectory(directory);
+
+        if (AssetDatabase.LoadAssetAtPath<Texture2D>(assetPath) != null)
+            AssetDatabase.DeleteAsset(assetPath);
+
+        AssetDatabase.CreateAsset(texture, assetPath);
+        AssetDatabase.AddObjectToAsset(sprite, assetPath);
+        AssetDatabase.SaveAssets();
+        AssetDatabase.ImportAsset(assetPath, ImportAssetOptions.ForceSynchronousImport);
+
+        return AssetDatabase.LoadAssetAtPath<Sprite>(assetPath);
     }
 
     private static void CreateCenteredText(Transform parent, string content, Vector2 anchoredPosition, Vector2 size, int fontSize, Color color)
@@ -945,11 +1604,11 @@ public static class BootstrapSceneCreator
     /// <summary>
     /// TextMeshPro counterpart to CreateCenteredText, used only where a
     /// specific TMP_FontAsset (e.g. Fredoka) must be assigned explicitly —
-    /// currently just the Exit confirmation modal's title/description/
-    /// button labels. Deliberately a separate helper rather than converting
-    /// CreateCenteredText itself, so every other caller (Pause panel,
-    /// Victory/Failure panels, top HUD) keeps rendering with the legacy
-    /// UI.Text/default font exactly as before.
+    /// the Exit confirmation, Pause, and Level Failed modals' own
+    /// title/description/heading/button-label text. Deliberately a separate
+    /// helper rather than converting CreateCenteredText itself, so every
+    /// other caller (Victory/Failure panels' own legacy text, top HUD) keeps
+    /// rendering with the legacy UI.Text/default font exactly as before.
     /// </summary>
     private static void CreateCenteredTMPText(Transform parent, string content, Vector2 anchoredPosition, Vector2 size, float fontSize, Color color, TMP_FontAsset font)
     {
@@ -968,6 +1627,41 @@ public static class BootstrapSceneCreator
         if (font != null)
             text.font = font;
         text.fontSize = fontSize;
+        text.alignment = TextAlignmentOptions.Center;
+        text.color = color;
+    }
+
+    /// <summary>
+    /// CreateCenteredTMPText's auto-sizing counterpart, used only by the
+    /// Level Failed modal's title (see LevelFailedTitleFontSizeMin's
+    /// remarks) — TMP's enableAutoSizing solves for the largest font size in
+    /// [fontSizeMin, fontSizeMax] that still fits the given size, the same
+    /// technique EnergyBarPrefabBuilder.BuildValueText already uses.
+    /// Word-wrap is explicitly disabled (TextWrappingModes.NoWrap, the
+    /// current non-obsolete TMP API — not the deprecated
+    /// enableWordWrapping bool) so a too-narrow box shrinks the single line
+    /// instead of wrapping it to two.
+    /// </summary>
+    private static void CreateAutoSizedCenteredTMPText(Transform parent, string content, Vector2 anchoredPosition, Vector2 size, float fontSizeMin, float fontSizeMax, Color color, TMP_FontAsset font)
+    {
+        var textObject = new GameObject("Text", typeof(TextMeshProUGUI));
+        textObject.transform.SetParent(parent, false);
+
+        var rectTransform = textObject.GetComponent<RectTransform>();
+        rectTransform.anchorMin = new Vector2(0.5f, 0.5f);
+        rectTransform.anchorMax = new Vector2(0.5f, 0.5f);
+        rectTransform.pivot = new Vector2(0.5f, 0.5f);
+        rectTransform.sizeDelta = size;
+        rectTransform.anchoredPosition = anchoredPosition;
+
+        var text = textObject.GetComponent<TextMeshProUGUI>();
+        text.text = content;
+        if (font != null)
+            text.font = font;
+        text.enableAutoSizing = true;
+        text.fontSizeMin = fontSizeMin;
+        text.fontSizeMax = fontSizeMax;
+        text.textWrappingMode = TextWrappingModes.NoWrap;
         text.alignment = TextAlignmentOptions.Center;
         text.color = color;
     }
