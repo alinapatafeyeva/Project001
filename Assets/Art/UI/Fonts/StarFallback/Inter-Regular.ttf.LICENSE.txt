@@ -1,0 +1,11 @@
+Inter-Regular.ttf
+Copyright 2019 The Inter project authors.
+
+Licensed under the SIL Open Font License, Version 1.1.
+https://scripts.sil.org/OFL
+
+Used solely as a narrow TMP fallback font asset (see
+StarFallbackFontAssetBuilder.cs) so TextMeshPro can render the single ★
+(U+2605) glyph the Fredoka font files do not include, for the Level
+Complete modal's decorative separator accent. Not used as a primary
+UI typeface anywhere in this project.
