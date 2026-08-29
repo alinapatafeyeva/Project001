@@ -78,9 +78,9 @@ public static class BootstrapSceneCreator
         VictoryFlowController victoryFlowController = CreateVictoryFlowController(gameplayFlowController, levelProgressionController);
         CreateLevelBootstrapper(pixelGrid, conveyorSystem, waitingLine, collectorQueueBoard, endgameCleanupController, levelProgressionController);
         CreateEventSystem();
-        CreateVictoryUI(victoryController, victoryFlowController);
 
         LevelExitFlowController levelExitFlowController = CreateLevelExitFlowController(gameplayFlowController);
+        CreateVictoryUI(victoryController, victoryFlowController, levelExitFlowController);
         CreateFailureUI(failureController, failureRecoveryController, levelExitFlowController);
 
         GameplaySpeedController gameplaySpeedController = CreateGameplaySpeedController();
@@ -769,14 +769,317 @@ public static class BootstrapSceneCreator
         new GameObject("EventSystem", typeof(EventSystem), typeof(InputSystemUIInputModule));
     }
 
+    private const string LevelCompleteModalSpritePath = "Assets/Art/UI/Classic/LevelCompleteModal.png";
+
     /// <summary>
-    /// Prototype Victory screen: a Canvas holding an initially-inactive
-    /// centered panel ("Level Complete" text and a Continue button), with
-    /// the VictoryUI component wired to victoryController. No score, coins,
-    /// stars, rewards, ads, transitions, or animations — establishing the
-    /// architecture only.
+    /// All fixed pixel positions/sizes below are authored against
+    /// ConfirmationModalContentReferenceWidth exactly like Exit/Pause/Level
+    /// Failed (see ExitConfirmButtonHeight's remarks for that convention).
+    /// LevelCompleteModal.png was replaced with a taller version (aspect
+    /// ~0.664, up from the previous ~0.868) specifically to fit the new
+    /// earned-coins section — see LevelCompleteModalMaxWidth's own remarks
+    /// for why that alone means this modal now needs its own dedicated
+    /// width ceiling instead of reusing ConfirmationModalMaxWidth. Width
+    /// fraction, vertical offset, and content reference width are still the
+    /// exact same shared ConfirmationModal* constants every other gameplay
+    /// modal uses — only the max-width ceiling is now modal-specific.
+    /// Proportions were measured directly off
+    /// reference/UI/LevelCompleteModalTarget.png (its full 7-item hierarchy:
+    /// title, subtitle, separator, "You earned:", coin/value, DoubleCoinsButton,
+    /// bottom row).
+    ///
+    /// This one specifically: vertical anchoredPosition of the two-line
+    /// "Level Complete!" title.
     /// </summary>
-    private static void CreateVictoryUI(VictoryController victoryController, VictoryFlowController victoryFlowController)
+    private const float LevelCompleteTitleOffsetY = 224f;
+
+    /// <summary>
+    /// Dedicated width ceiling for Level Complete, analogous to
+    /// LevelFailedModalMaxWidth — its own artwork's new taller aspect ratio
+    /// (~0.664, close to LevelFailedModal.png's own ~0.646) means reusing
+    /// ConfirmationModalMaxWidth (1400) unclamped would now resolve to
+    /// 1400/0.664 ≈ 2109 units on iPad portrait — ~88% of that device's own
+    /// 2388-unit canvas height, no longer "doesn't dominate a tablet screen"
+    /// now that the artwork is taller than when that reuse was originally
+    /// decided. 1200 (the same value LevelFailedModalMaxWidth already uses,
+    /// since the two artworks' aspect ratios are now close enough to share
+    /// one ceiling) resolves to 1200/0.664 ≈ 1807 units instead — ~75.7% of
+    /// the iPad reference's height, back in the same comfortable range every
+    /// other gameplay modal targets. Phones are unaffected: at the 1080-wide
+    /// portrait reference, 1080*0.90=972 is already well under 1200, so this
+    /// ceiling never engages there.
+    /// </summary>
+    private const float LevelCompleteModalMaxWidth = 1200f;
+
+    /// <summary>
+    /// Fixed (not auto-sized, unlike Level Failed's title) at a size large
+    /// enough that "Level Complete!" reliably wraps to two lines within its
+    /// own 700-wide box (narrower than the interior's own ~852 width,
+    /// specifically so it wraps instead of fitting on one line) — matching
+    /// the reference's own two-line "Level" / "Complete!" treatment, the
+    /// modal's strongest text element.
+    /// </summary>
+    private const float LevelCompleteTitleFontSize = 100f;
+
+    /// <summary>Pleasant muted green, sampled off reference/UI/LevelCompleteModalTarget.png's own title — consistent with the existing muted palette rather than a saturated "success green".</summary>
+    private static readonly Color LevelCompleteTitleColor = new Color(94f / 255f, 117f / 255f, 62f / 255f);
+
+    /// <summary>Vertical anchoredPosition of "Great job! You did it!" (see LevelCompleteTitleOffsetY's remarks). Reuses ConfirmationModalDescriptionFontSize/Color — same supporting-text styling as every other gameplay modal.</summary>
+    private const float LevelCompleteDescriptionOffsetY = 48f;
+
+    /// <summary>
+    /// Vertical anchoredPosition of the decorative separator between the
+    /// text block and the new earned-coins/action area (see
+    /// LevelCompleteTitleOffsetY's remarks) — reuses CreateDottedStarSeparator
+    /// (see its own remarks) and Level Failed's own dot sizing constants
+    /// (LevelFailedSeparator1SegmentWidth/CenterGap/DotDiameter/DotSpacing —
+    /// this modal's interior is almost exactly as wide, so the same dot
+    /// scale reads correctly here too) with only position/colour differing.
+    /// CreateDottedStarSeparator itself only draws the two dotted segments
+    /// (includeCenterAccent: false — see its own remarks); the centre
+    /// accent here is a plain TextMeshProUGUI "★" (see CreateVictoryUI), not
+    /// the generated-sprite star Level Failed uses, specifically to avoid
+    /// depending on that shared generated asset at all for this modal.
+    /// </summary>
+    private const float LevelCompleteSeparatorOffsetY = -16f;
+
+    /// <summary>
+    /// Font size for the separator's centre "★" TextMeshProUGUI glyph — small
+    /// and subtle relative to LevelCompleteTitleFontSize (100), sized so the
+    /// rendered glyph sits comfortably inside LevelFailedSeparator1CenterGap
+    /// (60 units) with visible padding on both sides before the dots begin,
+    /// reading as "dots — ★ — dots" rather than one continuous line.
+    /// </summary>
+    private const float LevelCompleteSeparatorStarFontSize = 34f;
+
+    /// <summary>
+    /// Soft muted olive-green for the separator's "★" — sampled off
+    /// reference/UI/LevelCompleteModalTarget.png's own star, a warm/green
+    /// tone that harmonizes with LevelCompleteTitleColor without repeating
+    /// it exactly (matching the reference's own slightly lighter star) or
+    /// competing with the title/buttons.
+    /// </summary>
+    private static readonly Color LevelCompleteSeparatorStarColor = new Color(161f / 255f, 175f / 255f, 111f / 255f);
+
+    /// <summary>Vertical anchoredPosition of the "You earned:" caption, directly above the coin/value row so the two read as one reward group (see LevelCompleteEarnedCoinsGroupOffsetY's remarks).</summary>
+    private const float LevelCompleteYouEarnedOffsetY = -81f;
+
+    /// <summary>
+    /// Font size for "You earned:" — measured against
+    /// reference/UI/LevelCompleteModalTarget.png's own cap-heights: its
+    /// "You earned:" (~25px) and "Great job! You did it!" (~26px) are
+    /// essentially the same weight, not one visibly smaller than the other,
+    /// so this now matches ConfirmationModalDescriptionFontSize (32) rather
+    /// than sitting a full notch below it — still clearly smaller than
+    /// LevelCompleteTitleFontSize (100) and LevelCompleteEarnedCoinsValueFontSize
+    /// (86), but no longer reading as tiny helper text.
+    /// </summary>
+    private const float LevelCompleteYouEarnedFontSize = 34f;
+
+    private const string CoinSpritePath = "Assets/Art/UI/Classic/Coin.png";
+
+    /// <summary>
+    /// Vertical anchoredPosition of EarnedCoinsGroup — CoinIcon and
+    /// EarnedCoinsValue's shared parent container (see CreateVictoryUI),
+    /// positioned as one unit rather than centering the value text
+    /// independently and attaching the coin afterward. A short gap below
+    /// LevelCompleteYouEarnedOffsetY (see its own remarks) so the caption and
+    /// the coin/value row read together as one reward group, per the task's
+    /// own requirement.
+    /// </summary>
+    private const float LevelCompleteEarnedCoinsGroupOffsetY = -173f;
+
+    /// <summary>
+    /// Layout/authoring width for EarnedCoinsGroup (no Image on the
+    /// container itself — same "invisible layout container" convention as
+    /// Level Failed's own AdContent) — CoinIcon/EarnedCoinsValue are
+    /// positioned relative to it, not to content directly. Sized to fit
+    /// CoinIcon (~96 wide at LevelCompleteCoinIconHeight) + a ~28-unit gap +
+    /// EarnedCoinsValue (~156 wide at LevelCompleteEarnedCoinsValueFontSize
+    /// 86) with a small margin, derived from measuring
+    /// reference/UI/LevelCompleteModalTarget.png's own coin/"120" pair
+    /// (84x90 coin, 157x70 text, 24-unit gap between them).
+    /// </summary>
+    private const float LevelCompleteEarnedCoinsGroupWidth = 284f;
+
+    private const float LevelCompleteEarnedCoinsGroupHeight = 110f;
+
+    /// <summary>
+    /// Horizontal offset of CoinIcon from EarnedCoinsGroup's own centre —
+    /// immediately to the left of EarnedCoinsValue (see
+    /// LevelCompleteEarnedCoinsValueOffsetX), never positioned independently
+    /// of the group. Shifted slightly further left (from -94) to re-centre
+    /// the [coin + 120] pair as a whole now that
+    /// LevelCompleteEarnedCoinsValueFontSize's own increase widened "120" —
+    /// the minimum X adjustment needed, not a redesign of the group.
+    /// </summary>
+    private const float LevelCompleteCoinIconOffsetX = -102f;
+
+    /// <summary>
+    /// CoinIcon footprint height — reference/UI/LevelCompleteModalTarget.png
+    /// measures its own coin disc at ~90px tall, essentially matching its
+    /// title line's own ~81-88px cap-height; the coin is meant to read as a
+    /// significant visual moment, not a small inline glyph next to the
+    /// number. Raised from the previous pass's 80 accordingly.
+    /// </summary>
+    private const float LevelCompleteCoinIconHeight = 94f;
+
+    /// <summary>Horizontal offset of EarnedCoinsValue from EarnedCoinsGroup's own centre (see LevelCompleteCoinIconOffsetX's remarks) — leaves a ~30-unit gap from CoinIcon's own right edge, matching the reference's own coin-to-number spacing.</summary>
+    private const float LevelCompleteEarnedCoinsValueOffsetX = 64f;
+
+    /// <summary>
+    /// Font size for the earned-coins numeric value. Raised a further ~11.6%
+    /// from the previous pass's 86 (within the requested 10-15% ceiling) —
+    /// a small final bump on top of CreateEarnedCoinsGroup's own
+    /// FontStyles.Bold, which is the main source of the requested extra
+    /// visual weight (a heavier look using the same Fredoka SemiBold SDF
+    /// asset, no new font asset introduced).
+    /// </summary>
+    private const float LevelCompleteEarnedCoinsValueFontSize = 96f;
+
+    /// <summary>Dark warm brown for the earned-coins value, sampled off reference/UI/LevelCompleteModalTarget.png's own "120" — deliberately a richer/darker tone than ConfirmationModalDescriptionColor so the value itself reads with more weight than the "You earned:" caption above it.</summary>
+    private static readonly Color LevelCompleteEarnedCoinsValueColor = new Color(105f / 255f, 84f / 255f, 57f / 255f);
+
+    /// <summary>
+    /// Placeholder earned-coins amount shown by EarnedCoinsValue —
+    /// presentation only. No coin/reward economy exists anywhere in this
+    /// project yet (confirmed by inspecting VictoryController's own OnVictory
+    /// event, which carries no reward data, and LevelDefinition's own class
+    /// remarks, which explicitly exclude "rewards" as a future level-catalog/
+    /// player-progress concern not yet built) — so there is nothing real to
+    /// bind to. Named and commented explicitly as a placeholder specifically
+    /// so a future reward system has one obvious constant to replace with a
+    /// real bound value, rather than a bare literal buried in a
+    /// CreateCenteredTMPText call.
+    /// </summary>
+    private const string LevelCompleteEarnedCoinsPlaceholderValue = "120";
+
+    private const string DoubleCoinsButtonSpritePath = "Assets/Art/UI/Classic/DoubleCoinsButton.png";
+
+    /// <summary>
+    /// Vertical anchoredPosition of DoubleCoinsButton — the modal's
+    /// visually-strongest reward CTA (see CreateVictoryUI), placed by
+    /// refitting the whole action area below LevelCompleteEarnedCoinsGroupOffsetY
+    /// now that the taller artwork has room for it: separator →
+    /// (moderate gap) → "You earned:" → (small gap, one reward group) →
+    /// coin/value → (moderate gap) → DoubleCoinsButton → (moderate gap) →
+    /// the Exit/Next Level row → (comfortable bottom breathing room),
+    /// matching reference/UI/LevelCompleteModalTarget.png's own relative
+    /// proportions rather than its absolute pixel positions.
+    /// </summary>
+    private const float LevelCompleteDoubleCoinsButtonOffsetY = -366f;
+
+    /// <summary>
+    /// Fixed footprint height for DoubleCoinsButton, its width then derived
+    /// from the sprite's own native aspect ratio (~3.18 — see
+    /// ResolveButtonArtworkSize) exactly like every other button in this
+    /// project, never an independent width. Raised from the previous pass's
+    /// 195 to read as more dominant/eye-catching, per
+    /// reference/UI/LevelCompleteModalTarget.png's own treatment of this as
+    /// the single most eye-catching action on the screen — the resulting
+    /// width (~685 content-frame units) is clearly wider than either
+    /// bottom-row button (~390-394 units each) and comfortably wide relative
+    /// to the interior (~850 units) without touching the frame.
+    /// </summary>
+    private const float LevelCompleteDoubleCoinsButtonHeight = 215f;
+
+    /// <summary>Vertical anchoredPosition shared by the Exit/Next Level row (see LevelCompleteDoubleCoinsButtonOffsetY's remarks).</summary>
+    private const float LevelCompleteBottomRowOffsetY = -569f;
+
+    /// <summary>
+    /// Fixed footprint height shared by Exit/Next Level, side by side below
+    /// DoubleCoinsButton (see CreateVictoryUI) — both read as comfortable
+    /// mobile touch targets. Raised moderately from the previous pass's 130;
+    /// SecondaryButton.png/PrimaryButton.png's own native aspect (~2.79/2.81,
+    /// visibly narrower-per-height than the reference's own illustrated
+    /// buttons) caps how far this can grow before the row's combined width
+    /// crowds the ~850-unit-wide interior, so this stays a moderate rather
+    /// than dramatic increase. Next Level reads as the primary action through
+    /// PrimaryButton.png's own more vibrant colour and conventional
+    /// right-hand position, not through being physically larger than Exit —
+    /// the same convention already used for DoubleCoinsButton vs. this row
+    /// and for Level Failed's own Continue/Exit level pair.
+    /// </summary>
+    private const float LevelCompleteBottomRowButtonHeight = 140f;
+
+    /// <summary>
+    /// Shared horizontal offset (from centre) for both Exit (left, negative)
+    /// and Next Level (right, positive) — one shared value applied
+    /// symmetrically to both, the same convention
+    /// ExitConfirmButtonHorizontalOffset already uses for Stay/Exit despite
+    /// their own slightly different sprite aspect ratios, rather than two
+    /// separate per-button offsets for a sub-2-unit difference. Raised
+    /// alongside LevelCompleteBottomRowButtonHeight to keep the same
+    /// ~40-unit centre gap between the two buttons at the new, larger size.
+    /// </summary>
+    private const float LevelCompleteBottomRowHorizontalOffset = 218f;
+
+    /// <summary>Font size for the Exit/Next Level labels, raised alongside LevelCompleteBottomRowButtonHeight to keep the same label-to-button-height ratio already established for this modal's other buttons.</summary>
+    private const int LevelCompleteButtonLabelFontSize = 46;
+
+    /// <summary>
+    /// Level Complete modal: a two-line "Level Complete!" title, a
+    /// supporting line, a decorative separator, "You earned:" over
+    /// EarnedCoinsGroup (CoinIcon + a placeholder amount — see
+    /// CreateEarnedCoinsGroup's own remarks; presentation only, no reward
+    /// economy exists yet), DoubleCoinsButton (the rewarded-ad reward CTA —
+    /// see CreateImageButton's own remarks on why it gets no text label),
+    /// then an Exit/Next Level row. Reuses the exact same responsive
+    /// artwork box/content-scaling infrastructure as Exit/Pause/Level Failed
+    /// (see CreateResponsiveModalArtworkBox) —
+    /// LevelCompleteModal.png's crab and confetti are baked into the same
+    /// texture as the cream panel body, so sizing the whole sprite by its
+    /// own aspect ratio (exactly what CreateResponsiveModalArtworkBox
+    /// already does for any artwork) keeps them attached and never clips
+    /// them; no special-casing was needed. VictoryUI is wired to
+    /// victoryController, victoryFlowController, and now
+    /// levelExitFlowController — the same single Exit implementation the top
+    /// HUD/Pause/Level Failed modals already share — plus doubleCoinsButton,
+    /// currently a safe no-op (see VictoryUI.OnDoubleCoinsPressed). Reuses
+    /// the existing EventSystem created earlier in CreateBootstrapScene —
+    /// one EventSystem serves every Canvas in the scene, so no second one is
+    /// created here.
+    /// sortingOrder 10 (matching GameplayModalCanvas/FailureCanvas) so this
+    /// panel's own full-screen backdrop reliably blocks clicks to the top
+    /// HUD underneath it, exactly like the rest of the gameplay modal
+    /// system.
+    /// </summary>
+    /// <summary>
+    /// Forces a texture's Sprite Mode to Single (whole image = one sprite),
+    /// clearing any Multiple-mode sub-sprite rects in the process.
+    ///
+    /// LevelCompleteModal.png was originally sliced in Multiple mode with
+    /// sub-sprite rects authored against its old 1121x1291 pixel dimensions.
+    /// When the artwork was later replaced with a taller 1000x1505 version,
+    /// those rects became stale and geometrically invalid against the new
+    /// texture, so AssetDatabase.LoadAssetAtPath&lt;Sprite&gt; returned a
+    /// garbled sub-sprite instead of the whole illustration - the artwork
+    /// rendered as broken rectangular fragments instead of one intact panel.
+    /// ConfirmationModal.png and PrimaryButton.png, by contrast, both import
+    /// as Single and have never shown this problem.
+    ///
+    /// Called every time this artwork is loaded (idempotent - a no-op once
+    /// already Single) so this class of bug self-heals on the next scene
+    /// regeneration if the source PNG is ever swapped again.
+    /// </summary>
+    private static void NormalizeSpriteImportModeToSingle(string texturePath)
+    {
+        var importer = AssetImporter.GetAtPath(texturePath) as TextureImporter;
+        if (importer == null)
+        {
+            Debug.LogError($"BootstrapSceneCreator: could not get TextureImporter at '{texturePath}' to normalize its Sprite Mode.");
+            return;
+        }
+
+        if (importer.spriteImportMode == SpriteImportMode.Single)
+            return;
+
+        importer.spriteImportMode = SpriteImportMode.Single;
+        importer.spritesheet = new SpriteMetaData[0];
+        importer.SaveAndReimport();
+    }
+
+    private static void CreateVictoryUI(VictoryController victoryController, VictoryFlowController victoryFlowController, LevelExitFlowController levelExitFlowController)
     {
         var canvasObject = new GameObject(
             "VictoryCanvas",
@@ -787,61 +1090,163 @@ public static class BootstrapSceneCreator
 
         var canvas = canvasObject.GetComponent<Canvas>();
         canvas.renderMode = RenderMode.ScreenSpaceOverlay;
+        canvas.sortingOrder = 10;
 
-        GameObject panel = CreateVictoryPanel(canvasObject.transform);
-        Button continueButton = CreateContinueButton(panel.transform);
-        CreateCenteredText(panel.transform, "Level Complete", new Vector2(0f, 60f), new Vector2(360f, 60f), 28, Color.white);
+        GameObject panel = CreateModalBackdrop(canvasObject.transform, "VictoryPanel");
+
+        NormalizeSpriteImportModeToSingle(LevelCompleteModalSpritePath);
+        var levelCompleteModalSprite = AssetDatabase.LoadAssetAtPath<Sprite>(LevelCompleteModalSpritePath);
+        if (levelCompleteModalSprite == null)
+            Debug.LogError($"BootstrapSceneCreator: could not load a Sprite at '{LevelCompleteModalSpritePath}'; the Level Complete modal will show no background artwork. Check its TextureImporter Texture Type is set to 'Sprite (2D and UI)'.");
+
+        Transform content = CreateResponsiveModalArtworkBox(
+            panel.transform,
+            levelCompleteModalSprite,
+            ConfirmationModalWidthFraction,
+            LevelCompleteModalMaxWidth,
+            ConfirmationModalVerticalOffsetFraction,
+            ConfirmationModalContentReferenceWidth);
+
+        var fredokaSemiBold = AssetDatabase.LoadAssetAtPath<TMP_FontAsset>(FredokaSemiBoldFontAssetPath);
+        if (fredokaSemiBold == null)
+            Debug.LogError($"BootstrapSceneCreator: could not load a TMP_FontAsset at '{FredokaSemiBoldFontAssetPath}'; the Level Complete modal's title/button labels will fall back to TMP's default font. Run Tools/UI/Generate Fredoka Font Assets.");
+
+        var fredokaMedium = AssetDatabase.LoadAssetAtPath<TMP_FontAsset>(FredokaMediumFontAssetPath);
+        if (fredokaMedium == null)
+            Debug.LogError($"BootstrapSceneCreator: could not load a TMP_FontAsset at '{FredokaMediumFontAssetPath}'; the Level Complete modal's description will fall back to TMP's default font. Run Tools/UI/Generate Fredoka Font Assets.");
+
+        CreateCenteredTMPText(content, "Level Complete!", new Vector2(0f, LevelCompleteTitleOffsetY), new Vector2(700f, 240f), LevelCompleteTitleFontSize, LevelCompleteTitleColor, fredokaSemiBold);
+        CreateCenteredTMPText(content, "Great job! You did it!", new Vector2(0f, LevelCompleteDescriptionOffsetY), new Vector2(700f, 40f), ConfirmationModalDescriptionFontSize, ConfirmationModalDescriptionColor, fredokaMedium);
+
+        Sprite circleSprite = GenerateCircleSprite();
+        CreateDottedStarSeparator(
+            content,
+            LevelCompleteSeparatorOffsetY,
+            LevelFailedSeparator1SegmentWidth,
+            LevelFailedSeparator1CenterGap,
+            LevelFailedSeparator1DotDiameter,
+            LevelFailedSeparator1DotSpacing,
+            LevelFailedSeparator1CenterStarDiameter,
+            circleSprite,
+            starSprite: null,
+            dotColor: LevelFailedSeparator1DotColor,
+            centerColor: default,
+            includeCenterAccent: false);
+
+        // Plain TMP text, not the generated-sprite star Level Failed uses
+        // (GenerateStarSprite/StarSprite.asset) — see LevelCompleteSeparatorOffsetY's
+        // remarks for why. Falls back to Inter-Regular SDF.asset for the ★
+        // glyph itself (registered on fredokaSemiBold by
+        // StarFallbackFontAssetBuilder), since neither Fredoka .ttf contains
+        // U+2605 — confirmed via each source file's own cmap, not assumed.
+        GameObject separatorStar = CreateCenteredTMPText(content, "★", new Vector2(0f, LevelCompleteSeparatorOffsetY), new Vector2(LevelFailedSeparator1CenterGap, LevelFailedSeparator1CenterGap), LevelCompleteSeparatorStarFontSize, LevelCompleteSeparatorStarColor, fredokaSemiBold);
+        separatorStar.name = "SeparatorStar";
+
+        CreateCenteredTMPText(content, "You earned:", new Vector2(0f, LevelCompleteYouEarnedOffsetY), new Vector2(700f, 44f), LevelCompleteYouEarnedFontSize, ConfirmationModalDescriptionColor, fredokaMedium);
+
+        var coinSprite = AssetDatabase.LoadAssetAtPath<Sprite>(CoinSpritePath);
+        if (coinSprite == null)
+            Debug.LogError($"BootstrapSceneCreator: could not load a Sprite at '{CoinSpritePath}'; the earned-coins row will show no coin icon. Check its TextureImporter Texture Type is set to 'Sprite (2D and UI)'.");
+
+        CreateEarnedCoinsGroup(content, coinSprite, fredokaSemiBold);
+
+        var doubleCoinsButtonSprite = AssetDatabase.LoadAssetAtPath<Sprite>(DoubleCoinsButtonSpritePath);
+        if (doubleCoinsButtonSprite == null)
+            Debug.LogError($"BootstrapSceneCreator: could not load a Sprite at '{DoubleCoinsButtonSpritePath}'; the Double Coins button will show no background artwork. Check its TextureImporter Texture Type is set to 'Sprite (2D and UI)'.");
+
+        // DoubleCoinsButton.png already bakes in its own coin/ad artwork,
+        // "x2 Coins", "Watch Ad", and play icon — CreateImageButton (unlike
+        // CreateDialogButton) adds no label child on top of it, so none of
+        // that baked-in text is duplicated.
+        Vector2 doubleCoinsButtonSize = ResolveButtonArtworkSize(doubleCoinsButtonSprite, LevelCompleteDoubleCoinsButtonHeight);
+        Button doubleCoinsButton = CreateImageButton(content, "DoubleCoinsButton", new Vector2(0f, LevelCompleteDoubleCoinsButtonOffsetY), doubleCoinsButtonSize, doubleCoinsButtonSprite);
+
+        var primaryButtonSprite = AssetDatabase.LoadAssetAtPath<Sprite>(PrimaryButtonSpritePath);
+        if (primaryButtonSprite == null)
+            Debug.LogError($"BootstrapSceneCreator: could not load a Sprite at '{PrimaryButtonSpritePath}'; the Next Level button will show no background artwork. Check its TextureImporter Texture Type is set to 'Sprite (2D and UI)'.");
+
+        var secondaryButtonSprite = AssetDatabase.LoadAssetAtPath<Sprite>(SecondaryButtonSpritePath);
+        if (secondaryButtonSprite == null)
+            Debug.LogError($"BootstrapSceneCreator: could not load a Sprite at '{SecondaryButtonSpritePath}'; the Exit button will show no background artwork. Check its TextureImporter Texture Type is set to 'Sprite (2D and UI)'.");
+
+        Vector2 nextLevelButtonSize = ResolveButtonArtworkSize(primaryButtonSprite, LevelCompleteBottomRowButtonHeight);
+        Vector2 exitButtonSize = ResolveButtonArtworkSize(secondaryButtonSprite, LevelCompleteBottomRowButtonHeight);
+
+        // Exit (left, secondary/destructive) / Next Level (right, primary
+        // progression — the conventional forward-action position).
+        Button exitButton = CreateDialogButton(content, "ExitButton", "Exit", new Vector2(-LevelCompleteBottomRowHorizontalOffset, LevelCompleteBottomRowOffsetY), exitButtonSize, LevelCompleteButtonLabelFontSize, secondaryButtonSprite, fredokaSemiBold, ConfirmationModalButtonLabelColor);
+        Button nextLevelButton = CreateDialogButton(content, "NextLevelButton", "Next Level", new Vector2(LevelCompleteBottomRowHorizontalOffset, LevelCompleteBottomRowOffsetY), nextLevelButtonSize, LevelCompleteButtonLabelFontSize, primaryButtonSprite, fredokaSemiBold, ConfirmationModalButtonLabelColor);
 
         var victoryUI = canvasObject.GetComponent<VictoryUI>();
         var serializedVictoryUI = new SerializedObject(victoryUI);
         serializedVictoryUI.FindProperty("victoryController").objectReferenceValue = victoryController;
         serializedVictoryUI.FindProperty("victoryFlowController").objectReferenceValue = victoryFlowController;
+        serializedVictoryUI.FindProperty("levelExitFlowController").objectReferenceValue = levelExitFlowController;
         serializedVictoryUI.FindProperty("panel").objectReferenceValue = panel;
-        serializedVictoryUI.FindProperty("continueButton").objectReferenceValue = continueButton;
+        serializedVictoryUI.FindProperty("nextLevelButton").objectReferenceValue = nextLevelButton;
+        serializedVictoryUI.FindProperty("exitButton").objectReferenceValue = exitButton;
+        serializedVictoryUI.FindProperty("doubleCoinsButton").objectReferenceValue = doubleCoinsButton;
         serializedVictoryUI.ApplyModifiedPropertiesWithoutUndo();
     }
 
-    private static GameObject CreateVictoryPanel(Transform parent)
+    /// <summary>
+    /// EarnedCoinsGroup: a pure-layout container (RectTransform only, no
+    /// Image — same "invisible layout container" convention as Level
+    /// Failed's own AdContent) with CoinIcon and EarnedCoinsValue as its OWN
+    /// children, positioned relative to the group's own centre — never
+    /// content or the screen directly — so the coin and the number always
+    /// move together as one compact, horizontally-centered composition
+    /// rather than the value centering independently and the coin being
+    /// attached afterward.
+    /// </summary>
+    private static void CreateEarnedCoinsGroup(Transform parent, Sprite coinSprite, TMP_FontAsset fredokaSemiBold)
     {
-        var panelObject = new GameObject("VictoryPanel", typeof(Image));
-        panelObject.transform.SetParent(parent, false);
+        var groupObject = new GameObject("EarnedCoinsGroup", typeof(RectTransform));
+        groupObject.transform.SetParent(parent, false);
 
-        var rectTransform = panelObject.GetComponent<RectTransform>();
-        rectTransform.anchorMin = new Vector2(0.5f, 0.5f);
-        rectTransform.anchorMax = new Vector2(0.5f, 0.5f);
-        rectTransform.pivot = new Vector2(0.5f, 0.5f);
-        rectTransform.sizeDelta = new Vector2(400f, 250f);
-        rectTransform.anchoredPosition = Vector2.zero;
+        var groupRect = (RectTransform)groupObject.transform;
+        groupRect.anchorMin = new Vector2(0.5f, 0.5f);
+        groupRect.anchorMax = new Vector2(0.5f, 0.5f);
+        groupRect.pivot = new Vector2(0.5f, 0.5f);
+        groupRect.sizeDelta = new Vector2(LevelCompleteEarnedCoinsGroupWidth, LevelCompleteEarnedCoinsGroupHeight);
+        groupRect.anchoredPosition = new Vector2(0f, LevelCompleteEarnedCoinsGroupOffsetY);
 
-        var image = panelObject.GetComponent<Image>();
-        image.color = new Color(0f, 0f, 0f, 0.85f);
+        var coinObject = new GameObject("CoinIcon", typeof(Image));
+        coinObject.transform.SetParent(groupRect, false);
 
-        // Also authored inactive in the saved scene, not just hidden by
-        // VictoryUI.Awake() at runtime — keeps the Editor scene view honest
-        // about the panel's default (hidden) state.
-        panelObject.SetActive(false);
+        float coinAspect = 1f;
+        if (coinSprite != null && coinSprite.rect.height > 0f)
+            coinAspect = coinSprite.rect.width / coinSprite.rect.height;
 
-        return panelObject;
-    }
+        var coinRect = coinObject.GetComponent<RectTransform>();
+        coinRect.anchorMin = new Vector2(0.5f, 0.5f);
+        coinRect.anchorMax = new Vector2(0.5f, 0.5f);
+        coinRect.pivot = new Vector2(0.5f, 0.5f);
+        coinRect.sizeDelta = new Vector2(LevelCompleteCoinIconHeight * coinAspect, LevelCompleteCoinIconHeight);
+        coinRect.anchoredPosition = new Vector2(LevelCompleteCoinIconOffsetX, 0f);
 
-    private static Button CreateContinueButton(Transform parent)
-    {
-        var buttonObject = new GameObject("ContinueButton", typeof(Image), typeof(Button));
-        buttonObject.transform.SetParent(parent, false);
+        var coinImage = coinObject.GetComponent<Image>();
+        coinImage.sprite = coinSprite;
+        coinImage.preserveAspect = true;
 
-        var rectTransform = buttonObject.GetComponent<RectTransform>();
-        rectTransform.anchorMin = new Vector2(0.5f, 0.5f);
-        rectTransform.anchorMax = new Vector2(0.5f, 0.5f);
-        rectTransform.pivot = new Vector2(0.5f, 0.5f);
-        rectTransform.sizeDelta = new Vector2(160f, 50f);
-        rectTransform.anchoredPosition = new Vector2(0f, -60f);
+        GameObject earnedCoinsValueObject = CreateCenteredTMPText(
+            groupRect,
+            LevelCompleteEarnedCoinsPlaceholderValue,
+            new Vector2(LevelCompleteEarnedCoinsValueOffsetX, 0f),
+            new Vector2(200f, 110f),
+            LevelCompleteEarnedCoinsValueFontSize,
+            LevelCompleteEarnedCoinsValueColor,
+            fredokaSemiBold);
+        earnedCoinsValueObject.name = "EarnedCoinsValue";
 
-        var image = buttonObject.GetComponent<Image>();
-        image.color = Color.white;
-
-        CreateCenteredText(buttonObject.transform, "Continue", Vector2.zero, new Vector2(160f, 50f), 20, Color.black);
-
-        return buttonObject.GetComponent<Button>();
+        // Fredoka SemiBold is already the heaviest weight this project has
+        // an SDF asset for (see FredokaFontAssetBuilder) — no Bold-specific
+        // .ttf/.asset exists, so FontStyles.Bold here triggers TMP's own
+        // faux-bold rendering (thicker strokes via the shared material's
+        // outline/dilate) on top of the same font asset, rather than
+        // switching fonts or generating a new one, to make "120" read as
+        // chunkier/heavier than a plain SemiBold render.
+        earnedCoinsValueObject.GetComponent<TextMeshProUGUI>().fontStyle = FontStyles.Bold;
     }
 
     private const string LevelFailedModalSpritePath = "Assets/Art/UI/Classic/LevelFailedModal.png";
@@ -1174,7 +1579,18 @@ public static class BootstrapSceneCreator
             CreateBoosterPlaceholderSlot(content, $"BoosterSlot{i + 1}", new Vector2(offsetX, LevelFailedBoosterRowOffsetY), circleSprite, dashedRingSprite);
         }
 
-        CreateSeparator1(content, circleSprite, starSprite);
+        CreateDottedStarSeparator(
+            content,
+            LevelFailedSeparator1OffsetY,
+            LevelFailedSeparator1SegmentWidth,
+            LevelFailedSeparator1CenterGap,
+            LevelFailedSeparator1DotDiameter,
+            LevelFailedSeparator1DotSpacing,
+            LevelFailedSeparator1CenterStarDiameter,
+            circleSprite,
+            starSprite,
+            LevelFailedSeparator1DotColor,
+            LevelFailedSeparator1DotColor);
         CreateCenteredTMPText(content, "One more chance?", new Vector2(0f, LevelFailedSecondChanceHeadingOffsetY), new Vector2(700f, 46f), LevelFailedHeadingFontSize, ConfirmationModalDescriptionColor, fredokaSemiBold);
 
         var adIconSprite = AssetDatabase.LoadAssetAtPath<Sprite>(AdIconSpritePath);
@@ -1291,15 +1707,41 @@ public static class BootstrapSceneCreator
     }
 
     /// <summary>
-    /// First decorative separator (see LevelFailedSeparator1OffsetY's
-    /// remarks): a dotted line on each side of a small centred star
-    /// (GenerateStarSprite), matching the reference's own star-in-the-middle
-    /// treatment.
+    /// Dotted-line decorative separator, shared by Level Failed's first
+    /// separator and Level Complete's own separator between its description
+    /// and action buttons — one implementation, each caller supplying its
+    /// own offset/sizing/colour constants, rather than two near-duplicate
+    /// dot-placement loops. Reuses GenerateCircleSprite for the dots — no new
+    /// art asset.
+    ///
+    /// includeCenterAccent optionally adds a centred star
+    /// (GenerateStarSprite) in the gap between the two dotted segments —
+    /// Level Failed's own separator still uses this (unchanged); Level
+    /// Complete's passes false, since its centre star's sprite reference
+    /// went stale (rendering as a plain tinted square, not a star) once
+    /// CreateFailureUI's own later GenerateStarSprite call deleted and
+    /// recreated the same shared StarSpriteAssetPath asset — both modals were
+    /// regenerating one shared file rather than reusing one shared
+    /// reference. Removing Level Complete's center accent entirely (per its
+    /// own task) sidesteps that without touching Level Failed's — the two
+    /// dotted segments alone are unaffected by it either way.
     /// </summary>
-    private static void CreateSeparator1(Transform parent, Sprite circleSprite, Sprite starSprite)
+    private static void CreateDottedStarSeparator(
+        Transform parent,
+        float offsetY,
+        float segmentWidth,
+        float centerGap,
+        float dotDiameter,
+        float dotSpacing,
+        float centerDiameter,
+        Sprite circleSprite,
+        Sprite starSprite,
+        Color dotColor,
+        Color centerColor,
+        bool includeCenterAccent = true)
     {
-        float centerHalfGap = LevelFailedSeparator1CenterGap / 2f;
-        int dotsPerSegment = Mathf.Max(1, Mathf.RoundToInt(LevelFailedSeparator1SegmentWidth / LevelFailedSeparator1DotSpacing));
+        float centerHalfGap = centerGap / 2f;
+        int dotsPerSegment = Mathf.Max(1, Mathf.RoundToInt(segmentWidth / dotSpacing));
 
         for (int side = -1; side <= 1; side += 2)
         {
@@ -1307,12 +1749,15 @@ public static class BootstrapSceneCreator
             for (int i = 0; i < dotsPerSegment; i++)
             {
                 float t = (i + 0.5f) / dotsPerSegment;
-                float x = segmentStart + side * t * LevelFailedSeparator1SegmentWidth;
-                CreateDot(parent, new Vector2(x, LevelFailedSeparator1OffsetY), LevelFailedSeparator1DotDiameter, circleSprite, LevelFailedSeparator1DotColor);
+                float x = segmentStart + side * t * segmentWidth;
+                CreateDot(parent, new Vector2(x, offsetY), dotDiameter, circleSprite, dotColor);
             }
         }
 
-        CreateDot(parent, new Vector2(0f, LevelFailedSeparator1OffsetY), LevelFailedSeparator1CenterStarDiameter, starSprite, LevelFailedSeparator1DotColor);
+        if (!includeCenterAccent)
+            return;
+
+        CreateDot(parent, new Vector2(0f, offsetY), centerDiameter, starSprite, centerColor);
     }
 
     /// <summary>
@@ -1610,7 +2055,8 @@ public static class BootstrapSceneCreator
     /// other caller (Victory/Failure panels' own legacy text, top HUD) keeps
     /// rendering with the legacy UI.Text/default font exactly as before.
     /// </summary>
-    private static void CreateCenteredTMPText(Transform parent, string content, Vector2 anchoredPosition, Vector2 size, float fontSize, Color color, TMP_FontAsset font)
+    /// <summary>Returns the created GameObject (still named "Text" by default) purely so a rare caller can rename it for clarity afterward — e.g. CreateVictoryUI's separator star — every other caller already ignores the return value, so this is not a behavior change for them.</summary>
+    private static GameObject CreateCenteredTMPText(Transform parent, string content, Vector2 anchoredPosition, Vector2 size, float fontSize, Color color, TMP_FontAsset font)
     {
         var textObject = new GameObject("Text", typeof(TextMeshProUGUI));
         textObject.transform.SetParent(parent, false);
@@ -1629,6 +2075,8 @@ public static class BootstrapSceneCreator
         text.fontSize = fontSize;
         text.alignment = TextAlignmentOptions.Center;
         text.color = color;
+
+        return textObject;
     }
 
     /// <summary>
@@ -2294,6 +2742,38 @@ public static class BootstrapSceneCreator
             CreateCenteredTMPText(buttonObject.transform, label, Vector2.zero, resolvedSize, fontSize, resolvedLabelColor, tmpFont);
         else
             CreateCenteredText(buttonObject.transform, label, Vector2.zero, resolvedSize, fontSize, resolvedLabelColor);
+
+        return buttonObject.GetComponent<Button>();
+    }
+
+    /// <summary>
+    /// Plain artwork-only button — no label child at all, unlike
+    /// CreateDialogButton — for backgroundSprite artwork that already bakes
+    /// its own text/icon content into the PNG (e.g. DoubleCoinsButton.png),
+    /// where adding a CreateCenteredText(TMP) label on top would duplicate
+    /// text the artwork already renders. The whole sprite is the Button's
+    /// own hit area (Image + Button on the same RectTransform, same as
+    /// CreateDialogButton), so the entire PNG is clickable as one control.
+    /// </summary>
+    private static Button CreateImageButton(Transform parent, string name, Vector2 anchoredPosition, Vector2 size, Sprite backgroundSprite)
+    {
+        var buttonObject = new GameObject(name, typeof(Image), typeof(Button));
+        buttonObject.transform.SetParent(parent, false);
+
+        var rectTransform = buttonObject.GetComponent<RectTransform>();
+        rectTransform.anchorMin = new Vector2(0.5f, 0.5f);
+        rectTransform.anchorMax = new Vector2(0.5f, 0.5f);
+        rectTransform.pivot = new Vector2(0.5f, 0.5f);
+        rectTransform.sizeDelta = size;
+        rectTransform.anchoredPosition = anchoredPosition;
+
+        var image = buttonObject.GetComponent<Image>();
+        image.color = Color.white;
+        if (backgroundSprite != null)
+        {
+            image.sprite = backgroundSprite;
+            image.preserveAspect = true;
+        }
 
         return buttonObject.GetComponent<Button>();
     }
