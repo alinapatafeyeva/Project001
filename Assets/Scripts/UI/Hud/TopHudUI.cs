@@ -127,12 +127,19 @@ namespace Project001.UI.Hud
         /// the same box-center Y (see BuildLevelDisplay/CreateLevelIcon)
         /// automatically aligns their visible ink centers too, despite the
         /// boxes themselves being different heights.
+        ///
+        /// Both raised 10% (160-&gt;176, 64-&gt;70.4) from their original values
+        /// once the Coin Balance group's own text grew large enough (see
+        /// BootstrapSceneCreator's own HudCoinBalanceFontSizeMax) that Level
+        /// started reading as visually weaker than it and "1x"/Pause — a
+        /// uniform scale preserves the already-tuned label:digit size ratio
+        /// exactly rather than changing the relationship between them.
         /// </summary>
-        private const float LevelLabelBoxSize = 160f;
-        private const float LevelDigitBoxSize = 64f;
+        private const float LevelLabelBoxSize = 176f;
+        private const float LevelDigitBoxSize = 70.4f;
 
-        /// <summary>Deliberate horizontal gap between the label and the first digit, and reused between consecutive digits of a multi-digit level number.</summary>
-        private const float LevelGroupGap = 12f;
+        /// <summary>Deliberate horizontal gap between the label and the first digit, and reused between consecutive digits of a multi-digit level number. Scaled by the same 10% as LevelLabelBoxSize/LevelDigitBoxSize so the row's internal proportions stay identical, just larger.</summary>
+        private const float LevelGroupGap = 13.2f;
 
         /// <summary>
         /// Builds the LevelLabel icon followed by one digit icon per digit of
