@@ -21,13 +21,25 @@ namespace Project001.UI.Failure
     ///
     /// retryButton is intentionally not wired by the current scene (see
     /// BootstrapSceneCreator.CreateFailureUI): the polished modal's MVP scope
-    /// has no Retry action (booster rescue / Continue / Exit level only —
-    /// see reference/UI/LevelFailedModalTarget.png), but the field/method
+    /// has no Retry action (Recovery Line rescue / Continue / Exit level only —
+    /// see reference/UI/LevelFailedModalTargetNEW.png), but the field/method
     /// stay here, null-checked exactly like every other optional button on
     /// this class, so restoring Retry later needs no code change here, only
     /// wiring a button back in the scene. Continue is still a free prototype
     /// hook for a later monetized flow — no ad SDK or coins are wired up yet
     /// (see BootstrapSceneCreator's own remarks on the ad-row placeholder).
+    ///
+    /// saveMeButton (the new "Save me!" CTA replacing the old booster row)
+    /// is deliberately presentation-only for the same reason retryButton is
+    /// unwired-but-present: the Recovery Line mechanic it would trigger
+    /// (how many times it can be bought per level, what happens to the
+    /// collector currently blocked at the full Waiting Line, whether
+    /// capacity persists, how it debits CoinWalletService) is not designed
+    /// yet, and this class must never invent gameplay rules to make a
+    /// button merely look functional. OnSaveMePressed exists as the one
+    /// obvious attachment point for that future controller — mirroring
+    /// OnRetryPressed's own placeholder Debug.Log before RetryCurrentLevel
+    /// existed — rather than leaving the click unhandled.
     /// </summary>
     public class FailureUI : MonoBehaviour
     {
@@ -49,6 +61,9 @@ namespace Project001.UI.Failure
         [SerializeField, Tooltip("Resumes the same existing level state, after rearming Failure detection.")]
         private Button continueButton;
 
+        [SerializeField, Tooltip("The new 'Save me!' Recovery Line CTA. Presentation-only for now — see this class's own remarks for why no gameplay behavior is attached yet.")]
+        private Button saveMeButton;
+
         [SerializeField, Tooltip("Forwards to LevelExitFlowController.ConfirmExit. Does not hide this panel — see OnExitLevelPressed's own remarks.")]
         private Button exitLevelButton;
 
@@ -66,6 +81,9 @@ namespace Project001.UI.Failure
             if (continueButton != null)
                 continueButton.onClick.AddListener(OnContinuePressed);
 
+            if (saveMeButton != null)
+                saveMeButton.onClick.AddListener(OnSaveMePressed);
+
             if (exitLevelButton != null)
                 exitLevelButton.onClick.AddListener(OnExitLevelPressed);
         }
@@ -80,6 +98,9 @@ namespace Project001.UI.Failure
 
             if (continueButton != null)
                 continueButton.onClick.RemoveListener(OnContinuePressed);
+
+            if (saveMeButton != null)
+                saveMeButton.onClick.RemoveListener(OnSaveMePressed);
 
             if (exitLevelButton != null)
                 exitLevelButton.onClick.RemoveListener(OnExitLevelPressed);
@@ -111,6 +132,19 @@ namespace Project001.UI.Failure
                 panel.SetActive(false);
 
             Debug.Log("Continue after failure pressed");
+        }
+
+        /// <summary>
+        /// Placeholder only — see this class's own remarks on saveMeButton
+        /// for why. Does not touch coins, the Waiting Line, or Failure
+        /// state: the Recovery Line mechanic itself is not designed yet, so
+        /// there is nothing real to call here. Left as the obvious call
+        /// site for whatever RecoveryLine*Controller is eventually added,
+        /// exactly as OnRetryPressed once stood in for RetryCurrentLevel.
+        /// </summary>
+        private void OnSaveMePressed()
+        {
+            Debug.Log("Save me pressed (Recovery Line not implemented yet)");
         }
 
         private void OnExitLevelPressed()

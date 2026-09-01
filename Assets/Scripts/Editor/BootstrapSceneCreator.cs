@@ -1316,6 +1316,7 @@ public static class BootstrapSceneCreator
 
     private const string LevelFailedModalSpritePath = "Assets/Art/UI/Classic/LevelFailedModal.png";
     private const string AdIconSpritePath = "Assets/Art/UI/Classic/Icons/AdIcon.png";
+    private const string SadTurtleSpritePath = "Assets/Art/UI/Classic/SadTurtle.png";
 
     /// <summary>
     /// Absolute width ceiling for the Level Failed modal specifically — its
@@ -1355,8 +1356,20 @@ public static class BootstrapSceneCreator
     ///
     /// This one specifically: vertical anchoredPosition of the "No space
     /// left!" title.
+    ///
+    /// Shifted up by ~27 units from its previous 536, as part of a single
+    /// rigid shift applied to the entire content stack (title through Exit
+    /// level — see LevelFailedNeedRoomHeadingOffsetY's own remarks for the
+    /// interior-bounds measurement behind this) to correct a top/bottom
+    /// balance problem: measuring LevelFailedModal.png's own source art
+    /// directly (its cream interior, excluding the decorative top tab and
+    /// bottom frame, spans content_Y ≈ [-687.8, +648.6]) showed noticeably
+    /// more empty space above the title than below Exit level. Every other
+    /// gap in the modal is unchanged by this shift — it is a pure
+    /// translation of title/description/turtle/heading, not a
+    /// re-derivation of their relative spacing.
     /// </summary>
-    private const float LevelFailedTitleOffsetY = 536f;
+    private const float LevelFailedTitleOffsetY = 540f;
 
     /// <summary>
     /// Title is auto-sized (TMP enableAutoSizing — the same technique
@@ -1386,71 +1399,262 @@ public static class BootstrapSceneCreator
     private static readonly Color LevelFailedTitleColor = new Color(0xB8 / 255f, 0x5F / 255f, 0x52 / 255f);
 
     /// <summary>Vertical anchoredPosition of the "The waiting line is full." description (see LevelFailedTitleOffsetY's remarks). Reuses ConfirmationModalDescriptionFontSize/Color — same supporting-text styling as Exit/Pause.</summary>
-    private const float LevelFailedDescriptionOffsetY = 430f;
-
-    /// <summary>Font size shared by this modal's own two section headings ("Use a booster:" and "One more chance?") — smaller than the title, reusing ConfirmationModalDescriptionColor rather than introducing a third text colour.</summary>
-    private const float LevelFailedHeadingFontSize = 30f;
-
-    /// <summary>Vertical anchoredPosition of the "Use a booster:" heading (see LevelFailedTitleOffsetY's remarks).</summary>
-    private const float LevelFailedBoosterHeadingOffsetY = 329f;
+    private const float LevelFailedDescriptionOffsetY = 434f;
 
     /// <summary>
-    /// Flanking decoration around "Use a booster:" (short line + ">>" on the
-    /// left, "&lt;&lt;" + short line on the right, both pointing inward) —
-    /// inspired by the reference, reproduced with a plain Image bar (see
-    /// CreateHorizontalSeparator) and ordinary ">>"/"&lt;&lt;" glyphs (safe on
-    /// any font, unlike a Unicode star — see LevelFailedSeparator1DotColor's
-    /// remarks) rather than a new art asset.
+    /// Shared font size for this modal's two small headings ("Need a little
+    /// more room?" / "One more chance?"). Raised from the previous pass's 30
+    /// to ~34 after measuring reference/UI/LevelFailedModalTargetNEW.png
+    /// directly: both headings measure ~22-24px cap-height in a 1332px-tall
+    /// card there, which scales to this modal's own ~1506-unit content
+    /// height as ~27 content units of cap-height — close to what fontSize 34
+    /// renders at with Fredoka SemiBold. Both headings measured the SAME
+    /// size/weight as each other in the reference (SemiBold already matches
+    /// — no weight change needed there), confirming they should keep sharing
+    /// this one constant rather than drifting apart.
     /// </summary>
-    private const float LevelFailedBoosterHeadingChevronOffsetX = 155f;
+    private const float LevelFailedHeadingFontSize = 34f;
 
-    private const float LevelFailedBoosterHeadingLineOffsetX = 250f;
-    private const float LevelFailedBoosterHeadingLineWidth = 130f;
-    private const float LevelFailedBoosterHeadingChevronFontSize = 24f;
-
-    /// <summary>Shared thickness/colour for every plain decorative line in this modal (booster heading flanks, second separator) — low-contrast on purpose, per the task's own "decorative, not a hard divider" requirement.</summary>
+    /// <summary>Shared thickness/colour for every plain decorative line in this modal (second separator) — low-contrast on purpose, per the task's own "decorative, not a hard divider" requirement.</summary>
     private const float LevelFailedSeparatorThickness = 3f;
 
     private static readonly Color LevelFailedSeparatorColor = new Color(210f / 255f, 180f / 255f, 150f / 255f, 0.6f);
 
-    /// <summary>Vertical anchoredPosition shared by all three booster placeholder circles (see LevelFailedTitleOffsetY's remarks).</summary>
-    private const float LevelFailedBoosterRowOffsetY = 166f;
+    /// <summary>
+    /// Vertical anchoredPosition of SadTurtle.png. Gap from description's own
+    /// box-bottom edge to here is unchanged (≈26 content units) — this
+    /// constant only moved by the same rigid +27 shift as
+    /// LevelFailedTitleOffsetY (see its own remarks for why), preserving its
+    /// relationship to Title/Description exactly.
+    /// </summary>
+    private const float LevelFailedTurtleOffsetY = 271f;
 
     /// <summary>
-    /// Diameter shared by all three booster placeholder circles — identical
-    /// size, per the task's own requirement. Booster mechanics/icons are not
-    /// implemented yet (see CreateFailureUI's remarks); these are pure
-    /// layout placeholders: a flat procedural fill circle (GenerateCircleSprite)
-    /// plus a dashed ring overlay (GenerateDashedRingSprite) at the same size,
-    /// rather than a new authored art asset.
+    /// Fixed footprint height for SadTurtle.png; width is derived from the
+    /// sprite's own native aspect ratio (see CreateSadTurtleWithShadow) so
+    /// the artwork is never stretched/cropped, per this task's own explicit
+    /// requirement.
+    ///
+    /// Reference/UI/LevelFailedModalTargetNEW.png measures its own turtle
+    /// illustration at y=348-575 (227px tall, ≈17.0% of its 1332px card
+    /// height) — that fraction applied to this modal's own 1505.6-unit
+    /// content height gives ≈256.6. Trimmed slightly to 225 (≈88% of that)
+    /// to keep GROUP B (turtle through SaveMeButton) and the still-required
+    /// gap into GROUP C's separator inside this content height without
+    /// enlarging LevelFailedModal.png itself — see this task's own "do not
+    /// make the modal longer, rebalance internal layout first" requirement.
+    /// This is still a ~50% increase over the previous pass's 150, matching
+    /// "significantly larger" feedback; the remaining budget was found by
+    /// shrinking Continue/Exit level (see LevelFailedButtonHeight) and
+    /// AdContent to their own reference-measured proportions instead of
+    /// their previous oversized ones — this task's own item F explicitly
+    /// permits that ("do not let Continue/Exit dominate... more than they
+    /// do in the reference").
     /// </summary>
-    private const float LevelFailedBoosterSlotDiameter = 196f;
-
-    /// <summary>Centre-to-centre horizontal spacing between adjacent booster slots — the 3 slots sit at -spacing/0/+spacing around the content's own horizontal centre, so the row of three stays centered as a group regardless of this value.</summary>
-    private const float LevelFailedBoosterSlotSpacing = 256f;
-
-    private const int LevelFailedBoosterSlotCount = 3;
-
-    /// <summary>Muted dark taupe fill colour for the booster placeholder circles, sampled off reference/UI/LevelFailedModalTarget.png.</summary>
-    private static readonly Color LevelFailedBoosterPlaceholderColor = new Color(178f / 255f, 151f / 255f, 123f / 255f);
-
-    /// <summary>Lighter warm tan for the booster placeholders' dashed ring border (GenerateDashedRingSprite), so the dashes read against the darker taupe fill instead of blending into it.</summary>
-    private static readonly Color LevelFailedBoosterBorderColor = new Color(214f / 255f, 187f / 255f, 155f / 255f);
-
-    private const int LevelFailedBoosterBorderDashCount = 28;
-    private const float LevelFailedBoosterBorderDashDutyCycle = 0.55f;
-    private const float LevelFailedBoosterBorderThicknessFraction = 0.05f;
+    private const float LevelFailedTurtleHeight = 225f;
 
     /// <summary>
-    /// First decorative separator, between the booster row and "One more
-    /// chance?" — a dotted line on either side of a small centred star
-    /// (GenerateStarSprite — see its own remarks), reusing the same
-    /// procedurally-generated circle sprite as the booster fill for the dots
-    /// at small tinted sizes rather than a new art asset. Deliberately low
-    /// contrast (see LevelFailedSeparator1DotColor) — decorative, not a hard
-    /// divider.
+    /// SadTurtle's own small ground-contact shadow — a horizontally
+    /// elliptical soft-edged patch directly beneath the turtle's body, not
+    /// the previous pass's displaced silhouette duplicate (see this task's
+    /// own explicit correction: "this turtle is an illustration sitting
+    /// inside a modal... NOT a displaced silhouette, NOT a strong blurred
+    /// copy, NOT a radial spray-paint blob surrounding it").
+    ///
+    /// No existing lightweight UI contact-shadow implementation exists to
+    /// reuse (confirmed again this pass — ContactShadowMesh remains the
+    /// only prior "shadow" anywhere in this project, and it is a 3D
+    /// world-space Mesh/Material built for gameplay characters, explicitly
+    /// out of scope to touch or extend here). CreateSoftContactShadowSprite
+    /// generates a new, small, purely local procedural shape instead — the
+    /// same "flat UI primitive, not art" category as GenerateCircleSprite/
+    /// GenerateStarSprite already in this file, this one with a soft
+    /// smoothstep falloff (conceptually similar to ContactShadowMesh's own
+    /// soft radial gradient, but new, separate code — a plain UI Image, not
+    /// a Mesh/Material, and never shared with or wired into that gameplay
+    /// system).
+    ///
+    /// Squashed into an ellipse via RectTransform sizeDelta (see
+    /// CreateSadTurtleWithShadow) — considerably wider than tall, per this
+    /// task's own requirement — sized as a fraction of the turtle's own
+    /// displayed width/height so it scales together with
+    /// LevelFailedTurtleHeight automatically.
     /// </summary>
-    private const float LevelFailedSeparator1OffsetY = -24f;
+    private const float LevelFailedTurtleShadowWidthFraction = 0.62f;
+
+    private const float LevelFailedTurtleShadowHeightFraction = 0.26f;
+
+    /// <summary>
+    /// How far below SadTurtle's own visible bottom edge the shadow's
+    /// centre sits — "a very small vertical offset" per this task's own
+    /// wording, just enough that the ellipse reads as sitting at the
+    /// turtle's base rather than floating inside its body.
+    /// </summary>
+    private const float LevelFailedTurtleShadowBottomNudge = 8f;
+
+    /// <summary>Neutral warm gray-brown, low-to-medium opacity — "compatible with the cream modal", per this task's own wording, not the previous pass's near-black tint.</summary>
+    private static readonly Color LevelFailedTurtleShadowColor = new Color(90f / 255f, 74f / 255f, 58f / 255f, 0.28f);
+
+    /// <summary>
+    /// Vertical anchoredPosition of "Need a little more room?". Reuses
+    /// LevelFailedHeadingFontSize/ConfirmationModalDescriptionColor — the
+    /// same heading style as "One more chance?" below it. A small,
+    /// intentional gap below SadTurtle (≈19.5 content units) — see
+    /// LevelFailedSaveMeButtonOffsetY's own remarks for why this and every
+    /// offset below it moved together in this pass.
+    /// </summary>
+    private const float LevelFailedNeedRoomHeadingOffsetY = 116f;
+
+    /// <summary>
+    /// PRODUCT RULE — do not restore a RecoveryLine.png illustration here.
+    ///
+    /// The upper recovery offer is exactly: SadTurtle, "Need a little more
+    /// room?", then SaveMeButton (label + coin/price) — nothing else.
+    /// RecoveryLine.png (Assets/Art/UI/Classic/Boosts/RecoveryLine.png)
+    /// depicts the Recovery Line mechanic that "Save me!" grants, but per
+    /// explicit product direction it is NOT shown in this modal — Save me!
+    /// alone represents purchasing/using it. A visual pass has already
+    /// added this illustration back once by mistake; if a future one is
+    /// tempted to do it again for "visual completeness", don't — check with
+    /// product first. The asset itself is intentionally left untouched in
+    /// the project (it may be used elsewhere), only unreferenced here.
+    ///
+    /// Vertical anchoredPosition of the SaveMeButton — this modal's primary
+    /// rescue action, following "Need a little more room?" directly with
+    /// one compact, intentional gap (45 content units) — the two read as
+    /// one recovery offer together with SadTurtle above, not "an element is
+    /// missing between them".
+    ///
+    /// This offset, and every offset below it through LevelFailedExitButtonOffsetY,
+    /// together with LevelFailedTitleOffsetY/LevelFailedDescriptionOffsetY/
+    /// LevelFailedTurtleOffsetY/LevelFailedNeedRoomHeadingOffsetY above,
+    /// were shifted by one uniform amount (-41) to rebalance top/bottom
+    /// whitespace after RecoveryLine.png's removal shortened the whole
+    /// content stack by ~85 units — every gap AMONG these offsets (turtle to
+    /// heading, heading to Save me, separator to "One more chance?", ad
+    /// block to Continue, etc.) is numerically unchanged from before; only
+    /// the stack's overall position within the modal moved.
+    /// </summary>
+    private const float LevelFailedSaveMeButtonOffsetY = -25f;
+
+    /// <summary>
+    /// Fixed footprint height for SaveMeButton.
+    ///
+    /// reference/UI/LevelFailedModalTargetNEW.png measures its own Save me!
+    /// button at 125px tall (≈9.4% of its 1332px card height) — noticeably
+    /// TALLER than its own Continue/Exit level buttons (≈94px/90px, ≈7.1%/
+    /// 6.8%), confirming Save me! is meant to read as the more prominent CTA
+    /// (see LevelFailedButtonHeight's own remarks for the matching Continue/
+    /// Exit level reduction). 145 (≈9.4% of this modal's own 1505.6-unit
+    /// content height) reproduces that same relative prominence — up from
+    /// the previous pass's 130, which was actually SMALLER than the
+    /// unchanged Continue/Exit level height at the time, inverting the
+    /// reference's own hierarchy; this task's own item D explicitly calls
+    /// that out ("should feel like a major primary action... larger/heavier
+    /// than the current implementation").
+    /// </summary>
+    private const float LevelFailedSaveMeButtonHeight = 145f;
+
+    /// <summary>
+    /// Vertical anchoredPosition of the "Save me!" label within
+    /// SaveMeButton's own local space (button pivot is its own centre).
+    /// reference/UI/LevelFailedModalTargetNEW.png's own label sits ≈18% of
+    /// its button's own height above centre; applied to this button's own
+    /// 145 height that is ≈26, rounded up slightly for breathing room above
+    /// PriceGroup.
+    /// </summary>
+    private const float LevelFailedSaveMeLabelOffsetY = 30f;
+
+    /// <summary>
+    /// "Save me!" font size — raised from the previous pass's 34.
+    /// FontStyles.Bold is also applied on top of Fredoka SemiBold (see
+    /// CreateSaveMeButton, mirroring CreateEarnedCoinsGroup's own established
+    /// "SemiBold is already this project's heaviest Fredoka asset, so
+    /// FontStyles.Bold triggers TMP's faux-bold for extra weight" technique)
+    /// so the label reads as the heavier, chunkier treatment
+    /// reference/UI/LevelFailedModalTargetNEW.png's own "Save me!" shows,
+    /// per this task's own "larger/heavier... major primary action"
+    /// requirement — no new font asset introduced.
+    /// </summary>
+    private const int LevelFailedSaveMeLabelFontSize = 42;
+
+    /// <summary>
+    /// Vertical anchoredPosition of PriceGroup (CoinIcon + price value) as
+    /// one unit within SaveMeButton's own local space — below "Save me!".
+    ///
+    /// Raised from -38 to -25: at -38 the group's own bottom edge
+    /// (-38 - LevelFailedSaveMePriceGroupHeight/2 = -70) sat only 2.5 units
+    /// above SaveMeButton's own bottom edge (-72.5, i.e.
+    /// -LevelFailedSaveMeButtonHeight/2) — visibly crowding it. -25 gives
+    /// the group's own bottom edge (-57) a real ~15-unit margin above the
+    /// button's bottom, while the "Save me!"-to-PriceGroup gap stays
+    /// comfortable, so the two lines read as one compact, vertically
+    /// centred content group rather than PriceGroup being pinned to the
+    /// floor. CoinIcon and the price value are untouched — both still
+    /// children of this same PriceGroup RectTransform, moving together with
+    /// their own relative alignment/gap/size exactly as before (see
+    /// CreateSaveMePriceGroup).
+    /// </summary>
+    private const float LevelFailedSaveMePriceGroupOffsetY = -25f;
+
+    private const float LevelFailedSaveMePriceGroupWidth = 240f;
+    private const float LevelFailedSaveMePriceGroupHeight = 64f;
+
+    /// <summary>Horizontal offset of CoinIcon from PriceGroup's own centre — mirrors CreateEarnedCoinsGroup's own coin-left/value-right composition.</summary>
+    private const float LevelFailedSaveMeCoinIconOffsetX = -48f;
+
+    /// <summary>
+    /// CoinIcon footprint height inside SaveMeButton. reference/UI/LevelFailedModalTargetNEW.png
+    /// measures its own coin at ≈50px diameter against a 125px-tall button
+    /// (≈40% of button height) — "visually substantial... not a tiny icon"
+    /// per this task's own wording. 56 (≈39% of this button's own 145
+    /// height) reproduces that same ratio, up from the previous pass's 40.
+    /// </summary>
+    private const float LevelFailedSaveMeCoinIconHeight = 56f;
+
+    private const float LevelFailedSaveMePriceValueOffsetX = 38f;
+
+    /// <summary>
+    /// "1000" font size — reference/UI/LevelFailedModalTargetNEW.png's own
+    /// "300" measures ≈47px tall against its 125px-tall button (≈38%); 48
+    /// (≈33% of this button's own 145 height) reproduces a comparably bold,
+    /// clearly-readable-but-secondary size. FontStyles.Bold applied on top
+    /// of Fredoka SemiBold (see CreateSaveMePriceGroup), the same faux-bold
+    /// technique LevelFailedSaveMeLabelFontSize's own remarks describe, to
+    /// match the reference's own chunky digit weight.
+    /// </summary>
+    private const float LevelFailedSaveMePriceFontSize = 48f;
+
+    /// <summary>Warm gold, readable against SaveMeButton's own dark green artwork — distinct from the cream "Save me!" label so the price reads as its own accent, matching reference/UI/LevelFailedModalTargetNEW.png's own gold price colour.</summary>
+    private static readonly Color LevelFailedSaveMePriceColor = new Color(1f, 214f / 255f, 120f / 255f);
+
+    /// <summary>
+    /// Approved display price for Save me! — 1000 coins (see this task's
+    /// own explicit requirement to ignore reference/UI/LevelFailedModalTargetNEW.png's
+    /// stale "300" placeholder). A plain TextMeshProUGUI value, not baked
+    /// into any art, structured the same way VictoryUI's EarnedCoinsValue
+    /// is (see CreateEarnedCoinsGroup) so a future Recovery Line economy
+    /// hook can rebind it to a real value rather than a literal buried in a
+    /// CreateCenteredTMPText call — see FailureUI's own remarks on
+    /// saveMeButton for why no such hook exists yet.
+    /// </summary>
+    private const string LevelFailedSaveMePriceValue = "1000";
+
+    /// <summary>
+    /// First decorative separator, between SaveMeButton (the paid Recovery
+    /// Line rescue) and "One more chance?" (the free ad-rewatch rescue) — a
+    /// dotted line on either side of a small centred star (GenerateStarSprite
+    /// — see its own remarks), reusing the same procedurally-generated
+    /// circle sprite as the second separator's dot at small tinted sizes
+    /// rather than a new art asset. Deliberately low contrast (see
+    /// LevelFailedSeparator1DotColor) — decorative, not a hard divider, but
+    /// still the clear visual break that separates the two rescue options,
+    /// per this task's own "dotted divider should clearly separate the paid
+    /// recovery option from the ad recovery option" requirement.
+    ///
+    /// Gap from SaveMeButton's own bottom edge to here: 36 content units.
+    /// </summary>
+    private const float LevelFailedSeparator1OffsetY = -134f;
 
     private const float LevelFailedSeparator1SegmentWidth = 300f;
     private const float LevelFailedSeparator1CenterGap = 60f;
@@ -1460,33 +1664,46 @@ public static class BootstrapSceneCreator
     private static readonly Color LevelFailedSeparator1DotColor = new Color(196f / 255f, 168f / 255f, 138f / 255f, 0.75f);
 
     /// <summary>
-    /// Vertical anchoredPosition of the "One more chance?" heading (see
-    /// LevelFailedTitleOffsetY's remarks) — together with
-    /// LevelFailedAdContentOffsetY/LevelFailedContinueButtonOffsetY/
-    /// LevelFailedSeparator2OffsetY, refit as one lower-section pass so every
-    /// item below the first separator has a real, non-overlapping gap while
-    /// LevelFailedExitButtonOffsetY stays exactly where it already read
-    /// correctly.
+    /// Vertical anchoredPosition of the "One more chance?" heading — start
+    /// of the ad-rewatch group (heading + AdContent + Continue), kept
+    /// together as one cluster. Gap from LevelFailedSeparator1OffsetY: 26
+    /// content units.
     /// </summary>
-    private const float LevelFailedSecondChanceHeadingOffsetY = -103f;
+    private const float LevelFailedSecondChanceHeadingOffsetY = -183f;
 
     /// <summary>
-    /// Vertical anchoredPosition of the AdContent group as a whole (see
-    /// LevelFailedSecondChanceHeadingOffsetY's remarks) — AdIcon and both
-    /// text lines are children of that one layout container (see
+    /// Vertical anchoredPosition of the AdContent group as a whole — AdIcon
+    /// and both text lines are children of that one layout container (see
     /// CreateAdStatusCard), positioned relative to IT, never independently
     /// against content or the screen, so the icon can never drift relative
     /// to its text at any resolved modal size. The container carries no
-    /// visible background (no Image component at all) — the earlier large
-    /// tinted rounded-rect card read as a "giant pink banner" that both
-    /// overlapped "One more chance?" above it and visually competed with the
-    /// Continue button below it; the container's own size below exists
-    /// purely for layout/authoring, not for anything rendered.
+    /// visible background (no Image component at all) — a large tinted
+    /// rounded-rect card here previously read as a "giant pink banner" that
+    /// both overlapped "One more chance?" above it and visually competed
+    /// with the Continue button below it; the container's own size below
+    /// exists purely for layout/authoring, not for anything rendered.
+    ///
+    /// Gap from "One more chance?" to here: 22 content units.
     /// </summary>
-    private const float LevelFailedAdContentOffsetY = -216f;
+    private const float LevelFailedAdContentOffsetY = -288f;
 
-    private const float LevelFailedAdContentWidth = 500f;
-    private const float LevelFailedAdContentHeight = 140f;
+    /// <summary>
+    /// AdContent footprint, scaled down from the previous pass's 500x140 by
+    /// the same ~14% AdContent itself shrank (see LevelFailedAdContentHeight)
+    /// so AdIcon/text stay proportioned to their own container.
+    /// </summary>
+    private const float LevelFailedAdContentWidth = 430f;
+
+    /// <summary>
+    /// AdContent height — reference measures its own ad block (TV icon top
+    /// to caption bottom) at 106px (≈8.0% of its 1332px card height); 120
+    /// (≈8.0% of this modal's own 1505.6 content height) reproduces that,
+    /// down from the previous pass's 140. A pure layout box (see
+    /// LevelFailedAdContentOffsetY's own remarks — no Image on it), so this
+    /// shrink alone changes nothing rendered; AdIconHeight/AdCountFontSize
+    /// below shrink the actually-visible icon/text to match.
+    /// </summary>
+    private const float LevelFailedAdContentHeight = 120f;
 
     /// <summary>
     /// Horizontal offset of AdIcon from the AdContent group's own centre
@@ -1494,24 +1711,26 @@ public static class BootstrapSceneCreator
     /// column are positioned so the pair reads as one compact, horizontally-
     /// centered composition (icon left, text column right), rather than the
     /// icon sitting far left while the text centers independently across the
-    /// whole modal.
+    /// whole modal. Scaled down from the previous pass's -174 in lockstep
+    /// with LevelFailedAdContentHeight's own ~14% reduction.
     /// </summary>
-    private const float LevelFailedAdIconOffsetX = -174f;
+    private const float LevelFailedAdIconOffsetX = -149f;
 
-    private const float LevelFailedAdIconHeight = 130f;
+    /// <summary>AdIcon (the TV/play icon) footprint height — trimmed from the previous pass's 130 in proportion with AdContentHeight's own reduction, per this task's own "check ad section... relative scale" item.</summary>
+    private const float LevelFailedAdIconHeight = 115f;
 
-    /// <summary>Horizontal offset of both ad text lines from the AdContent group's own centre (see LevelFailedAdContentOffsetY's remarks) — same X for both lines, so "3 / 3" centers directly above "Watch an ad to continue".</summary>
-    private const float LevelFailedAdTextOffsetX = 77f;
+    /// <summary>Horizontal offset of both ad text lines from the AdContent group's own centre (see LevelFailedAdContentOffsetY's remarks) — same X for both lines, so "3 / 3" centers directly above "Watch an ad to continue". Scaled down from the previous pass's 77 in lockstep with LevelFailedAdContentHeight's own reduction.</summary>
+    private const float LevelFailedAdTextOffsetX = 66f;
 
-    /// <summary>Vertical offset of "3 / 3" from the AdContent group's own centre — together with LevelFailedAdCaptionOffsetY, centers the two-line text block so its own vertical midpoint approximately aligns with AdIcon's (Y=0 in the same group).</summary>
-    private const float LevelFailedAdCountOffsetY = 22f;
+    /// <summary>Vertical offset of "3 / 3" from the AdContent group's own centre — together with LevelFailedAdCaptionOffsetY, centers the two-line text block so its own vertical midpoint approximately aligns with AdIcon's (Y=0 in the same group). Scaled down from the previous pass's 22 in lockstep with LevelFailedAdContentHeight's own reduction.</summary>
+    private const float LevelFailedAdCountOffsetY = 19f;
 
-    private const float LevelFailedAdCaptionOffsetY = -37f;
+    private const float LevelFailedAdCaptionOffsetY = -32f;
 
-    /// <summary>"3 / 3" font size — kept prominent, comparable in weight to the Continue/Exit level button labels. Unchanged from the previous pass — only the surrounding layout moved.</summary>
-    private const float LevelFailedAdCountFontSize = 60f;
+    /// <summary>"3 / 3" font size — trimmed modestly from the previous pass's 60, matching AdContent's own ~14% reduction, while staying prominent (comparable in weight to the Continue/Exit level button labels).</summary>
+    private const float LevelFailedAdCountFontSize = 52f;
 
-    /// <summary>"Watch an ad to continue" font size — kept comfortably readable per the task's own explicit requirement not to shrink it back down; unchanged from the previous pass — only the surrounding layout moved.</summary>
+    /// <summary>"Watch an ad to continue" font size — reference measures this caption's own cap-height at ≈24px against its 1332px card (≈27 content units), close to what this unchanged 28 already renders — kept as-is, still comfortably readable per the original task's own explicit requirement not to shrink it too far.</summary>
     private const float LevelFailedAdCaptionFontSize = 28f;
 
     /// <summary>
@@ -1532,12 +1751,47 @@ public static class BootstrapSceneCreator
     /// side like Stay/Exit) and this modal has substantially more content
     /// above them competing for vertical space than Pause's single button
     /// does.
+    ///
+    /// Reduced from the previous pass's 140 to 95 after measuring
+    /// reference/UI/LevelFailedModalTargetNEW.png directly: its own
+    /// Continue/Exit level buttons measure ≈94px/90px tall against its own
+    /// 1332px card (≈7.1%/6.8%) — clearly SMALLER, relative to the card,
+    /// than the 140-tall (≈9.3%) buttons the previous pass kept unchanged,
+    /// and smaller than the reference's own Save me! (≈9.4%, see
+    /// LevelFailedSaveMeButtonHeight). 95 (≈6.3% of this modal's own
+    /// 1505.6-unit content height) reproduces that same "Continue/Exit
+    /// stay secondary to Save me!" hierarchy — this task's own item F
+    /// explicitly calls for this ("do not let Continue/Exit dominate the
+    /// modal more than they do in the reference"), superseding the previous
+    /// pass's "keep Continue/Exit level buttons unchanged" note. Only the
+    /// footprint changes here — same PrimaryButton.png/SecondaryButton.png
+    /// artwork, same CreateDialogButton call sites, nothing about their
+    /// behaviour or styling.
     /// </summary>
-    private const float LevelFailedButtonHeight = 140f;
+    private const float LevelFailedButtonHeight = 95f;
 
-    private const float LevelFailedContinueButtonOffsetY = -391f;
-    private const float LevelFailedExitButtonOffsetY = -610f;
-    private const int LevelFailedButtonLabelFontSize = 45;
+    /// <summary>
+    /// The ad-rewatch group's own Continue button. Gap from AdContent's own
+    /// bottom edge to here: 20 content units.
+    /// </summary>
+    private const float LevelFailedContinueButtonOffsetY = -415f;
+
+    /// <summary>
+    /// Exit level button, kept clearly separated at the bottom by
+    /// LevelFailedSeparator2OffsetY above it and a comfortable ~20-unit
+    /// margin below it to LevelFailedModal.png's own bottom interior edge
+    /// (measured directly off the source art — see LevelFailedTitleOffsetY's
+    /// own remarks) — never touching or crowding the frame.
+    /// </summary>
+    private const float LevelFailedExitButtonOffsetY = -558f;
+
+    /// <summary>
+    /// Continue/Exit level label font size — scaled down from the previous
+    /// pass's 45 in the same ≈68% ratio LevelFailedButtonHeight itself
+    /// shrank (95/140), so the label stays proportioned to its own smaller
+    /// button rather than looking oversized against it.
+    /// </summary>
+    private const int LevelFailedButtonLabelFontSize = 31;
 
     /// <summary>
     /// Second decorative separator, between Continue and Exit level — two
@@ -1546,37 +1800,43 @@ public static class BootstrapSceneCreator
     /// short horizontal line"), reusing CreateHorizontalSeparator/the same
     /// circle sprite rather than new art. Low contrast/decorative, not a
     /// hard divider.
+    ///
+    /// Gap from Continue's own bottom edge to here: 26 content units.
     /// </summary>
-    private const float LevelFailedSeparator2OffsetY = -503f;
+    private const float LevelFailedSeparator2OffsetY = -489f;
 
     private const float LevelFailedSeparator2LineWidth = 150f;
     private const float LevelFailedSeparator2LineOffsetX = 102f;
     private const float LevelFailedSeparator2DotDiameter = 14f;
 
     private const string CircleSpriteAssetPath = "Assets/Art/UI/Generated/CircleSprite.asset";
-    private const string BoosterDashedRingSpriteAssetPath = "Assets/Art/UI/Generated/BoosterDashedRing.asset";
     private const string StarSpriteAssetPath = "Assets/Art/UI/Generated/StarSprite.asset";
+    private const string SoftContactShadowSpriteAssetPath = "Assets/Art/UI/Generated/SoftContactShadow.asset";
 
     /// <summary>
     /// Source texture resolution shared by every procedurally-generated
-    /// circle in this modal (booster fill/border, both separators' dots) —
-    /// comfortably above the largest on-screen pixel size any of them could
-    /// actually render at (content is scaled up to ~1.44x on a clamped
-    /// tablet — see ResponsiveModalBox), so they stay crisp rather than
-    /// visibly upscale-blurred, the same concern EnergyBarPrefabBuilder's own
+    /// circle in this modal (both separators' dots) — comfortably above the
+    /// largest on-screen pixel size any of them could actually render at
+    /// (content is scaled up to ~1.44x on a clamped tablet — see
+    /// ResponsiveModalBox), so they stay crisp rather than visibly
+    /// upscale-blurred, the same concern EnergyBarPrefabBuilder's own
     /// GenerateStadiumSprite remarks describe for Unity's built-in
     /// UISprite.psd at large sizes. The same sprite is reused at every size
-    /// from LevelFailedBoosterSlotDiameter (196) down to
-    /// LevelFailedSeparator1DotDiameter (7) via each Image's own
+    /// down to LevelFailedSeparator1DotDiameter (7) via each Image's own
     /// RectTransform — downscaling a high-res source is always safe.
     /// </summary>
     private const int CircleTextureDiameter = 320;
 
     /// <summary>
-    /// Level Failed modal: title, description, a "Use a booster:" heading
-    /// over three placeholder slots (no booster mechanics/icons yet — see
-    /// LevelFailedBoosterSlotDiameter's remarks), a separator, a "One more
-    /// chance?" heading over a presentation-only ad-rewatch status row (see
+    /// Level Failed modal: title, description, SadTurtle.png with its own
+    /// ground-contact shadow (see CreateSadTurtleWithShadow), a "Need a
+    /// little more room?" heading directly over SaveMeButton (see
+    /// CreateSaveMeButton — presentation only for now, no Recovery Line
+    /// gameplay effect yet, see FailureUI's own remarks on saveMeButton;
+    /// see LevelFailedSaveMeButtonOffsetY's own PRODUCT RULE remarks for why
+    /// RecoveryLine.png is deliberately never shown here), then the lower
+    /// section: a separator, a "One more chance?"
+    /// heading over a presentation-only ad-rewatch status row (see
     /// LevelFailedAdWatchCountLabel's remarks — no ad SDK is integrated),
     /// then Continue/Exit level. Reuses the exact same responsive artwork
     /// box/content-scaling infrastructure as Exit/Pause (see
@@ -1632,18 +1892,30 @@ public static class BootstrapSceneCreator
 
         CreateAutoSizedCenteredTMPText(content, "No space left!", new Vector2(0f, LevelFailedTitleOffsetY), new Vector2(800f, 130f), LevelFailedTitleFontSizeMin, LevelFailedTitleFontSizeMax, LevelFailedTitleColor, fredokaSemiBold);
         CreateCenteredTMPText(content, "The waiting line is full.", new Vector2(0f, LevelFailedDescriptionOffsetY), new Vector2(840f, 50f), ConfirmationModalDescriptionFontSize, ConfirmationModalDescriptionColor, fredokaMedium);
-        CreateCenteredTMPText(content, "Use a booster:", new Vector2(0f, LevelFailedBoosterHeadingOffsetY), new Vector2(260f, 44f), LevelFailedHeadingFontSize, ConfirmationModalDescriptionColor, fredokaSemiBold);
-        CreateBoosterHeadingDecoration(content, LevelFailedBoosterHeadingOffsetY, fredokaMedium);
+
+        var sadTurtleSprite = AssetDatabase.LoadAssetAtPath<Sprite>(SadTurtleSpritePath);
+        if (sadTurtleSprite == null)
+            Debug.LogError($"BootstrapSceneCreator: could not load a Sprite at '{SadTurtleSpritePath}'; the Level Failed modal will show no turtle illustration. Check its TextureImporter Texture Type is set to 'Sprite (2D and UI)'.");
+
+        Sprite softContactShadowSprite = GenerateSoftContactShadowSprite();
+        CreateSadTurtleWithShadow(content, sadTurtleSprite, softContactShadowSprite);
+
+        // Deliberately no RecoveryLine.png here — see LevelFailedSaveMeButtonOffsetY's
+        // own remarks (the PRODUCT RULE note) before adding one back.
+        CreateCenteredTMPText(content, "Need a little more room?", new Vector2(0f, LevelFailedNeedRoomHeadingOffsetY), new Vector2(700f, 46f), LevelFailedHeadingFontSize, ConfirmationModalDescriptionColor, fredokaSemiBold);
+
+        var primaryButtonSprite = AssetDatabase.LoadAssetAtPath<Sprite>(PrimaryButtonSpritePath);
+        if (primaryButtonSprite == null)
+            Debug.LogError($"BootstrapSceneCreator: could not load a Sprite at '{PrimaryButtonSpritePath}'; the Save me/Continue buttons will show no background artwork. Check its TextureImporter Texture Type is set to 'Sprite (2D and UI)'.");
+
+        var coinSprite = AssetDatabase.LoadAssetAtPath<Sprite>(CoinSpritePath);
+        if (coinSprite == null)
+            Debug.LogError($"BootstrapSceneCreator: could not load a Sprite at '{CoinSpritePath}'; the Save me button's price row will show no coin icon. Check its TextureImporter Texture Type is set to 'Sprite (2D and UI)'.");
+
+        Button saveMeButton = CreateSaveMeButton(content, primaryButtonSprite, coinSprite, fredokaSemiBold);
 
         Sprite circleSprite = GenerateCircleSprite();
-        Sprite dashedRingSprite = GenerateDashedRingSprite();
         Sprite starSprite = GenerateStarSprite();
-        for (int i = 0; i < LevelFailedBoosterSlotCount; i++)
-        {
-            float offsetX = (i - 1) * LevelFailedBoosterSlotSpacing;
-            CreateBoosterPlaceholderSlot(content, $"BoosterSlot{i + 1}", new Vector2(offsetX, LevelFailedBoosterRowOffsetY), circleSprite, dashedRingSprite);
-        }
-
         CreateDottedStarSeparator(
             content,
             LevelFailedSeparator1OffsetY,
@@ -1664,10 +1936,6 @@ public static class BootstrapSceneCreator
 
         CreateAdStatusCard(content, adIconSprite, fredokaSemiBold, fredokaMedium);
 
-        var primaryButtonSprite = AssetDatabase.LoadAssetAtPath<Sprite>(PrimaryButtonSpritePath);
-        if (primaryButtonSprite == null)
-            Debug.LogError($"BootstrapSceneCreator: could not load a Sprite at '{PrimaryButtonSpritePath}'; the Continue button will show no background artwork. Check its TextureImporter Texture Type is set to 'Sprite (2D and UI)'.");
-
         var secondaryButtonSprite = AssetDatabase.LoadAssetAtPath<Sprite>(SecondaryButtonSpritePath);
         if (secondaryButtonSprite == null)
             Debug.LogError($"BootstrapSceneCreator: could not load a Sprite at '{SecondaryButtonSpritePath}'; the Exit level button will show no background artwork. Check its TextureImporter Texture Type is set to 'Sprite (2D and UI)'.");
@@ -1685,44 +1953,174 @@ public static class BootstrapSceneCreator
         serializedFailureUI.FindProperty("failureRecoveryController").objectReferenceValue = failureRecoveryController;
         serializedFailureUI.FindProperty("levelExitFlowController").objectReferenceValue = levelExitFlowController;
         serializedFailureUI.FindProperty("panel").objectReferenceValue = panel;
+        serializedFailureUI.FindProperty("saveMeButton").objectReferenceValue = saveMeButton;
         serializedFailureUI.FindProperty("continueButton").objectReferenceValue = continueButton;
         serializedFailureUI.FindProperty("exitLevelButton").objectReferenceValue = exitLevelButton;
         serializedFailureUI.ApplyModifiedPropertiesWithoutUndo();
     }
 
-    /// <summary>Booster placeholder: the tinted fill circle plus a dashed ring overlay at the same size/position — two stacked Images (see GenerateCircleSprite/GenerateDashedRingSprite), both children of parent, so they move together as one slot.</summary>
-    private static void CreateBoosterPlaceholderSlot(Transform parent, string name, Vector2 anchoredPosition, Sprite circleSprite, Sprite dashedRingSprite)
+    /// <summary>
+    /// SadTurtle.png plus its own small ground-contact shadow. This task's
+    /// own explicit correction: the previous pass's silhouette duplicate
+    /// (same sprite, tinted + offset upper-left) read as a directional cast
+    /// shadow — wrong category entirely for an illustration sitting inside a
+    /// modal, which instead needs a soft elliptical patch directly beneath
+    /// its body, the way a small object actually contacts a surface. See
+    /// GenerateSoftContactShadowSprite for why no existing shadow system in
+    /// this project (ContactShadowMesh included) was reused for this new
+    /// shape.
+    /// </summary>
+    private static void CreateSadTurtleWithShadow(Transform parent, Sprite sadTurtleSprite, Sprite softContactShadowSprite)
     {
-        var slotObject = new GameObject(name, typeof(RectTransform));
-        slotObject.transform.SetParent(parent, false);
+        float aspect = 1f;
+        if (sadTurtleSprite != null && sadTurtleSprite.rect.height > 0f)
+            aspect = sadTurtleSprite.rect.width / sadTurtleSprite.rect.height;
 
-        var slotRect = (RectTransform)slotObject.transform;
-        slotRect.anchorMin = new Vector2(0.5f, 0.5f);
-        slotRect.anchorMax = new Vector2(0.5f, 0.5f);
-        slotRect.pivot = new Vector2(0.5f, 0.5f);
-        slotRect.sizeDelta = new Vector2(LevelFailedBoosterSlotDiameter, LevelFailedBoosterSlotDiameter);
-        slotRect.anchoredPosition = anchoredPosition;
+        var size = new Vector2(LevelFailedTurtleHeight * aspect, LevelFailedTurtleHeight);
+        var position = new Vector2(0f, LevelFailedTurtleOffsetY);
 
-        CreateFullRectImage(slotRect, "Fill", circleSprite, LevelFailedBoosterPlaceholderColor);
-        CreateFullRectImage(slotRect, "Border", dashedRingSprite, LevelFailedBoosterBorderColor);
+        // Earlier sibling than SadTurtle itself so it renders behind it.
+        var shadowObject = new GameObject("TurtleContactShadow", typeof(Image));
+        shadowObject.transform.SetParent(parent, false);
+
+        var shadowRect = shadowObject.GetComponent<RectTransform>();
+        shadowRect.anchorMin = new Vector2(0.5f, 0.5f);
+        shadowRect.anchorMax = new Vector2(0.5f, 0.5f);
+        shadowRect.pivot = new Vector2(0.5f, 0.5f);
+        shadowRect.sizeDelta = new Vector2(size.x * LevelFailedTurtleShadowWidthFraction, size.x * LevelFailedTurtleShadowWidthFraction * LevelFailedTurtleShadowHeightFraction);
+
+        // Centred under the turtle (no horizontal/directional displacement —
+        // this is a straight-down contact shadow, not a cast shadow), just
+        // below its own bottom edge (position.y - size.y/2).
+        shadowRect.anchoredPosition = new Vector2(position.x, position.y - size.y * 0.5f - LevelFailedTurtleShadowBottomNudge);
+
+        var shadowImage = shadowObject.GetComponent<Image>();
+        shadowImage.sprite = softContactShadowSprite;
+        shadowImage.color = LevelFailedTurtleShadowColor;
+
+        var turtleObject = new GameObject("SadTurtle", typeof(Image));
+        turtleObject.transform.SetParent(parent, false);
+
+        var turtleRect = turtleObject.GetComponent<RectTransform>();
+        turtleRect.anchorMin = new Vector2(0.5f, 0.5f);
+        turtleRect.anchorMax = new Vector2(0.5f, 0.5f);
+        turtleRect.pivot = new Vector2(0.5f, 0.5f);
+        turtleRect.sizeDelta = size;
+        turtleRect.anchoredPosition = position;
+
+        var turtleImage = turtleObject.GetComponent<Image>();
+        turtleImage.sprite = sadTurtleSprite;
+        turtleImage.color = Color.white;
+        turtleImage.preserveAspect = true;
     }
 
-    /// <summary>Child Image stretched to fill the given parent RectTransform exactly — used to stack a booster slot's fill/border as two same-sized layers without repeating anchor/size boilerplate.</summary>
-    private static Image CreateFullRectImage(RectTransform parent, string name, Sprite sprite, Color color)
+    /// <summary>
+    /// "Save me!" — this modal's primary rescue action. A custom two-row
+    /// layout (label on top, coin+price row below) rather than
+    /// CreateDialogButton's single centred label, since the hierarchy is
+    /// "Save me!" then "[coin] 1000" as two distinct lines, not one.
+    /// Presentation only — see FailureUI's own remarks on saveMeButton for
+    /// why no click behaviour is wired to any Recovery Line gameplay effect
+    /// yet.
+    /// </summary>
+    private static Button CreateSaveMeButton(Transform parent, Sprite primaryButtonSprite, Sprite coinSprite, TMP_FontAsset fredokaSemiBold)
     {
-        var imageObject = new GameObject(name, typeof(Image));
-        imageObject.transform.SetParent(parent, false);
+        Vector2 buttonSize = ResolveButtonArtworkSize(primaryButtonSprite, LevelFailedSaveMeButtonHeight);
 
-        var rectTransform = imageObject.GetComponent<RectTransform>();
-        rectTransform.anchorMin = Vector2.zero;
-        rectTransform.anchorMax = Vector2.one;
-        rectTransform.offsetMin = Vector2.zero;
-        rectTransform.offsetMax = Vector2.zero;
+        var buttonObject = new GameObject("SaveMeButton", typeof(Image), typeof(Button));
+        buttonObject.transform.SetParent(parent, false);
 
-        var image = imageObject.GetComponent<Image>();
-        image.sprite = sprite;
-        image.color = color;
-        return image;
+        var rectTransform = buttonObject.GetComponent<RectTransform>();
+        rectTransform.anchorMin = new Vector2(0.5f, 0.5f);
+        rectTransform.anchorMax = new Vector2(0.5f, 0.5f);
+        rectTransform.pivot = new Vector2(0.5f, 0.5f);
+        rectTransform.sizeDelta = buttonSize;
+        rectTransform.anchoredPosition = new Vector2(0f, LevelFailedSaveMeButtonOffsetY);
+
+        var image = buttonObject.GetComponent<Image>();
+        image.color = Color.white;
+        if (primaryButtonSprite != null)
+        {
+            image.sprite = primaryButtonSprite;
+            image.preserveAspect = true;
+        }
+
+        // FontStyles.Bold on top of Fredoka SemiBold (already this project's
+        // heaviest Fredoka asset — see CreateEarnedCoinsGroup's own remarks
+        // for the same technique) triggers TMP's faux-bold rendering, so
+        // "Save me!" reads as the heavier, chunkier treatment the reference
+        // shows without a new font asset.
+        GameObject labelObject = CreateCenteredTMPText(buttonObject.transform, "Save me!", new Vector2(0f, LevelFailedSaveMeLabelOffsetY), buttonSize, LevelFailedSaveMeLabelFontSize, ConfirmationModalButtonLabelColor, fredokaSemiBold);
+        labelObject.name = "Label";
+        labelObject.GetComponent<TextMeshProUGUI>().fontStyle = FontStyles.Bold;
+
+        CreateSaveMePriceGroup(buttonObject.transform, coinSprite, fredokaSemiBold);
+
+        return buttonObject.GetComponent<Button>();
+    }
+
+    /// <summary>
+    /// PriceGroup: CoinIcon + the "1000" value as one child group, mirroring
+    /// CreateEarnedCoinsGroup's own coin-left/value-right composition so the
+    /// coin and number always move together. The value is a plain
+    /// TextMeshProUGUI (LevelFailedSaveMePriceValue), never baked into art,
+    /// so a future Recovery Line economy hook can rebind it the same way
+    /// VictoryUI rebinds EarnedCoinsValue.
+    /// </summary>
+    private static void CreateSaveMePriceGroup(Transform parent, Sprite coinSprite, TMP_FontAsset fredokaSemiBold)
+    {
+        var groupObject = new GameObject("PriceGroup", typeof(RectTransform));
+        groupObject.transform.SetParent(parent, false);
+
+        var groupRect = (RectTransform)groupObject.transform;
+        groupRect.anchorMin = new Vector2(0.5f, 0.5f);
+        groupRect.anchorMax = new Vector2(0.5f, 0.5f);
+        groupRect.pivot = new Vector2(0.5f, 0.5f);
+        groupRect.sizeDelta = new Vector2(LevelFailedSaveMePriceGroupWidth, LevelFailedSaveMePriceGroupHeight);
+        groupRect.anchoredPosition = new Vector2(0f, LevelFailedSaveMePriceGroupOffsetY);
+
+        var coinObject = new GameObject("CoinIcon", typeof(Image));
+        coinObject.transform.SetParent(groupRect, false);
+
+        float coinAspect = 1f;
+        if (coinSprite != null && coinSprite.rect.height > 0f)
+            coinAspect = coinSprite.rect.width / coinSprite.rect.height;
+
+        var coinRect = coinObject.GetComponent<RectTransform>();
+        coinRect.anchorMin = new Vector2(0.5f, 0.5f);
+        coinRect.anchorMax = new Vector2(0.5f, 0.5f);
+        coinRect.pivot = new Vector2(0.5f, 0.5f);
+        coinRect.sizeDelta = new Vector2(LevelFailedSaveMeCoinIconHeight * coinAspect, LevelFailedSaveMeCoinIconHeight);
+        coinRect.anchoredPosition = new Vector2(LevelFailedSaveMeCoinIconOffsetX, 0f);
+
+        var coinImage = coinObject.GetComponent<Image>();
+        coinImage.sprite = coinSprite;
+        coinImage.preserveAspect = true;
+
+        GameObject priceValueObject = CreateCenteredTMPText(
+            groupRect,
+            LevelFailedSaveMePriceValue,
+            new Vector2(LevelFailedSaveMePriceValueOffsetX, 0f),
+            new Vector2(160f, LevelFailedSaveMePriceGroupHeight),
+            LevelFailedSaveMePriceFontSize,
+            LevelFailedSaveMePriceColor,
+            fredokaSemiBold);
+        priceValueObject.name = "PriceValue";
+
+        // TextAlignmentOptions.Center (CreateCenteredTMPText's default)
+        // centres on the FONT's own line-height box (ascender to
+        // descender), not the digits' actual rendered bounds — for an
+        // all-caps-height numeral with no descender, that box's own
+        // asymmetric padding visually pushed "1000" noticeably below
+        // CoinIcon's true centre (confirmed by rendering and comparing
+        // against CoinIcon's own centre). CenterGeoAligned instead centres
+        // on the text's own actual glyph geometry, so it lines up with
+        // CoinIcon's centre exactly without any hand-tuned pixel offset —
+        // never the "baseline trick that pushes 1000 downward" this task
+        // explicitly warns against; this is the opposite correction.
+        var priceValueText = priceValueObject.GetComponent<TextMeshProUGUI>();
+        priceValueText.alignment = TextAlignmentOptions.CenterGeoAligned;
+        priceValueText.fontStyle = FontStyles.Bold;
     }
 
     private static void CreateHorizontalSeparator(Transform parent, Vector2 anchoredPosition, float width, float thickness, Color color)
@@ -1756,19 +2154,6 @@ public static class BootstrapSceneCreator
         var image = dotObject.GetComponent<Image>();
         image.sprite = circleSprite;
         image.color = color;
-    }
-
-    /// <summary>
-    /// Flanking decoration around "Use a booster:" — short line + ">>" on
-    /// the left, "&lt;&lt;" + short line on the right, both pointing inward
-    /// (see LevelFailedBoosterHeadingChevronOffsetX's remarks).
-    /// </summary>
-    private static void CreateBoosterHeadingDecoration(Transform parent, float rowOffsetY, TMP_FontAsset fredokaMedium)
-    {
-        CreateHorizontalSeparator(parent, new Vector2(-LevelFailedBoosterHeadingLineOffsetX, rowOffsetY), LevelFailedBoosterHeadingLineWidth, LevelFailedSeparatorThickness, LevelFailedSeparatorColor);
-        CreateHorizontalSeparator(parent, new Vector2(LevelFailedBoosterHeadingLineOffsetX, rowOffsetY), LevelFailedBoosterHeadingLineWidth, LevelFailedSeparatorThickness, LevelFailedSeparatorColor);
-        CreateCenteredTMPText(parent, ">>", new Vector2(-LevelFailedBoosterHeadingChevronOffsetX, rowOffsetY), new Vector2(60f, 40f), LevelFailedBoosterHeadingChevronFontSize, ConfirmationModalDescriptionColor, fredokaMedium);
-        CreateCenteredTMPText(parent, "<<", new Vector2(LevelFailedBoosterHeadingChevronOffsetX, rowOffsetY), new Vector2(60f, 40f), LevelFailedBoosterHeadingChevronFontSize, ConfirmationModalDescriptionColor, fredokaMedium);
     }
 
     /// <summary>
@@ -1897,15 +2282,68 @@ public static class BootstrapSceneCreator
     }
 
     /// <summary>
+    /// Procedurally draws a soft, circular radial-gradient patch (solid-ish
+    /// centre, smoothstep fade to fully transparent at the edge) into a new
+    /// Texture2D — SadTurtle's own ground-contact shadow shape
+    /// (CreateSadTurtleWithShadow squashes it into an ellipse via
+    /// RectTransform sizeDelta; the texture itself stays circular, exactly
+    /// like GenerateCircleSprite's own "one round shape, stretched per use"
+    /// convention).
+    ///
+    /// Deliberately a NEW, separate generator rather than reusing
+    /// GenerateCircleSprite (whose ~1px antialiased SDF edge is a hard
+    /// edge, wrong for a "soft edge" contact shadow per this task's own
+    /// wording) or ContactShadowMesh (a 3D world-space Mesh/Material for
+    /// gameplay characters — a different system this task explicitly says
+    /// not to touch or extend). The soft-falloff MATH here is the same
+    /// general idea ContactShadowMesh's own CreateRadialTexture already
+    /// uses (plateau + smoothstep), because that is simply what "soft
+    /// radial gradient" means, not because this calls into or shares any
+    /// code with it — this is its own small, local, UI-only primitive, the
+    /// same category of thing as GenerateCircleSprite/GenerateStarSprite.
+    ///
+    /// Saved as its own small .asset (SoftContactShadowSpriteAssetPath),
+    /// same idempotent regenerate-on-every-run convention as this file's
+    /// other generated sprites.
+    /// </summary>
+    private static Sprite GenerateSoftContactShadowSprite()
+    {
+        const float InnerPlateauRadius = 0.3f;
+
+        var texture = new Texture2D(CircleTextureDiameter, CircleTextureDiameter, TextureFormat.RGBA32, false)
+        {
+            name = "SoftContactShadow",
+            wrapMode = TextureWrapMode.Clamp,
+            filterMode = FilterMode.Bilinear,
+        };
+
+        float radius = CircleTextureDiameter / 2f;
+        var pixels = new Color32[CircleTextureDiameter * CircleTextureDiameter];
+        for (int y = 0; y < CircleTextureDiameter; y++)
+        {
+            for (int x = 0; x < CircleTextureDiameter; x++)
+            {
+                float px = x + 0.5f - radius;
+                float py = y + 0.5f - radius;
+                float normalizedDistance = Mathf.Sqrt(px * px + py * py) / radius;
+                float alpha = 1f - Mathf.SmoothStep(InnerPlateauRadius, 1f, normalizedDistance);
+                pixels[y * CircleTextureDiameter + x] = new Color32(255, 255, 255, (byte)(Mathf.Clamp01(alpha) * 255f));
+            }
+        }
+
+        return SaveGeneratedSprite(texture, pixels, SoftContactShadowSpriteAssetPath, "SoftContactShadow");
+    }
+
+    /// <summary>
     /// Procedurally draws a flat white circle into a new Texture2D via an
     /// analytic signed-distance field (~1px antialiased edge) — a generic,
     /// content-free UI primitive shape, the same category of thing as
     /// EnergyBarPrefabBuilder's own GenerateStadiumSprite (a rounded-box SDF;
     /// this is its simpler fully-round special case) and not "art" in the
     /// sense of this task's "do not create new artwork" constraint. Reused,
-    /// tinted differently and at different RectTransform sizes, for the
-    /// booster fill, both separators' dots, and the second separator's
-    /// centre dot — one shape, many uses, rather than a texture per use.
+    /// tinted differently and at different RectTransform sizes, for both
+    /// separators' dots and the second separator's centre dot — one shape,
+    /// many uses, rather than a texture per use.
     ///
     /// Saved as its own small .asset (CircleSpriteAssetPath) rather than
     /// left as an in-memory-only Sprite, for the same reason
@@ -1939,54 +2377,6 @@ public static class BootstrapSceneCreator
         }
 
         return SaveGeneratedSprite(texture, pixels, CircleSpriteAssetPath, "CircleSprite");
-    }
-
-    /// <summary>
-    /// Procedurally draws a dashed ring (an annulus split into
-    /// LevelFailedBoosterBorderDashCount arc segments via an angular duty
-    /// cycle) into a new Texture2D — the booster placeholders' "subtle
-    /// dashed/dotted circular border", layered on top of GenerateCircleSprite's
-    /// solid fill at the same RectTransform size (see CreateBoosterPlaceholderSlot).
-    /// Same SDF-plus-antialiasing approach as GenerateCircleSprite, extended
-    /// with an angular mask; not "art" for the same reason that one isn't.
-    /// </summary>
-    private static Sprite GenerateDashedRingSprite()
-    {
-        var texture = new Texture2D(CircleTextureDiameter, CircleTextureDiameter, TextureFormat.RGBA32, false)
-        {
-            name = "BoosterDashedRing",
-            wrapMode = TextureWrapMode.Clamp,
-            filterMode = FilterMode.Bilinear,
-        };
-
-        float radius = CircleTextureDiameter / 2f;
-        float thickness = radius * LevelFailedBoosterBorderThicknessFraction;
-        float ringCenterRadius = radius - thickness * 0.5f;
-        var pixels = new Color32[CircleTextureDiameter * CircleTextureDiameter];
-        for (int y = 0; y < CircleTextureDiameter; y++)
-        {
-            for (int x = 0; x < CircleTextureDiameter; x++)
-            {
-                float px = x + 0.5f - radius;
-                float py = y + 0.5f - radius;
-                float distFromCenter = Mathf.Sqrt(px * px + py * py);
-                float ringDistance = Mathf.Abs(distFromCenter - ringCenterRadius) - thickness * 0.5f;
-                float bandAlpha = Mathf.Clamp01(0.5f - ringDistance);
-
-                byte alpha = 0;
-                if (bandAlpha > 0f)
-                {
-                    float angle01 = Mathf.Atan2(py, px) / (Mathf.PI * 2f) + 0.5f;
-                    float dashPhase = (angle01 * LevelFailedBoosterBorderDashCount) % 1f;
-                    if (dashPhase < LevelFailedBoosterBorderDashDutyCycle)
-                        alpha = (byte)(bandAlpha * 255f);
-                }
-
-                pixels[y * CircleTextureDiameter + x] = new Color32(255, 255, 255, alpha);
-            }
-        }
-
-        return SaveGeneratedSprite(texture, pixels, BoosterDashedRingSpriteAssetPath, "BoosterDashedRing");
     }
 
     /// <summary>
