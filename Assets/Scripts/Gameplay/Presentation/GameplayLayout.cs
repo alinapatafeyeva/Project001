@@ -730,7 +730,46 @@ namespace Project001.Gameplay.Presentation
         // this aspect) previously had above the Conveyor, to ~81px — with
         // NO orthographic zoom-out (the composition does not shrink; only
         // where it sits on screen changes).
-        public const float TopCompositionPadding = 1.2f;
+        //
+        // Raised again, from 1.2 to 1.6, after a real Game View review found
+        // energy bars on TOP-ROW/top-Conveyor-straight riders still reading
+        // as too close to (and able to overlap) the HUD. Root cause: this
+        // constant's own margin was sized purely against a rider's BODY
+        // reach (CameraFrameTop already adds a full CollectorVisibleHeight
+        // for that — see its own remarks), but CollectorView's own
+        // EnergyBarConveyorVerticalOffset (0.43, in the collector root's
+        // local space, i.e. *CollectorSpriteScale world units) plus the
+        // bar's own half-height place a riding bar's TOP a further ~0.97
+        // world units above the character's own visible top edge — a
+        // distance this constant's own margin was never re-checked against
+        // when the energy bar feature was added. Confirmed via a real
+        // Unity Camera.WorldToScreenPoint projection (not a hand estimate):
+        // at the previous 1.2, a worst-case rider (Crab — the one species
+        // with no EnergyBarSpeciesConveyorCorrection reduction) sitting at
+        // the Conveyor's own exact top-center — a point every rider legitimately
+        // passes through every lap, not a rare edge case — put that bar's own
+        // top at ~35px from the top of a 1080x1920 screen, INSIDE the HUD's
+        // own 0-144px band (SpeedButton's bottom edge) by ~109px.
+        //
+        // 1.6 is deliberately the LARGEST increase that still holds
+        // 1080x1920 exactly width-bound (confirmed via the same real
+        // projection: orthoSize is bit-for-bit unchanged, 10.5495, at both
+        // 1.2 and 1.6 — a pure on-screen translation, zero zoom, on the
+        // primary reference aspect; iPad portrait 1668x2388 is already
+        // height-bound even at 1.2, so it absorbs a small, honest, expected
+        // consequence of this same shared value — orthoSize 10.3660 ->
+        // 10.5392, ~1.7% larger view — rather than a second, aspect-specific
+        // constant). This closes real, measured distance (worst-case bar-top
+        // moves from ~35px to ~51px at 1080x1920, ~23px to ~62px at
+        // 1668x2388) but does NOT fully clear the HUD band in the exact
+        // worst case by itself — a full guarantee would need roughly
+        // TopCompositionPadding ~3.0+, which also means a real ~5-6%
+        // orthographic zoom-out on both aspects; confirmed too large a
+        // composition change for this pass's own explicit "small
+        // translation, not a redesign" scope. Revisit upward, accepting a
+        // small zoom-out, if a future review still finds this insufficient
+        // in real Play Mode.
+        public const float TopCompositionPadding = 1.6f;
         public const float BottomCompositionPadding = 0.2f;
         public const float HorizontalCompositionPadding = 0.15f;
 
