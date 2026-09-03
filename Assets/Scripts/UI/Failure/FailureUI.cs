@@ -1,5 +1,7 @@
 using Project001.Gameplay;
 using Project001.Gameplay.Failure;
+using Project001.Services.Economy;
+using Project001.UI.Store;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -29,17 +31,23 @@ namespace Project001.UI.Failure
     /// hook for a later monetized flow — no ad SDK or coins are wired up yet
     /// (see BootstrapSceneCreator's own remarks on the ad-row placeholder).
     ///
-    /// saveMeButton (the new "Save me!" CTA replacing the old booster row)
-    /// is deliberately presentation-only for the same reason retryButton is
-    /// unwired-but-present: the Recovery Line mechanic it would trigger
-    /// (how many times it can be bought per level, what happens to the
-    /// collector currently blocked at the full Waiting Line, whether
-    /// capacity persists, how it debits CoinWalletService) is not designed
-    /// yet, and this class must never invent gameplay rules to make a
-    /// button merely look functional. OnSaveMePressed exists as the one
-    /// obvious attachment point for that future controller — mirroring
-    /// OnRetryPressed's own placeholder Debug.Log before RetryCurrentLevel
-    /// existed — rather than leaving the click unhandled.
+    /// saveMeButton ("Save me!") spends EconomyConfig.RecoveryLinePrice
+    /// through CoinWalletService.TrySpendCoins (CoinTransactionReason.
+    /// RecoveryLinePurchase) and, only if that succeeds, applies the
+    /// Recovery Line rescue. "Recovery Line" is not a separate,
+    /// newly-invented mechanic: this project's ONLY existing
+    /// post-Failure gameplay rescue is FailureRecoveryController.
+    /// ContinueCurrentLevel (transfer every Conveyor rider into the
+    /// Recovery Row, rearm Failure detection, resume gameplay) — the same
+    /// method continueButton already calls for the free, ad-gated path.
+    /// No other "Recovery Line" implementation exists anywhere in this
+    /// project's current code, docs, or git history (searched before
+    /// writing this) — "Recovery Line" only ever appears as this modal's
+    /// own product/UI copy, never as a distinct gameplay system. Save me!
+    /// is therefore treated as a second, PAID entry point to the exact
+    /// same rescue Continue already performs, not a different mechanic —
+    /// see this class's own OnSaveMePressed remarks for the one
+    /// interpretive assumption this rests on.
     /// </summary>
     public class FailureUI : MonoBehaviour
     {
@@ -61,11 +69,24 @@ namespace Project001.UI.Failure
         [SerializeField, Tooltip("Resumes the same existing level state, after rearming Failure detection.")]
         private Button continueButton;
 
-        [SerializeField, Tooltip("The new 'Save me!' Recovery Line CTA. Presentation-only for now — see this class's own remarks for why no gameplay behavior is attached yet.")]
+        [SerializeField, Tooltip("The 'Save me!' Recovery Line CTA — spends EconomyConfig.RecoveryLinePrice through coinWalletService, then applies the same rescue continueButton does.")]
         private Button saveMeButton;
 
         [SerializeField, Tooltip("Forwards to LevelExitFlowController.ConfirmExit. Does not hide this panel — see OnExitLevelPressed's own remarks.")]
         private Button exitLevelButton;
+
+        [SerializeField, Tooltip("The single authoritative coin wallet — saveMeButton only ever spends through TrySpendCoins here, never a second balance/store of its own.")]
+        private CoinWalletService coinWalletService;
+
+        [SerializeField, Tooltip("Placeholder coin-store shell opened when saveMeButton is pressed with an insufficient balance.")]
+        private CoinStoreUI coinStoreUI;
+
+        // Guards saveMeButton against a double-click/repeated-activation
+        // firing TrySpendCoins twice for what the player experiences as one
+        // press — see OnSaveMePressed's own remarks. Reset in Show(), the
+        // start of every new failure occurrence this UI could possibly be
+        // pressed for again.
+        private bool _isSaveMeProcessing;
 
         private void Awake()
         {
@@ -110,6 +131,16 @@ namespace Project001.UI.Failure
         {
             if (panel != null)
                 panel.SetActive(true);
+
+            // A fresh failure occurrence — any lock left over from a
+            // previous one (there shouldn't be one; this is defensive, not
+            // load-bearing, since a successful Save me already closes this
+            // panel and an insufficient-funds one already clears the lock
+            // itself) must not carry over.
+            _isSaveMeProcessing = false;
+
+            if (saveMeButton != null)
+                saveMeButton.interactable = true;
         }
 
         private void OnRetryPressed()
@@ -135,16 +166,59 @@ namespace Project001.UI.Failure
         }
 
         /// <summary>
-        /// Placeholder only — see this class's own remarks on saveMeButton
-        /// for why. Does not touch coins, the Waiting Line, or Failure
-        /// state: the Recovery Line mechanic itself is not designed yet, so
-        /// there is nothing real to call here. Left as the obvious call
-        /// site for whatever RecoveryLine*Controller is eventually added,
-        /// exactly as OnRetryPressed once stood in for RetryCurrentLevel.
+        /// CASE A (balance &lt; EconomyConfig.RecoveryLinePrice): TrySpendCoins
+        /// itself rejects the spend — CoinWallet guarantees the balance is
+        /// left completely unchanged (see its own remarks) — so nothing
+        /// here needs to "undo" a charge; this class just opens coinStoreUI
+        /// as the insufficient-coins signal and leaves this panel exactly
+        /// as it was (Continue/Exit level both stay available).
+        ///
+        /// CASE B (balance &gt;= price): spend first, THEN apply the rescue —
+        /// never the other way around, per this task's own explicit "do not
+        /// apply Recovery Line first and then attempt payment" ordering
+        /// requirement. ContinueCurrentLevel (see this class's own remarks
+        /// on why that method IS "Recovery Line" here) is a synchronous,
+        /// null-guarded void call with no observable failure mode of its
+        /// own — the same trust OnContinuePressed already places in it —
+        /// so there is no realistic way to reach "charged but not rescued"
+        /// once TrySpendCoins has returned true.
+        ///
+        /// _isSaveMeProcessing + disabling the button's own Interactable
+        /// together guard against a double-click firing this twice before
+        /// either outcome above takes effect (panel closing in the success
+        /// case; Unity simply won't route a second click to a
+        /// non-interactable Button, so a same-frame duplicate press can
+        /// never reach a second TrySpendCoins call).
         /// </summary>
         private void OnSaveMePressed()
         {
-            Debug.Log("Save me pressed (Recovery Line not implemented yet)");
+            if (_isSaveMeProcessing)
+                return;
+
+            _isSaveMeProcessing = true;
+            if (saveMeButton != null)
+                saveMeButton.interactable = false;
+
+            bool spent = coinWalletService != null
+                && coinWalletService.TrySpendCoins(EconomyConfig.RecoveryLinePrice, CoinTransactionReason.RecoveryLinePurchase);
+
+            if (!spent)
+            {
+                _isSaveMeProcessing = false;
+                if (saveMeButton != null)
+                    saveMeButton.interactable = true;
+
+                if (coinStoreUI != null)
+                    coinStoreUI.Open();
+
+                return;
+            }
+
+            if (failureRecoveryController != null)
+                failureRecoveryController.ContinueCurrentLevel();
+
+            if (panel != null)
+                panel.SetActive(false);
         }
 
         private void OnExitLevelPressed()

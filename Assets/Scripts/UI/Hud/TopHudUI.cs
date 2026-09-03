@@ -1,3 +1,4 @@
+using System;
 using Project001.Gameplay;
 using Project001.Gameplay.Levels;
 using UnityEngine;
@@ -77,6 +78,30 @@ namespace Project001.UI.Hud
 
         [SerializeField, Tooltip("Pause modal panel, shown by pauseButton after pauseFlowController.OpenPause.")]
         private PauseUI pauseUI;
+
+        /// <summary>
+        /// Fires once, at the end of BuildLevelDisplay (from Start), so a
+        /// listener subscribing in ITS OWN Awake (see CoinBalanceLayout,
+        /// which anchors its own left edge off LevelDisplayRightEdgeWorldX)
+        /// is guaranteed to already be subscribed before this ever fires —
+        /// Unity runs every object's Awake before any object's Start, so
+        /// "subscribe in Awake, fire from Start" can never race regardless
+        /// of these two components' relative Awake/Start order.
+        /// </summary>
+        public event Action LevelDisplayBuilt;
+
+        /// <summary>
+        /// The resolved world-space X of the built level display's own
+        /// right edge (LevelLabelIcon + every digit icon + the gaps between
+        /// them — see BuildLevelDisplay) — 0 until BuildLevelDisplay has
+        /// actually run. Computed from the same totalWidth BuildLevelDisplay
+        /// already derives (the row is symmetric about levelDisplayContainer's
+        /// own anchor point), converted to world space via TransformPoint so
+        /// a consumer never needs to know this row's local layout convention,
+        /// just like CoinBalanceLayout already treats CoinIcon/SpeedButton's
+        /// own resolved world bounds as the only source of truth for gaps.
+        /// </summary>
+        public float LevelDisplayRightEdgeWorldX { get; private set; }
 
         private void Awake()
         {
@@ -177,6 +202,9 @@ namespace Project001.UI.Hud
                 CreateLevelIcon(levelDisplayContainer, $"LevelDigitIcon_{i}", digitSprite, nextDigitCenterX, LevelDigitBoxSize);
                 nextDigitCenterX += LevelDigitBoxSize + LevelGroupGap;
             }
+
+            LevelDisplayRightEdgeWorldX = levelDisplayContainer.TransformPoint(new Vector3(totalWidth * 0.5f, 0f, 0f)).x;
+            LevelDisplayBuilt?.Invoke();
         }
 
         private static void CreateLevelIcon(Transform parent, string name, Sprite sprite, float anchoredX, float boxSize)

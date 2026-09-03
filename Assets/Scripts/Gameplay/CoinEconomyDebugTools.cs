@@ -47,6 +47,10 @@ namespace Project001.Gameplay
         [SerializeField, Tooltip("Read-only. Play Mode only: the wallet's current balance, kept up to date via CoinWalletService.BalanceChanged. Not editable, not used by any gameplay code — see CoinEconomyDebugToolsEditor for the disabled/read-only Inspector display of this field.")]
         private int currentCoinBalance;
 
+        [SerializeField, Tooltip("Play Mode only: the balance ApplyCoinBalance() will set the wallet to. Editable target, separate from the read-only Current Coin Balance display above — see CoinEconomyDebugToolsEditor.")]
+        [Min(0)]
+        private int targetCoinBalance;
+
         /// <summary>The value CoinEconomyDebugToolsEditor displays as "Current Coin Balance" — kept in sync via CoinWalletService.BalanceChanged, never written to any wallet itself.</summary>
         public int CurrentCoinBalance => currentCoinBalance;
 
@@ -105,6 +109,38 @@ namespace Project001.Gameplay
 
             int? balance = coinWalletService != null ? coinWalletService.Balance : (int?)null;
             Debug.Log($"CoinEconomyDebugTools: OnRewardedAdCompleted() invoked. CurrentLevelReward = {levelRewardController.CurrentLevelReward}, wallet balance = {(balance.HasValue ? balance.Value.ToString() : "unknown (coinWalletService not assigned)")}.");
+        }
+
+        /// <summary>
+        /// Sets the wallet's real balance (and, through it, PlayerPrefs-backed
+        /// persistence — see CoinWalletService.Wallet) to targetCoinBalance,
+        /// clamped to never below 0. Deliberately goes through only the
+        /// wallet's own existing public API — AddCoins for the difference if
+        /// the target is higher, TrySpendCoins for the difference if lower —
+        /// exactly the same two calls ResetCoinBalanceToZero already uses for
+        /// its own single case (target 0), rather than adding any new
+        /// exact-set method to CoinWallet itself: CoinWallet's own class
+        /// remarks are explicit that "there is no public setter, so callers
+        /// cannot mutate the stored integer directly", and this preserves
+        /// that invariant completely — every one of CoinWallet's own
+        /// guarantees (never negative, always persisted, BalanceChanged
+        /// raised) still comes from CoinWallet itself, not bypassed here.
+        /// </summary>
+        [ContextMenu("4) Apply Coin Balance")]
+        public void ApplyCoinBalance()
+        {
+            if (!ValidateWalletAssigned())
+                return;
+
+            int target = Mathf.Max(0, targetCoinBalance);
+            int current = coinWalletService.Balance;
+
+            if (target > current)
+                coinWalletService.AddCoins(target - current, CoinTransactionReason.DebugAdjustment);
+            else if (target < current)
+                coinWalletService.TrySpendCoins(current - target, CoinTransactionReason.DebugAdjustment);
+
+            Debug.Log($"CoinEconomyDebugTools: balance set to {coinWalletService.Balance} (requested {target}).");
         }
 
         private bool ValidateWalletAssigned()

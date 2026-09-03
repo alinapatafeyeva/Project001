@@ -56,6 +56,23 @@ namespace Project001.Gameplay.Conveyor
         /// </summary>
         public float MoveSpeed => moveSpeed;
 
+        /// <summary>
+        /// The world position a new rider boards at (GetWorldPosition(boardingProgress))
+        /// — exposed read-only so presentation code (Recovery Row departure
+        /// travel — see CollectorSelectionController) can animate a
+        /// collector visually arriving at this exact point BEFORE TryAddRider
+        /// is actually called, without duplicating ConveyorPath's own
+        /// coordinate math. A pure coordinate query: does not affect
+        /// TryAddRider, Update, or any other gameplay behavior, and touches
+        /// no rider or internal state. Falls back to this system's own
+        /// transform position if the path is missing/invalid, matching
+        /// TryAddRider's own guard for the same condition.
+        /// </summary>
+        public Vector3 BoardingWorldPosition =>
+            conveyorPath != null && conveyorPath.PathLength > 0f
+                ? GetWorldPosition(boardingProgress)
+                : transform.position;
+
         private void Awake()
         {
             capacity = Mathf.Max(1, capacity);

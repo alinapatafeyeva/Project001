@@ -52,6 +52,15 @@ namespace Project001.EditorTools
 
                 if (GUILayout.Button("Simulate Rewarded Ad SUCCESS (current level)"))
                     debugTools.SimulateRewardedAdSuccess();
+
+                EditorGUILayout.Space();
+                EditorGUILayout.LabelField("Set Coin Balance", EditorStyles.boldLabel);
+                serializedObject.Update();
+                EditorGUILayout.PropertyField(serializedObject.FindProperty("targetCoinBalance"), new GUIContent("Target Balance"));
+                serializedObject.ApplyModifiedProperties();
+
+                if (GUILayout.Button("Apply Coin Balance"))
+                    debugTools.ApplyCoinBalance();
             }
         }
     }

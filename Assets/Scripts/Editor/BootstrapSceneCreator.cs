@@ -12,6 +12,7 @@ using Project001.Gameplay.Victory;
 using Project001.Services.Economy;
 using Project001.UI.Failure;
 using Project001.UI.Hud;
+using Project001.UI.Store;
 using Project001.UI.Victory;
 using TMPro;
 using UnityEditor;
@@ -70,6 +71,7 @@ public static class BootstrapSceneCreator
         FailureController failureController = CreateFailureController(pixelGrid);
         CharacterDatabase characterDatabase = CreateCharacterDatabase();
         CollectorQueueBoard collectorQueueBoard = CreateCollectorQueueBoard(pixelGrid, conveyorSystem, waitingLine, failureController, characterDatabase);
+        CreateRecoveryLineLayoutController(recoveryRowController, collectorQueueBoard);
         CollectorSelectionController collectorSelectionController = CreateCollectorSelectionController(mainCamera, collectorQueueBoard, waitingLine, recoveryRowController, conveyorSystem);
         VictoryController victoryController = CreateVictoryController(pixelGrid);
         CoinWalletService coinWalletService = CreateCoinWalletService();
@@ -85,7 +87,8 @@ public static class BootstrapSceneCreator
 
         LevelExitFlowController levelExitFlowController = CreateLevelExitFlowController(gameplayFlowController);
         CreateVictoryUI(victoryFlowController, levelExitFlowController, levelRewardController);
-        CreateFailureUI(failureController, failureRecoveryController, levelExitFlowController);
+        CoinStoreUI coinStoreUI = CreateCoinStoreUI();
+        CreateFailureUI(failureController, failureRecoveryController, levelExitFlowController, coinWalletService, coinStoreUI);
 
         GameplaySpeedController gameplaySpeedController = CreateGameplaySpeedController();
         PauseFlowController pauseFlowController = CreatePauseFlowController(gameplayFlowController);
@@ -476,16 +479,29 @@ public static class BootstrapSceneCreator
     }
 
     /// <summary>
-    /// Shares WaitingLine's own row instead of reserving one of its own:
-    /// positioned at GameplayLayout.WaitingLinePositionY, the same world Y
-    /// WaitingLine sits at, since RecoveryRow only ever holds collectors
-    /// during failure recovery and a row permanently reserved for it would
-    /// sit empty the rest of the time. RecoveryRowController owns whatever
-    /// collectors ReceiveCollectors is later given — no capacity to
-    /// configure here, since the row sizes itself from however many
-    /// collectors it receives. RecoveryRowView lives on the same GameObject
-    /// and handles reparenting/layout, wired to the controller so it
-    /// refreshes on CollectorsChanged rather than being driven directly.
+    /// Its own fixed, dedicated row — GameplayLayout.WaitingToRecoveryGap
+    /// below GameplayLayout.WaitingLinePositionY (Gap A: deliberately
+    /// compact, see WaitingToRecoveryGap's own remarks) — directly beneath
+    /// the normal Waiting Line, never sharing its row. This position never
+    /// changes at runtime; it simply renders nothing while
+    /// RecoveryRowController holds zero collectors (see RecoveryRowView's
+    /// own remarks), so it costs no extra vertical space in the common
+    /// case. Making real physical room for it when it IS occupied —
+    /// shifting CollectorQueueBoard and everything on it far enough down to
+    /// open GameplayLayout.RecoveryToCollectorsGap (Gap B: deliberately
+    /// larger than Gap A) below Recovery Row's own row Y — is
+    /// RecoveryLineLayoutController's job (see
+    /// CreateRecoveryLineLayoutController and RecoveryLineLayoutController's
+    /// own remarks for the exact derivation); both this row's own baseline Y
+    /// and that controller's expanded-state math read the same
+    /// GameplayLayout.WaitingToRecoveryGap/RecoveryToCollectorsGap pair
+    /// rather than separately hand-tuned numbers, so they can never drift
+    /// apart. RecoveryRowController owns whatever collectors
+    /// ReceiveCollectors is later given — no capacity to configure here,
+    /// since the row sizes itself from however many collectors it receives.
+    /// RecoveryRowView lives on the same GameObject and handles
+    /// reparenting/layout, wired to the controller so it refreshes on
+    /// CollectorsChanged rather than being driven directly.
     /// </summary>
     private static RecoveryRowController CreateRecoveryRow()
     {
@@ -493,7 +509,10 @@ public static class BootstrapSceneCreator
             "RecoveryRow",
             typeof(RecoveryRowController),
             typeof(RecoveryRowView));
-        recoveryRowObject.transform.position = new Vector3(0f, GameplayLayout.WaitingLinePositionY, 0f);
+        recoveryRowObject.transform.position = new Vector3(
+            0f,
+            GameplayLayout.WaitingLinePositionY - GameplayLayout.WaitingToRecoveryGap,
+            0f);
 
         var recoveryRowController = recoveryRowObject.GetComponent<RecoveryRowController>();
 
@@ -559,6 +578,26 @@ public static class BootstrapSceneCreator
         serializedBoard.ApplyModifiedPropertiesWithoutUndo();
 
         return collectorQueueBoard;
+    }
+
+    /// <summary>
+    /// Wires RecoveryLineLayoutController to the two objects it needs:
+    /// recoveryRowController (occupancy — the sole source of truth for
+    /// whether the layout should be expanded) and collectorQueueBoard's own
+    /// Transform (lowerContentRoot — the single thing that actually moves).
+    /// A plain gameplay-layer MonoBehaviour like every other controller
+    /// here, not UI — created once, lives for the scene's lifetime, entirely
+    /// event-driven (no polling).
+    /// </summary>
+    private static void CreateRecoveryLineLayoutController(RecoveryRowController recoveryRowController, CollectorQueueBoard collectorQueueBoard)
+    {
+        var controllerObject = new GameObject("RecoveryLineLayoutController", typeof(RecoveryLineLayoutController));
+
+        var controller = controllerObject.GetComponent<RecoveryLineLayoutController>();
+        var serializedController = new SerializedObject(controller);
+        serializedController.FindProperty("recoveryRowController").objectReferenceValue = recoveryRowController;
+        serializedController.FindProperty("lowerContentRoot").objectReferenceValue = collectorQueueBoard.transform;
+        serializedController.ApplyModifiedPropertiesWithoutUndo();
     }
 
     private const string CharacterRoot = "Assets/Art/Themes/Classic/Character";
@@ -1629,16 +1668,15 @@ public static class BootstrapSceneCreator
     private static readonly Color LevelFailedSaveMePriceColor = new Color(1f, 214f / 255f, 120f / 255f);
 
     /// <summary>
-    /// Approved display price for Save me! — 1000 coins (see this task's
-    /// own explicit requirement to ignore reference/UI/LevelFailedModalTargetNEW.png's
-    /// stale "300" placeholder). A plain TextMeshProUGUI value, not baked
-    /// into any art, structured the same way VictoryUI's EarnedCoinsValue
-    /// is (see CreateEarnedCoinsGroup) so a future Recovery Line economy
-    /// hook can rebind it to a real value rather than a literal buried in a
-    /// CreateCenteredTMPText call — see FailureUI's own remarks on
-    /// saveMeButton for why no such hook exists yet.
+    /// Displayed Save me! price — reads EconomyConfig.RecoveryLinePrice
+    /// directly (never a hardcoded literal here) so the displayed price and
+    /// the amount FailureUI actually charges through CoinWallet.
+    /// TrySpendCoins can never drift apart; changing the price changes both
+    /// by editing EconomyConfig alone. A plain TextMeshProUGUI value, not
+    /// baked into any art, structured the same way VictoryUI's
+    /// EarnedCoinsValue is (see CreateEarnedCoinsGroup).
     /// </summary>
-    private const string LevelFailedSaveMePriceValue = "1000";
+    private static readonly string LevelFailedSaveMePriceValue = EconomyConfig.RecoveryLinePrice.ToString();
 
     /// <summary>
     /// First decorative separator, between SaveMeButton (the paid Recovery
@@ -1828,13 +1866,85 @@ public static class BootstrapSceneCreator
     private const int CircleTextureDiameter = 320;
 
     /// <summary>
+    /// Placeholder coin-store modal (see CoinStoreUI's own remarks) — its
+    /// own always-active Canvas (CoinStoreCanvas, sortingOrder 20 —
+    /// deliberately above every other modal canvas in this scene, all at
+    /// 10, since this opens ON TOP OF Level Failed rather than replacing
+    /// it: the player can still see/return to Continue/Exit level once
+    /// they close this) hosting one inactive backdrop panel, reusing the
+    /// exact same ConfirmationModal.png/ResponsiveModalBox/title-
+    /// description/button building blocks CreateExitConfirmPanel already
+    /// uses, so it reads as the same physical modal family despite being a
+    /// placeholder. "Large" per this task's own requirement — the same
+    /// ConfirmationModalMaxWidth ceiling Exit/Pause already use, the widest
+    /// modal footprint this project has. Deliberately minimal content —
+    /// a title, "Not enough coins", and one Close button — no purchase
+    /// cards, no prices, no IAP: this is only the shell/navigation state a
+    /// future real store replaces.
+    /// </summary>
+    private static CoinStoreUI CreateCoinStoreUI()
+    {
+        var canvasObject = new GameObject(
+            "CoinStoreCanvas",
+            typeof(Canvas),
+            typeof(CanvasScaler),
+            typeof(GraphicRaycaster),
+            typeof(CoinStoreUI));
+
+        var canvas = canvasObject.GetComponent<Canvas>();
+        canvas.renderMode = RenderMode.ScreenSpaceOverlay;
+        canvas.sortingOrder = 20;
+
+        GameObject panel = CreateModalBackdrop(canvasObject.transform, "CoinStorePanel");
+
+        var confirmationModalSprite = AssetDatabase.LoadAssetAtPath<Sprite>(ConfirmationModalSpritePath);
+        if (confirmationModalSprite == null)
+            Debug.LogError($"BootstrapSceneCreator: could not load a Sprite at '{ConfirmationModalSpritePath}'; the coin store modal will show no background artwork. Check its TextureImporter Texture Type is set to 'Sprite (2D and UI)'.");
+
+        Transform content = CreateResponsiveModalArtworkBox(
+            panel.transform,
+            confirmationModalSprite,
+            ConfirmationModalWidthFraction,
+            ConfirmationModalMaxWidth,
+            ConfirmationModalVerticalOffsetFraction,
+            ConfirmationModalContentReferenceWidth);
+
+        var fredokaSemiBold = AssetDatabase.LoadAssetAtPath<TMP_FontAsset>(FredokaSemiBoldFontAssetPath);
+        if (fredokaSemiBold == null)
+            Debug.LogError($"BootstrapSceneCreator: could not load a TMP_FontAsset at '{FredokaSemiBoldFontAssetPath}'; the coin store modal's title/button label will fall back to TMP's default font. Run Tools/UI/Generate Fredoka Font Assets.");
+
+        var fredokaMedium = AssetDatabase.LoadAssetAtPath<TMP_FontAsset>(FredokaMediumFontAssetPath);
+        if (fredokaMedium == null)
+            Debug.LogError($"BootstrapSceneCreator: could not load a TMP_FontAsset at '{FredokaMediumFontAssetPath}'; the coin store modal's description will fall back to TMP's default font. Run Tools/UI/Generate Fredoka Font Assets.");
+
+        CreateCenteredTMPText(content, "Coin Store", new Vector2(0f, ExitConfirmTitleOffsetY), new Vector2(840f, 95f), ConfirmationModalTitleFontSize, ConfirmationModalTitleColor, fredokaSemiBold);
+        CreateCenteredTMPText(content, "Not enough coins", new Vector2(0f, ExitConfirmDescriptionOffsetY), new Vector2(840f, 44f), ConfirmationModalDescriptionFontSize, ConfirmationModalDescriptionColor, fredokaMedium);
+
+        var primaryButtonSprite = AssetDatabase.LoadAssetAtPath<Sprite>(PrimaryButtonSpritePath);
+        if (primaryButtonSprite == null)
+            Debug.LogError($"BootstrapSceneCreator: could not load a Sprite at '{PrimaryButtonSpritePath}'; the Close button will show no background artwork. Check its TextureImporter Texture Type is set to 'Sprite (2D and UI)'.");
+
+        Vector2 closeButtonSize = ResolveButtonArtworkSize(primaryButtonSprite, ExitConfirmButtonHeight);
+        Button closeButton = CreateDialogButton(content, "CloseButton", "Close", new Vector2(0f, ExitConfirmButtonOffsetY), closeButtonSize, ExitConfirmButtonLabelFontSize, primaryButtonSprite, fredokaSemiBold, ConfirmationModalButtonLabelColor);
+
+        var coinStoreUI = canvasObject.GetComponent<CoinStoreUI>();
+        var serializedCoinStoreUI = new SerializedObject(coinStoreUI);
+        serializedCoinStoreUI.FindProperty("panel").objectReferenceValue = panel;
+        serializedCoinStoreUI.FindProperty("closeButton").objectReferenceValue = closeButton;
+        serializedCoinStoreUI.ApplyModifiedPropertiesWithoutUndo();
+
+        return coinStoreUI;
+    }
+
+    /// <summary>
     /// Level Failed modal: title, description, SadTurtle.png with its own
     /// ground-contact shadow (see CreateSadTurtleWithShadow), a "Need a
     /// little more room?" heading directly over SaveMeButton (see
-    /// CreateSaveMeButton — presentation only for now, no Recovery Line
-    /// gameplay effect yet, see FailureUI's own remarks on saveMeButton;
-    /// see LevelFailedSaveMeButtonOffsetY's own PRODUCT RULE remarks for why
-    /// RecoveryLine.png is deliberately never shown here), then the lower
+    /// CreateSaveMeButton — wired to coinWalletService/coinStoreUI, see
+    /// FailureUI's own remarks on saveMeButton for the real spend-then-
+    /// rescue behaviour; see LevelFailedSaveMeButtonOffsetY's own PRODUCT
+    /// RULE remarks for why RecoveryLine.png is deliberately never shown
+    /// here), then the lower
     /// section: a separator, a "One more chance?"
     /// heading over a presentation-only ad-rewatch status row (see
     /// LevelFailedAdWatchCountLabel's remarks — no ad SDK is integrated),
@@ -1855,7 +1965,7 @@ public static class BootstrapSceneCreator
     /// reliably blocks clicks to the top HUD underneath it, exactly like the
     /// Exit/Pause modal system.
     /// </summary>
-    private static void CreateFailureUI(FailureController failureController, FailureRecoveryController failureRecoveryController, LevelExitFlowController levelExitFlowController)
+    private static void CreateFailureUI(FailureController failureController, FailureRecoveryController failureRecoveryController, LevelExitFlowController levelExitFlowController, CoinWalletService coinWalletService, CoinStoreUI coinStoreUI)
     {
         var canvasObject = new GameObject(
             "FailureCanvas",
@@ -1956,6 +2066,8 @@ public static class BootstrapSceneCreator
         serializedFailureUI.FindProperty("saveMeButton").objectReferenceValue = saveMeButton;
         serializedFailureUI.FindProperty("continueButton").objectReferenceValue = continueButton;
         serializedFailureUI.FindProperty("exitLevelButton").objectReferenceValue = exitLevelButton;
+        serializedFailureUI.FindProperty("coinWalletService").objectReferenceValue = coinWalletService;
+        serializedFailureUI.FindProperty("coinStoreUI").objectReferenceValue = coinStoreUI;
         serializedFailureUI.ApplyModifiedPropertiesWithoutUndo();
     }
 
@@ -3293,21 +3405,22 @@ public static class BootstrapSceneCreator
     private const float HudLevelDisplayOffsetX = -160f;
 
     /// <summary>
-    /// Coin group's horizontal offset from the HUD canvas's own top-right
-    /// corner (anchor 1, matching backButton/speedButton/pauseButton's own
-    /// CreateCornerButton convention). Tightened again from an earlier
-    /// pass's -256 (a 24-unit reserved gap to Speed/Pause) to -242 (a
-    /// 10-unit reserved gap: speedButton's own leftmost extent sits at
-    /// -232 from this corner, so -232-10=-242) — even 24 units still read
-    /// as too much empty space before "2x"/Pause in the actual Game View.
-    /// This only moves the group's own screen position; the internal
-    /// Coin-to-BalanceText gap (HudCoinGroupIconTextGap) is untouched, so
-    /// coin+number keep moving together as one unit. The gap back to Level
-    /// (still centre-anchored, unmoved from HudLevelDisplayOffsetX) still
-    /// grows with canvas width exactly like Exit's own gap to Level already
-    /// does, so "Level -> Coin" stays comfortably bigger than this now
-    /// tighter "Coin -> Speed/Pause" at every width (see
-    /// CreateCoinBalanceGroup's own remarks for exact figures).
+    /// Coin group's EDIT-TIME-ONLY fallback horizontal offset from the HUD
+    /// canvas's own top-right corner — a starting position for this
+    /// GameObject's own RectTransform, visible only in the Scene view before
+    /// Play (much like LevelDisplay's own children don't exist until
+    /// TopHudUI.Start runs either). It is NOT the source of truth for where
+    /// CoinIcon/BalanceDigits actually render: CoinBalanceLayout repositions
+    /// both of those, in world space, every time the balance or Level
+    /// display changes (see its own class remarks) — anchored off
+    /// SpeedButton's and LevelDisplay's own ACTUAL resolved bounds, never a
+    /// hand-picked offset from this corner. An earlier version of this
+    /// constant WAS that source of truth (assuming a worst-case content
+    /// width and reserving a fixed box for it), which is exactly what broke:
+    /// every time the assumed worst case was wrong, the only fix was to
+    /// shift this offset further left, which by construction moves the
+    /// whole group TOWARD Level — eventually crowding it to a ~2.75-unit
+    /// gap. See CoinBalanceLayout for the actual, structural fix.
     /// </summary>
     private const float HudCoinGroupOffsetX = -242f;
 
@@ -3349,8 +3462,65 @@ public static class BootstrapSceneCreator
     /// importantly could never adapt if Coin.png's own aspect ratio ever
     /// changed. CoinBalanceLayout removes that assumption by reading
     /// CoinIcon's own resolved rect.width directly every time.
+    ///
+    /// Reduced from 12 to 9, then to 6 (see CoinBalanceLayout's own
+    /// coinToNumberGap remarks) as priority-4 of the "no digit-height
+    /// shrink through 99999" fix (see HudCoinDigitsMaxWidth's own remarks
+    /// for the full priority order) — a small, fixed, always-enforced
+    /// separation is kept, just tighter, freeing a little extra room for
+    /// the digit row before it would otherwise need any of the width this
+    /// fix's own HudCoinGroupOffsetX/HudCoinDigitsMaxWidth changes provide.
     /// </summary>
-    private const float HudCoinToNumberGap = 12f;
+    private const float HudCoinToNumberGap = 6f;
+
+    /// <summary>
+    /// Enforced gap between the digit row's own actual rendered right edge
+    /// and SpeedButton's own actual left edge — CoinBalanceLayout's
+    /// right-side anchor (digitRow.right = SpeedButton.left -
+    /// HudCoinToSpeedGap), recomputed every time the balance changes. Kept
+    /// close to the old fixed reserved gap (10) that this whole group used
+    /// to be positioned to assume, so 3/4-digit balances (900, 1000 —
+    /// already approved) keep exactly the same visual relationship to
+    /// Speed/Pause they already had. Note this value never actually
+    /// determines the WORST-CASE gap to Speed/Pause — it algebraically
+    /// cancels out of Reposition's own math the instant the
+    /// HudMinLevelToCoinGap floor engages (see that constant's own remarks),
+    /// so it only ever governs how generous the gap looks for a balance that
+    /// does NOT need the floor — safe to keep comfortable here.
+    /// </summary>
+    private const float HudCoinToSpeedGap = 10f;
+
+    /// <summary>
+    /// Minimum enforced gap between LevelDisplay's own actual right edge and
+    /// this assembly's own leftmost extent (CoinIcon's left edge) —
+    /// CoinBalanceLayout's left-side floor (coin.left &gt;=
+    /// LevelDisplay.right + HudMinLevelToCoinGap), which this assembly's
+    /// Reposition() will shift itself right to preserve even if that means
+    /// growing HudCoinToSpeedGap beyond its nominal value for an
+    /// exceptionally wide balance. A real, clearly-visible breathing gap at
+    /// the narrowest supported canvas (1080 width) — not the ~2.75-unit
+    /// algebraic-only positive gap an earlier, purely offset-driven version
+    /// of this group left for a worst-case 5-digit balance, which read as
+    /// visually crowded/overlapping in the actual Game View despite being
+    /// technically non-negative.
+    ///
+    /// 24, not a larger round number like 40: measured (via real
+    /// GetWorldCorners bounds in a driven Play Mode pass, at BOTH 1080 and
+    /// 1668 canvas widths) against the actual fixed geometry on both sides —
+    /// LevelDisplay's and SpeedButton's own real positions, both completely
+    /// unavailable to move — 1080 width leaves only ~338 units total between
+    /// them. A worst-case 5-digit balance ("99999", even at the tightest
+    /// HudCoinDigitGapFloor2/HudCoinDigitGroupGapFloor2 spacing this task
+    /// allows) needs ~240 of that for its own digit row alone, plus
+    /// CoinIcon's own fixed ~64.7, plus HudCoinToNumberGap (6, unchanged so
+    /// 3/4-digit balances keep their exact prior look) — leaving only ~27
+    /// units to split between this floor and a still-positive Speed/Pause
+    /// gap. 24 is the largest value that keeps a real (not razor-thin)
+    /// margin on BOTH sides at the single worst case (99999 at 1080 width);
+    /// every other tested value/resolution combination clears both sides
+    /// with 24-400+ units to spare (see this task's own measured report).
+    /// </summary>
+    private const float HudMinLevelToCoinGap = 24f;
 
     private const string HudCoinDigitSpritePathFormat = "Assets/Art/UI/Classic/Digits/Digit{0}.png";
 
@@ -3391,14 +3561,74 @@ public static class BootstrapSceneCreator
     private const float HudCoinDigitGroupGap = 9f;
 
     /// <summary>
-    /// Maximum allowed digit-row width at HudCoinDigitHeight before
-    /// SpriteDigitNumberDisplay uniformly shrinks the whole row to fit —
-    /// the same budget the previous (TMP) pass's own text box used, already
-    /// proven to keep every tested balance ("900" through "125 000") clear
-    /// of Level and Speed/Pause within the unchanged HudCoinGroupWidth
-    /// reserved footprint.
+    /// Tighter HudCoinDigitGap tried, still at full HudCoinDigitHeight, only
+    /// once a balance does not already fit HudCoinDigitsMaxWidth at the
+    /// normal gap above (5-digit balances and up — see
+    /// SpriteDigitNumberDisplay's own progressive-fit remarks). Reused from
+    /// this project's own earlier digit-gap value (HudCoinDigitGap's own
+    /// remarks record it was 4 before being raised to 7 for legibility,
+    /// still confirmed comfortably separated at the time) rather than an
+    /// unvetted new number.
     /// </summary>
-    private const float HudCoinDigitsMaxWidth = 170f;
+    private const float HudCoinDigitGapFloor = 4f;
+
+    /// <summary>Tighter HudCoinDigitGroupGap tried alongside HudCoinDigitGapFloor — kept meaningfully bigger than HudCoinDigitGapFloor (6 vs 4) so a thousands-group boundary still reads as separated from a plain digit gap even at this tighter spacing.</summary>
+    private const float HudCoinDigitGroupGapFloor = 6f;
+
+    /// <summary>
+    /// Second, tighter HudCoinDigitGap tried — still at full
+    /// HudCoinDigitHeight — only for a 5+ digit balance (10000+) whose
+    /// HudCoinDigitGapFloor/HudCoinDigitGroupGapFloor width still doesn't fit
+    /// HudCoinDigitsMaxWidth. Added because the first floor alone left a
+    /// real shortfall of ~65-75 units for 5-digit balances at
+    /// HudCoinDigitsMaxWidth (digit glyph widths alone already exceed it),
+    /// which the previous single-floor version could only close by falling
+    /// straight to the uniform scale-down — visibly shrinking 10000/99999
+    /// well below 900/1000. This second floor closes as much of that
+    /// shortfall as spacing alone can, so the eventual scale-down only has
+    /// to cover the genuinely unavoidable remainder. Explicitly gated on
+    /// digit count (not just "still doesn't fit") in SpriteDigitNumberDisplay
+    /// itself so a 4-digit balance (e.g. 9999, which also doesn't fit at the
+    /// first floor) keeps rendering on exactly its previous path — this
+    /// value only ever affects 5+ digit balances.
+    ///
+    /// Tightened again, from 2 to 1, as part of the Level-collision fix (see
+    /// HudMinLevelToCoinGap's own remarks): the fixed geometry on both sides
+    /// of this assembly (LevelDisplay, SpeedButton — neither movable) leaves
+    /// real room for a worst-case 5-digit digit row of only ~240 units at
+    /// 1080 width; still "moderate" per this task's own priority order
+    /// (digits stay clearly, individually separated — nowhere near 0), not
+    /// the most aggressive tightening tried.
+    /// </summary>
+    private const float HudCoinDigitGapFloor2 = 1f;
+
+    /// <summary>Second, tighter HudCoinDigitGroupGap tried alongside HudCoinDigitGapFloor2 — kept meaningfully bigger (1.5 vs 1) so a thousands-group boundary still reads as separated even at this tightest spacing. Tightened from 3 to 1.5 alongside HudCoinDigitGapFloor2 — see its own remarks.</summary>
+    private const float HudCoinDigitGroupGapFloor2 = 1.5f;
+
+    /// <summary>
+    /// Maximum allowed digit-row width at HudCoinDigitHeight before
+    /// SpriteDigitNumberDisplay's last-resort uniform shrink ever applies —
+    /// only reached after HudCoinDigitGapFloor/HudCoinDigitGroupGapFloor (and,
+    /// for 5+ digit balances, HudCoinDigitGapFloor2/HudCoinDigitGroupGapFloor2
+    /// too) have already been tried and the row still does not fit (see
+    /// SpriteDigitNumberDisplay's own progressive-fit remarks).
+    ///
+    /// 242: set from the SAME real-geometry measurement HudMinLevelToCoinGap's
+    /// own remarks describe, not independently. This is no longer "as large
+    /// as possible while still avoiding shrink" (an earlier pass's own
+    /// reasoning, which is exactly what let the digit row grow wide enough
+    /// to crowd Level once CoinBalanceLayout had to anchor it near
+    /// SpeedButton) — it is now set to just clear the worst real 5-digit
+    /// case ("99999") at HudCoinDigitGapFloor2/HudCoinDigitGroupGapFloor2
+    /// spacing (~240.3 units), with a small margin, so 99999 never needs the
+    /// uniform-scale step either, while keeping the digit row itself as
+    /// narrow as the tightened floor2 spacing actually allows — the room
+    /// this frees up on both sides is what makes HudMinLevelToCoinGap's own
+    /// 24-unit floor achievable without the row also overlapping
+    /// SpeedButton (see that constant's own remarks for the exact
+    /// three-way tradeoff this value is part of).
+    /// </summary>
+    private const float HudCoinDigitsMaxWidth = 242f;
 
     /// <summary>
     /// The gameplay HUD's Coin+Amount group: Coin.png immediately followed
@@ -3425,7 +3655,7 @@ public static class BootstrapSceneCreator
     /// project — this method never touches CoinWallet/EconomyConfig
     /// itself.
     /// </summary>
-    private static void CreateCoinBalanceGroup(Transform parent, CoinWalletService coinWalletService)
+    private static void CreateCoinBalanceGroup(Transform parent, CoinWalletService coinWalletService, Button speedButton, TopHudUI topHudUI)
     {
         var groupObject = new GameObject("CoinBalanceGroup", typeof(RectTransform), typeof(CoinBalanceHudView), typeof(CoinBalanceLayout));
         groupObject.transform.SetParent(parent, false);
@@ -3505,24 +3735,34 @@ public static class BootstrapSceneCreator
         serializedDigitDisplay.FindProperty("digitHeight").floatValue = HudCoinDigitHeight;
         serializedDigitDisplay.FindProperty("digitGap").floatValue = HudCoinDigitGap;
         serializedDigitDisplay.FindProperty("groupGap").floatValue = HudCoinDigitGroupGap;
+        serializedDigitDisplay.FindProperty("digitGapFloor").floatValue = HudCoinDigitGapFloor;
+        serializedDigitDisplay.FindProperty("groupGapFloor").floatValue = HudCoinDigitGroupGapFloor;
+        serializedDigitDisplay.FindProperty("digitGapFloor2").floatValue = HudCoinDigitGapFloor2;
+        serializedDigitDisplay.FindProperty("groupGapFloor2").floatValue = HudCoinDigitGroupGapFloor2;
         serializedDigitDisplay.FindProperty("maxWidth").floatValue = HudCoinDigitsMaxWidth;
         serializedDigitDisplay.ApplyModifiedPropertiesWithoutUndo();
 
-        // CoinBalanceLayout re-derives digitsRect's own X from CoinIcon's
-        // ACTUAL resolved world bounds (see its own remarks for why that
-        // must go through world space rather than combining anchoredPosition
-        // values directly). Calling Reposition() here — right now, at
-        // scene-creation time — bakes the scene with the exact same value
-        // Awake() will (re)compute at runtime, so there is only ever one
-        // formula, never a separate "placeholder" that can silently drift
-        // out of sync with it again.
+        // CoinBalanceLayout derives CoinIcon's/digitsRect's own final
+        // position from SpeedButton's and LevelDisplay's own ACTUAL
+        // resolved world bounds (see its own class remarks) — LevelDisplay
+        // does not exist yet at scene-creation time (TopHudUI builds it at
+        // runtime, in Start), so unlike the previous version of this
+        // method, Reposition() is deliberately NOT called here: there is no
+        // meaningful position to bake yet, and CoinBalanceLayout's own
+        // Awake/event wiring (see its class remarks) always computes the
+        // real position at runtime instead, the same way TopHudUI's own
+        // Level digits do not appear until Play either.
         var coinBalanceLayout = groupObject.GetComponent<CoinBalanceLayout>();
         var serializedCoinBalanceLayout = new SerializedObject(coinBalanceLayout);
         serializedCoinBalanceLayout.FindProperty("coinRectTransform").objectReferenceValue = coinRect;
         serializedCoinBalanceLayout.FindProperty("numberRectTransform").objectReferenceValue = digitsRect;
+        serializedCoinBalanceLayout.FindProperty("speedButtonRectTransform").objectReferenceValue = speedButton != null ? speedButton.GetComponent<RectTransform>() : null;
+        serializedCoinBalanceLayout.FindProperty("topHudUI").objectReferenceValue = topHudUI;
+        serializedCoinBalanceLayout.FindProperty("coinWalletService").objectReferenceValue = coinWalletService;
         serializedCoinBalanceLayout.FindProperty("coinToNumberGap").floatValue = HudCoinToNumberGap;
+        serializedCoinBalanceLayout.FindProperty("coinToSpeedGap").floatValue = HudCoinToSpeedGap;
+        serializedCoinBalanceLayout.FindProperty("minLevelToCoinGap").floatValue = HudMinLevelToCoinGap;
         serializedCoinBalanceLayout.ApplyModifiedPropertiesWithoutUndo();
-        coinBalanceLayout.Reposition();
 
         var coinBalanceHudView = groupObject.GetComponent<CoinBalanceHudView>();
         var serializedCoinBalanceHudView = new SerializedObject(coinBalanceHudView);
@@ -3596,7 +3836,7 @@ public static class BootstrapSceneCreator
         RectTransform levelDisplayContainer = CreateAnchoredContainer(canvasObject.transform, "LevelDisplay", new Vector2(0.5f, 1f), new Vector2(HudLevelDisplayOffsetX, -96f));
         Button pauseButton = CreateCornerButton(canvasObject.transform, "PauseButton", hudPauseSprite, new Vector2(1f, 1f), new Vector2(-48f, -60f), new Vector2(72f, 72f), out _);
         Button speedButton = CreateCornerButton(canvasObject.transform, "SpeedButton", hudSpeed1xSprite, new Vector2(1f, 1f), new Vector2(-48f - 72f - 16f, -48f), new Vector2(96f, 96f), out Image speedButtonIcon);
-        CreateCoinBalanceGroup(canvasObject.transform, coinWalletService);
+        CreateCoinBalanceGroup(canvasObject.transform, coinWalletService, speedButton, canvasObject.GetComponent<TopHudUI>());
 
         var topHudUI = canvasObject.GetComponent<TopHudUI>();
         var serializedTopHudUI = new SerializedObject(topHudUI);

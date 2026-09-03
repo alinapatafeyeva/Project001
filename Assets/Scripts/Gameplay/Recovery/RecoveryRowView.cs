@@ -17,12 +17,15 @@ namespace Project001.Gameplay.Recovery
     /// recoveryRowController.CollectorsChanged fires (a successful receive or
     /// release); never polls or searches for the controller itself.
     ///
-    /// Has no reserved region of its own: BootstrapSceneCreator places this
-    /// component's transform at GameplayLayout.WaitingLinePositionY, the same
-    /// row WaitingLine already occupies, since RecoveryRow only ever holds
-    /// collectors during failure recovery and permanently reserving a second
-    /// row for it — empty the rest of the time — is exactly the wasted
-    /// vertical space GameplayLayout's composition no longer allocates.
+    /// BootstrapSceneCreator places this component's transform
+    /// GameplayLayout.WaitingToRecoveryGap below GameplayLayout.
+    /// WaitingLinePositionY — its own fixed, dedicated row directly beneath
+    /// the normal Waiting Line, not a row shared with it. That fixed
+    /// position never changes; it renders nothing when empty (Refresh()
+    /// below simply lays out zero collectors), so there is no visual cost
+    /// while unused. Making real physical room for this row when it IS
+    /// occupied — shifting CollectorQueueBoard and everything on it further
+    /// down — is RecoveryLineLayoutController's job, not this view's.
     /// </summary>
     public class RecoveryRowView : MonoBehaviour
     {

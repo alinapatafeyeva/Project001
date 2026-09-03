@@ -378,6 +378,53 @@ namespace Project001.Gameplay.Presentation
 
         public static float QueueRowStep => CollectorVisibleHeight + QueueVisibleGap;
 
+        /// <summary>
+        /// Gap A: the vertical distance from Waiting Line's own row Y down to
+        /// Recovery Row's own fixed row Y (BootstrapSceneCreator.
+        /// CreateRecoveryRow bakes Recovery Row's Transform to exactly
+        /// WaitingLinePositionY - WaitingToRecoveryGap). Deliberately
+        /// compact — Recovery Row belongs to the same queue system as
+        /// Waiting Line, so this reuses QueueRowStep, the exact same
+        /// center-to-center spacing every other pair of adjacent
+        /// CollectorQueueBoard rows already uses, rather than a bespoke
+        /// number. See RecoveryToCollectorsGap below for the second,
+        /// independent gap on the OTHER side of Recovery Row, and its own
+        /// remarks for why these two needed to become separate constants.
+        /// </summary>
+        public static float WaitingToRecoveryGap => QueueRowStep;
+
+        /// <summary>
+        /// Gap B: the vertical distance from Recovery Row's own fixed row Y
+        /// down to the lower collector-queue content's own top, once
+        /// Recovery Row is occupied (RecoveryLineLayoutController.Refresh —
+        /// see its own remarks for the exact derivation). Deliberately
+        /// larger than WaitingToRecoveryGap: Recovery Row and the lower
+        /// "available characters" content are two different zones (an
+        /// occupied recovery slot vs. the collectors still waiting to be
+        /// chosen), and reading that separation on screen needs this gap to
+        /// be clearly bigger than — not merely different from — the compact
+        /// Waiting-to-Recovery gap above it. Reuses QueueRowStep plus one
+        /// further QueueVisibleGap of extra breathing room (the same "small
+        /// breathing room" unit WaitingToRecoveryGap's own QueueRowStep is
+        /// already partly built from) rather than a fresh magic number.
+        ///
+        /// Before this fix, BOTH gaps were driven by this exact same
+        /// QueueRowStep + QueueVisibleGap total, applied as Recovery Row's
+        /// own distance below Waiting Line (i.e. on the Gap-A side, where
+        /// this constant now lives). RecoveryLineLayoutController then
+        /// shifted the lower content down by that identical amount, measured
+        /// from ITS OWN independent baseline — so the shared shift canceled
+        /// out of the Recovery-Row-to-lower-content distance entirely,
+        /// leaving Gap B permanently pinned at the original, much smaller
+        /// Waiting-Line-to-board gap (WaitingSlotSize*0.5 + ClusterInnerSpacing,
+        /// ~1.25) no matter how large the shared shift was made — the
+        /// structural reason Gap A read too large and Gap B too small at the
+        /// same time. Splitting the single shift into these two
+        /// independently-named gaps is what actually gives Gap B its own
+        /// tunable size.
+        /// </summary>
+        public static float RecoveryToCollectorsGap => QueueRowStep + QueueVisibleGap;
+
         // ----- Queue row depth (presentation-only, genuine Z separation) -----
         // The per-row multiplier for how far each successive queue row's
         // PRESENTATION (Visual, and the hunger label riding along with it —

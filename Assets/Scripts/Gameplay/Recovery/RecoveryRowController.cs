@@ -34,6 +34,16 @@ namespace Project001.Gameplay.Recovery
         // IReadOnlyList.
         private readonly ReadOnlyCollection<ConveyorRider> _collectorsReadOnly;
 
+        // Presentation-only exclusion set — see SetReservedForDeparture.
+        // Deliberately NOT part of _collectors/Collectors.Count: a reserved
+        // collector still counts as genuinely held (so
+        // RecoveryLineLayoutController's occupancy-driven expand/collapse
+        // stays expanded for the whole of its departure travel), it is only
+        // excluded from RecoveryRowView's own row layout while
+        // CollectorSelectionController's departure-travel coroutine owns
+        // its transform.
+        private readonly HashSet<ConveyorRider> _reservedForDeparture = new HashSet<ConveyorRider>();
+
         public RecoveryRowController()
         {
             _collectorsReadOnly = new ReadOnlyCollection<ConveyorRider>(_collectors);
@@ -113,6 +123,30 @@ namespace Project001.Gameplay.Recovery
         bool ICollectorSource.CanSelect(CollectorView collectorView) => Contains(collectorView);
 
         /// <summary>
+        /// Marks (or unmarks) a currently-held collector as reserved for
+        /// departure — set by CollectorSelectionController the instant a
+        /// Recovery Row collector is tapped, before its visual travel back
+        /// onto the Conveyor even starts, and cleared automatically once
+        /// ReleaseCollector actually removes it (or on a rollback, so no
+        /// reservation ever leaks past the attempt that set it). Purely a
+        /// presentation exclusion — see the field's own remarks; never
+        /// affects Collectors/Count.
+        /// </summary>
+        public void SetReservedForDeparture(ConveyorRider rider, bool reserved)
+        {
+            if (rider == null)
+                return;
+
+            if (reserved)
+                _reservedForDeparture.Add(rider);
+            else
+                _reservedForDeparture.Remove(rider);
+        }
+
+        /// <summary>True while rider is reserved for departure — see SetReservedForDeparture. Read by RecoveryRowView to exclude it from row layout.</summary>
+        public bool IsReservedForDeparture(ConveyorRider rider) => rider != null && _reservedForDeparture.Contains(rider);
+
+        /// <summary>
         /// Reapplies this row's own neutral (baseline) presentation depth —
         /// used only when CollectorSelectionController rolls back a
         /// boarding attempt (this row never actually released the view).
@@ -132,7 +166,16 @@ namespace Project001.Gameplay.Recovery
                 return false;
 
             var rider = collectorView.GetComponent<ConveyorRider>();
-            if (rider == null || !_collectors.Remove(rider))
+            if (rider == null)
+                return false;
+
+            // Cleared unconditionally, before the removal outcome is known,
+            // so a reservation never survives either a successful release
+            // or the rare rollback where this returns false — see
+            // SetReservedForDeparture's own remarks.
+            _reservedForDeparture.Remove(rider);
+
+            if (!_collectors.Remove(rider))
                 return false;
 
             CollectorsChanged?.Invoke();

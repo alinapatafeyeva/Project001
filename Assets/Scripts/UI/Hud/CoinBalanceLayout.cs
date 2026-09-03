@@ -1,111 +1,152 @@
+using Project001.Services.Economy;
 using UnityEngine;
 
 namespace Project001.UI.Hud
 {
     /// <summary>
-    /// Enforces "Coin.png, then a fixed gap, then the number" as a single
-    /// sequential horizontal relationship, computed from CoinIcon's own
-    /// ACTUAL resolved world-space bounds — never by combining raw
-    /// anchoredPosition.x values from coinRectTransform and
-    /// numberRectTransform directly.
+    /// Anchors the whole Coin+Balance assembly (CoinIcon, then a fixed gap,
+    /// then the digit row) as ONE right-anchored unit, structurally derived
+    /// from the RIGHT HUD group's own other members rather than a hand-tuned
+    /// offset from the canvas corner:
     ///
-    /// That second mistake is exactly what made the "structurally
-    /// guaranteed" v1 of this class still overlap in the actual Game View:
-    /// CoinIcon is anchored/pivoted at its parent's CENTRE (0.5, 0.5), so
-    /// its anchoredPosition.x is a distance measured from the parent's
-    /// centre. The digit row is anchored/pivoted at its parent's LEFT EDGE
-    /// (0, 0.5), so ITS anchoredPosition.x is a distance measured from the
-    /// parent's left edge instead. Those are two different reference
-    /// points on the very same parent rect, offset from each other by
-    /// exactly parent.rect.width / 2 — but v1 took "coin right edge,
-    /// measured from parent centre" and assigned it straight into
-    /// numberRectTransform.anchoredPosition.x as if it were already
-    /// "measured from parent's left edge". For this HUD group (pivoted at
-    /// its OWN parent's top-right corner, width 256), that silently shifted
-    /// the whole digit row 128px too far left — squarely on top of the
-    /// coin. The bug was invisible to RectTransform-math review because
-    /// each individual formula "looked" locally correct; it only breaks
-    /// once you compare two anchoredPosition.x values that don't share a
-    /// reference point.
+    ///   digitRow.right = SpeedButton.left - coinToSpeedGap
+    ///   coin.left       &gt;= LevelDisplay.right + minLevelToCoinGap
     ///
-    /// This version never combines anchoredPosition values directly. It
-    /// reads CoinIcon's actual resolved WORLD corners (GetWorldCorners,
-    /// the same bounds Unity itself uses to render/hit-test), converts the
-    /// coin's right edge into the shared parent's own local space via
-    /// InverseTransformPoint, and only then derives numberRectTransform's
-    /// anchoredPosition.x from ITS OWN anchor reference point on that same
-    /// parent rect. This is correct regardless of either object's own
-    /// pivot/anchor convention or the parent's own pivot — it does not
-    /// assume the parent is centre-pivoted, or that coin and number share
-    /// the same anchor reference point, the way the previous version
-    /// implicitly (and wrongly) did.
+    /// so a wider balance (more digits) grows the assembly LEFTWARD from a
+    /// stable right-side boundary near Speed/Pause, and can never encroach
+    /// past a guaranteed-visible gap to Level — replacing an earlier version
+    /// that instead anchored this whole group at a fixed, hand-picked offset
+    /// from the canvas's own top-right corner (HudCoinGroupOffsetX) sized to
+    /// assume a worst-case content width: every time that assumption was
+    /// wrong (an unaccounted-for digit-sprite trim margin, a wider worst-case
+    /// value than the one actually checked), the only lever was to shift the
+    /// fixed offset further left — which, by construction, moves the whole
+    /// group TOWARD Level, eventually crowding it. Deriving both edges from
+    /// the ACTUAL resolved bounds of SpeedButton and LevelDisplay (never
+    /// their assumed/nominal positions) makes that entire class of bug
+    /// impossible: this can only ever be as wrong as SpeedButton's or
+    /// LevelDisplay's own real positions are.
+    ///
+    /// Recomputed on two triggers, never just once in Awake:
+    /// coinWalletService.BalanceChanged (the digit row's own rendered width
+    /// changes with the balance) and topHudUI.LevelDisplayBuilt (Level's own
+    /// digits are built at runtime in TopHudUI.Start, so its real right edge
+    /// does not exist yet in Awake). Subscribing to both in THIS component's
+    /// own Awake is safe regardless of these components' relative Awake/Start
+    /// order: Unity runs every object's Awake before any object's Start, so
+    /// by the time LevelDisplayBuilt can possibly fire (from a Start), this
+    /// subscription and CoinBalanceHudView's own initial SetValue call (also
+    /// unconditionally inside an Awake) have both already happened.
     /// </summary>
     public class CoinBalanceLayout : MonoBehaviour
     {
-        [SerializeField, Tooltip("Coin.png's own RectTransform — its actual current world-space right edge (not a guessed/nominal size, and not its raw anchoredPosition.x) is what the number is positioned relative to.")]
+        [SerializeField, Tooltip("Coin.png's own RectTransform — its actual current world-space bounds (not a guessed/nominal size) anchor the digit row's own left edge.")]
         private RectTransform coinRectTransform;
 
-        [SerializeField, Tooltip("The digit row's own RectTransform (SpriteDigitNumberDisplay) — repositioned to start immediately after the coin. Must be left-pivoted (anchorMin=anchorMax=pivot=0,0.5) since Reposition treats its pivot point as its left edge.")]
+        [SerializeField, Tooltip("The digit row's own RectTransform (SpriteDigitNumberDisplay) — its actual rendered width (via GetWorldCorners, so any last-resort shrink is already accounted for) determines how far left this assembly must grow. Must be left-pivoted (anchorMin=anchorMax=pivot=0,0.5).")]
         private RectTransform numberRectTransform;
 
-        [SerializeField, Tooltip("Gap between Coin.png's actual right edge and the first digit's left edge — a named, positive, always-enforced separation, not an incidental side effect of two independently-computed positions.")]
-        private float coinToNumberGap = 12f;
+        [SerializeField, Tooltip("SpeedButton's own RectTransform — this assembly's right edge is pinned coinToSpeedGap to its left, never a fixed offset from the canvas corner.")]
+        private RectTransform speedButtonRectTransform;
 
-        private readonly Vector3[] _coinWorldCorners = new Vector3[4];
+        [SerializeField, Tooltip("Built the LEFT HUD group's Level display and exposes its resolved right edge (LevelDisplayRightEdgeWorldX) + LevelDisplayBuilt event — the other boundary this assembly's left edge is clamped against.")]
+        private TopHudUI topHudUI;
+
+        [SerializeField, Tooltip("Read-only here — only used to know exactly when the digit row's own rendered width has changed (its BalanceChanged event), never to read the balance itself.")]
+        private CoinWalletService coinWalletService;
+
+        [SerializeField, Tooltip("Gap between Coin.png's actual right edge and the first digit's left edge — a named, positive, always-enforced internal separation.")]
+        private float coinToNumberGap = 6f;
+
+        [SerializeField, Tooltip("Gap enforced between this assembly's own rightmost extent (the digit row's right edge) and SpeedButton's own actual left edge — this assembly's right-side anchor.")]
+        private float coinToSpeedGap = 16f;
+
+        [SerializeField, Tooltip("Minimum guaranteed gap between LevelDisplay's own actual right edge and this assembly's own leftmost extent (CoinIcon's left edge) — a hard floor Reposition never lets the assembly cross, however wide the current balance's digit row is. Chosen to read as a clearly visible breathing gap at 1080 width, not a near-zero algebraic positive.")]
+        private float minLevelToCoinGap = 40f;
+
+        private readonly Vector3[] _worldCorners = new Vector3[4];
 
         private void Awake()
         {
+            if (topHudUI != null)
+                topHudUI.LevelDisplayBuilt += Reposition;
+
+            if (coinWalletService != null)
+                coinWalletService.BalanceChanged += OnBalanceChanged;
+
             Reposition();
         }
 
+        private void OnDestroy()
+        {
+            if (topHudUI != null)
+                topHudUI.LevelDisplayBuilt -= Reposition;
+
+            if (coinWalletService != null)
+                coinWalletService.BalanceChanged -= OnBalanceChanged;
+        }
+
+        private void OnBalanceChanged(int _) => Reposition();
+
         /// <summary>
-        /// Positions numberRectTransform so its own left edge sits exactly
-        /// coinToNumberGap to the right of coinRectTransform's own current
-        /// actual right edge, with both edges first converted into the
-        /// same coordinate space (the shared parent's local space) before
-        /// being compared or combined. Coin.png's size never changes at
-        /// runtime today, so calling this once in Awake is sufficient —
-        /// but nothing here assumes that will always be true, so this
-        /// stays safe to call again if it ever does (see
-        /// BootstrapSceneCreator, which also calls this once at edit time
-        /// so the baked scene position and the runtime position can never
-        /// diverge into two different formulas again).
+        /// Recomputes the whole assembly's position from scratch, in world
+        /// space throughout (GetWorldCorners / Transform.position — never
+        /// combining two RectTransforms' own anchoredPosition values
+        /// directly, which is exactly what made an earlier version of this
+        /// class silently overlap despite "looking" correct locally — see
+        /// class remarks) so it is correct regardless of any object's own
+        /// anchor/pivot convention:
+        ///
+        ///   1. digitRow.right = SpeedButton.left - coinToSpeedGap
+        ///   2. digitRow.left  = digitRow.right - digitRow's own actual rendered width
+        ///   3. coin.right     = digitRow.left - coinToNumberGap
+        ///   4. coin.left      = coin.right - coin's own actual rendered width
+        ///   5. if coin.left &lt; LevelDisplay.right + minLevelToCoinGap: shift
+        ///      the WHOLE assembly (both coin and digitRow) right by the
+        ///      shortfall, preserving the internal coinToNumberGap — i.e.
+        ///      the Level floor wins over the nominal Speed gap, never the
+        ///      other way round, exactly per this task's own priority order.
+        ///
+        /// Safe to call before topHudUI has built LevelDisplay yet
+        /// (LevelDisplayRightEdgeWorldX simply reads 0 until then, which
+        /// only makes the Level clamp permissive for that one intermediate
+        /// call — always superseded once LevelDisplayBuilt actually fires).
         /// </summary>
         public void Reposition()
         {
-            if (coinRectTransform == null || numberRectTransform == null)
+            if (coinRectTransform == null || numberRectTransform == null || speedButtonRectTransform == null)
                 return;
 
-            var parent = numberRectTransform.parent as RectTransform;
-            if (parent == null)
-                return;
+            speedButtonRectTransform.GetWorldCorners(_worldCorners);
+            float speedLeftWorldX = _worldCorners[0].x;
 
-            // GetWorldCorners is Unity's own authoritative resolved bounds
-            // (order: bottom-left, top-left, top-right, bottom-right) — not
-            // a re-derivation from anchoredPosition/pivot/sizeDelta that
-            // could repeat the same mistake in a new form.
-            coinRectTransform.GetWorldCorners(_coinWorldCorners);
-            float coinRightEdgeWorldX = _coinWorldCorners[2].x;
+            numberRectTransform.GetWorldCorners(_worldCorners);
+            float digitRowWidth = _worldCorners[2].x - _worldCorners[1].x;
 
-            // Convert into the shared parent's own local space — the one
-            // coordinate system both coinRectTransform's and
-            // numberRectTransform's anchoredPosition are ultimately
-            // expressed against, regardless of their own individual
-            // anchors/pivots.
-            float coinRightEdgeLocalX = parent.InverseTransformPoint(new Vector3(coinRightEdgeWorldX, 0f, 0f)).x;
-            float desiredLeftEdgeLocalX = coinRightEdgeLocalX + coinToNumberGap;
+            coinRectTransform.GetWorldCorners(_worldCorners);
+            float coinWidth = _worldCorners[2].x - _worldCorners[1].x;
 
-            // numberRectTransform's own anchor reference point on that same
-            // parent rect (never assumed to be the parent's centre, or the
-            // parent's rect.xMin under an assumed pivot).
-            float numberAnchorRefX = Mathf.Lerp(parent.rect.xMin, parent.rect.xMax, numberRectTransform.anchorMin.x);
+            float digitRowRightX = speedLeftWorldX - coinToSpeedGap;
+            float digitRowLeftX = digitRowRightX - digitRowWidth;
+            float coinRightX = digitRowLeftX - coinToNumberGap;
+            float coinLeftX = coinRightX - coinWidth;
 
-            // numberRectTransform is left-pivoted, so its pivot point (the
-            // point anchoredPosition actually places) IS its own left edge
-            // — no further pivot-width correction needed here.
-            Vector2 anchoredPosition = numberRectTransform.anchoredPosition;
-            anchoredPosition.x = desiredLeftEdgeLocalX - numberAnchorRefX;
-            numberRectTransform.anchoredPosition = anchoredPosition;
+            float levelRightX = topHudUI != null ? topHudUI.LevelDisplayRightEdgeWorldX : 0f;
+            float minCoinLeftX = levelRightX + minLevelToCoinGap;
+            if (coinLeftX < minCoinLeftX)
+            {
+                float shortfall = minCoinLeftX - coinLeftX;
+                coinLeftX += shortfall;
+                digitRowLeftX += shortfall;
+            }
+
+            Vector3 coinPos = coinRectTransform.position;
+            coinPos.x = coinLeftX + coinWidth * 0.5f;
+            coinRectTransform.position = coinPos;
+
+            Vector3 numberPos = numberRectTransform.position;
+            numberPos.x = digitRowLeftX;
+            numberRectTransform.position = numberPos;
         }
     }
 }

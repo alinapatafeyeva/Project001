@@ -16,12 +16,37 @@ namespace Project001.UI.Hud
     ///
     /// Each digit keeps its own native aspect ratio at the shared
     /// digitHeight (never stretched to a common width — see DigitLayout).
-    /// If the laid-out row would exceed maxWidth (0 = no limit), the whole
-    /// row is scaled down uniformly via this component's own
-    /// RectTransform.localScale — never by distorting individual digits or
-    /// their relative spacing — anchored at this object's own left edge, so
-    /// a long balance shrinks away from Level/Speed-Pause rather than
-    /// growing into them.
+    ///
+    /// Fitting a long balance (e.g. a 5-digit value) into maxWidth follows a
+    /// strict progressive order — consume spacing before ever touching size,
+    /// so an ordinary balance never looks "shrunk to fit":
+    ///   1. Coin.png's own size is never touched by this component at all
+    ///      (a separate sibling — see CoinBalanceLayout).
+    ///   2. Try the row at full digitHeight/digitGap/groupGap first. If it
+    ///      already fits within maxWidth (every balance up to 4 digits
+    ///      today), that is exactly what renders — zero shrink, unchanged
+    ///      from before this fitting order existed.
+    ///   3. Otherwise retry at digitGapFloor/groupGapFloor instead — a
+    ///      real, meaningful width saving with digitHeight still completely
+    ///      untouched.
+    ///   4. Still not enough, AND the value has 5+ digits (10000+)? Retry
+    ///      once more at digitGapFloor2/groupGapFloor2 — a second, tighter
+    ///      spacing floor, digitHeight STILL untouched. This is what keeps a
+    ///      5-digit balance's digits close to full size: without this step,
+    ///      the entire 5-digit shortfall had to be absorbed by step 6's
+    ///      scale-down alone, which is what previously made 10000/99999
+    ///      read as noticeably miniature next to 900/1000. Gated on digit
+    ///      count specifically (not just "still doesn't fit") so this never
+    ///      changes a 3- or 4-digit balance's own rendering, which already
+    ///      looked correct and is deliberately left exactly as it was.
+    ///   5. The gap between Coin.png and this row is reduced separately, by
+    ///      a small fixed amount — see CoinBalanceLayout's own remarks.
+    ///   6. Only if the row still exceeds maxWidth even at digitGapFloor2/
+    ///      groupGapFloor2 is the whole row scaled down uniformly via this
+    ///      component's own RectTransform.localScale, and only down to
+    ///      MinScale at most. Anchored at this object's own left edge, so a
+    ///      long balance shrinks away from Level/Speed-Pause rather than
+    ///      growing into them.
     /// </summary>
     public class SpriteDigitNumberDisplay : MonoBehaviour
     {
@@ -31,17 +56,29 @@ namespace Project001.UI.Hud
         [SerializeField, Tooltip("Shared displayed height for every digit at 1:1 scale (before any maxWidth shrink) — each digit's own displayed width follows from its native aspect ratio at this height.")]
         private float digitHeight = 66f;
 
-        [SerializeField, Tooltip("Gap between adjacent digits within the same thousands group.")]
+        [SerializeField, Tooltip("Gap between adjacent digits within the same thousands group, used whenever the row fits maxWidth at this spacing.")]
         private float digitGap = 4f;
 
         [SerializeField, Tooltip("Additional gap (on top of digitGap) at a thousands-group boundary — represents the grouping separator as spacing, since no comma/space sprite exists.")]
         private float groupGap = 10f;
 
-        [SerializeField, Tooltip("Maximum allowed row width at 1:1 scale before this component uniformly shrinks itself to fit. 0 or less means no limit.")]
+        [SerializeField, Tooltip("Tighter digitGap tried, still at full digitHeight, only once the row does not already fit maxWidth at the normal digitGap above — see the class remarks' fitting order.")]
+        private float digitGapFloor = 4f;
+
+        [SerializeField, Tooltip("Tighter groupGap tried alongside digitGapFloor — see the class remarks' fitting order.")]
+        private float groupGapFloor = 6f;
+
+        [SerializeField, Tooltip("Second, tighter digitGap tried — still at full digitHeight — only once digitGapFloor/groupGapFloor still does not fit maxWidth AND the value has 5+ digits. See the class remarks' fitting order.")]
+        private float digitGapFloor2 = 2f;
+
+        [SerializeField, Tooltip("Second, tighter groupGap tried alongside digitGapFloor2 — kept slightly bigger than digitGapFloor2 so a thousands-group boundary still reads as separated even at this tightest spacing.")]
+        private float groupGapFloor2 = 3f;
+
+        [SerializeField, Tooltip("Maximum allowed row width before this component uniformly shrinks itself to fit — only reached after digitGapFloor/groupGapFloor and digitGapFloor2/groupGapFloor2 have already been tried and the row still does not fit (see the class remarks' fitting order). 0 or less means no limit.")]
         private float maxWidth = 170f;
 
-        /// <summary>Never shrink further than this fraction of digitHeight, even for a pathologically long value — a sane floor, not a product requirement (ordinary long balances land well above it).</summary>
-        private const float MinScale = 0.4f;
+        /// <summary>Never shrink further than this fraction of digitHeight, even for a pathologically long value — a sane floor, not a product requirement (ordinary long balances — up to 5 digits — land well above it; see the class remarks).</summary>
+        private const float MinScale = 0.65f;
 
         private RectTransform _rectTransform;
 
@@ -77,7 +114,32 @@ namespace Project001.UI.Hud
                     : 1f;
             }
 
+            // Step 2 (see class remarks): try full spacing first — this is
+            // what every balance up to 4 digits already fits within
+            // maxWidth at, so it renders completely unchanged.
             var placements = DigitLayout.Compute(value, aspectRatios, digitHeight, digitGap, groupGap);
+            float widthAtFullGaps = DigitLayout.TotalWidth(placements);
+
+            // Step 3: only retried at the tighter floor gaps — digitHeight
+            // still fully untouched — when full spacing does not already
+            // fit. A long balance therefore always prefers "same size, less
+            // air between digits" over any shrink at all.
+            if (maxWidth > 0f && widthAtFullGaps > maxWidth)
+            {
+                placements = DigitLayout.Compute(value, aspectRatios, digitHeight, digitGapFloor, groupGapFloor);
+
+                // Step 4: only for a 5+ digit balance that still doesn't fit
+                // even at the first floor — retry once more at the tighter
+                // digitGapFloor2/groupGapFloor2, still without touching
+                // digitHeight, so scale-down (step 6) only ever has to make
+                // up whatever shortfall remains after BOTH spacing floors.
+                // The digit-count gate keeps a 4-digit balance (e.g. 9999)
+                // on exactly the same digitGapFloor/groupGapFloor/scale path
+                // it already used — this step exists purely to soften
+                // 5-digit's own additional shrink, never to touch 4-digit's.
+                if (placements.Count >= 5 && DigitLayout.TotalWidth(placements) > maxWidth)
+                    placements = DigitLayout.Compute(value, aspectRatios, digitHeight, digitGapFloor2, groupGapFloor2);
+            }
 
             foreach (DigitLayout.DigitPlacement placement in placements)
             {
@@ -125,6 +187,11 @@ namespace Project001.UI.Hud
             // is an absolute offset independent of this box's own size).
             _rectTransform.sizeDelta = new Vector2(totalWidth, digitHeight);
 
+            // Step 6 (see class remarks): the last-resort uniform shrink,
+            // now evaluated against totalWidth AFTER both floor-gap retries
+            // above already did what they could — so this only ever needs
+            // to make up whatever shortfall remains, never the whole
+            // deficit from full spacing.
             float scale = 1f;
             if (maxWidth > 0f && totalWidth > maxWidth)
                 scale = Mathf.Max(MinScale, maxWidth / totalWidth);

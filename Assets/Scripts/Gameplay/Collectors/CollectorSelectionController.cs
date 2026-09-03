@@ -1,5 +1,7 @@
+using System.Collections;
 using System.Collections.Generic;
 using Project001.Gameplay.Conveyor;
+using Project001.Gameplay.Recovery;
 using UnityEngine;
 using UnityEngine.InputSystem;
 
@@ -19,10 +21,15 @@ namespace Project001.Gameplay.Collectors
     /// frame until the conveyor actually accepts it, released strictly in
     /// selection order (only ever the front of the queue is attempted) so a
     /// later selection can never board ahead of, or overlap, an earlier one
-    /// still waiting. Nothing about the collector's position or source
-    /// changes while pending — it stays exactly where it visually was until
-    /// the moment it actually boards, which is what "may wait briefly before
-    /// entering" means here.
+    /// still waiting. For Queue/WaitingLine sources, nothing about the
+    /// collector's position changes while pending — it stays exactly where
+    /// it visually was until the moment it actually boards, which is what
+    /// "may wait briefly before entering" means here. A Recovery Row source
+    /// is the one exception: PendingBoarding.IsReadyToBoard stays false
+    /// while AnimateRecoveryRowDeparture eases that collector's own
+    /// position across to the Conveyor's boarding point first — see its own
+    /// remarks — so ProcessPendingBoardings only ever attempts TryAddRider
+    /// once that travel has actually finished.
     /// </summary>
     public class CollectorSelectionController : MonoBehaviour
     {
@@ -48,6 +55,18 @@ namespace Project001.Gameplay.Collectors
             public ConveyorRider Rider;
             public Transform OriginalParent;
             public Vector3 OriginalLocalPosition;
+
+            // True the instant this entry is enqueued for every source
+            // except Recovery Row, whose own departure travel (see
+            // AnimateRecoveryRowDeparture) sets this only once the
+            // collector has visually finished arriving at the Conveyor's
+            // boarding point. ProcessPendingBoardings never attempts
+            // TryAddRider for an entry while this is false — since only the
+            // front of the queue is ever attempted, this blocks (never
+            // skips) whatever is behind it too, preserving the same
+            // strict selection-order guarantee documented on
+            // _pendingBoardings itself.
+            public bool IsReadyToBoard = true;
         }
 
         // FIFO by construction (Queue<T> + "only ever peek/dequeue the
@@ -105,8 +124,7 @@ namespace Project001.Gameplay.Collectors
 
             Transform collectorTransform = view.transform;
 
-            _pendingViews.Add(view);
-            _pendingBoardings.Enqueue(new PendingBoarding
+            var pendingBoarding = new PendingBoarding
             {
                 View = view,
                 Source = source,
@@ -116,7 +134,66 @@ namespace Project001.Gameplay.Collectors
                 // visually was.
                 OriginalParent = collectorTransform.parent,
                 OriginalLocalPosition = collectorTransform.localPosition,
-            });
+            };
+
+            _pendingViews.Add(view);
+            _pendingBoardings.Enqueue(pendingBoarding);
+
+            // Recovery Row is the one source whose collectors sit visibly
+            // far enough from the Conveyor's boarding point that boarding
+            // instantly (TryAddRider's own plain position snap — see its
+            // own remarks) would read as a teleport. Queue/WaitingLine keep
+            // their existing instant-boarding behavior untouched — their
+            // own boarding point already sits close enough that the snap is
+            // not visually perceptible, and STRICT SCOPE for this task is
+            // Recovery Row's own movement only.
+            if (source is RecoveryRowController recoveryRowSource)
+            {
+                pendingBoarding.IsReadyToBoard = false;
+                recoveryRowSource.SetReservedForDeparture(rider, true);
+                StartCoroutine(AnimateRecoveryRowDeparture(pendingBoarding, collectorTransform.position));
+            }
+        }
+
+        /// <summary>
+        /// The visual half of a Recovery Row departure: eases view's own
+        /// root Transform.position from its current (Recovery Row) position
+        /// to ConveyorSystem.BoardingWorldPosition — the exact point
+        /// TryAddRider will place it at once boarding actually happens —
+        /// then marks pendingBoarding ready. Because the collector is not
+        /// yet reparented onto the Conveyor and RecoveryRowView excludes a
+        /// reserved collector from its own layout (see
+        /// RecoveryRowController.SetReservedForDeparture), nothing else
+        /// writes this transform's position while this coroutine runs, so
+        /// there is nothing to fight over. The moment ProcessPendingBoardings
+        /// later calls TryAddRider, it reparents onto the Conveyor with
+        /// worldPositionStays:true and sets this exact same boarding
+        /// position — a continuation, not a jump, since this coroutine
+        /// already moved it there. Guards every step against the view
+        /// having been destroyed mid-travel rather than assuming it is
+        /// still valid after a yield.
+        /// </summary>
+        private IEnumerator AnimateRecoveryRowDeparture(PendingBoarding pendingBoarding, Vector3 startWorldPosition)
+        {
+            if (conveyorSystem == null)
+            {
+                pendingBoarding.IsReadyToBoard = true;
+                yield break;
+            }
+
+            Vector3 targetWorldPosition = conveyorSystem.BoardingWorldPosition;
+
+            yield return CollectorPositionTravel.Travel(
+                startWorldPosition,
+                targetWorldPosition,
+                CollectorPositionTravel.DefaultDuration,
+                position =>
+                {
+                    if (pendingBoarding.View != null)
+                        pendingBoarding.View.transform.position = position;
+                });
+
+            pendingBoarding.IsReadyToBoard = true;
         }
 
         /// <summary>
@@ -141,6 +218,9 @@ namespace Project001.Gameplay.Collectors
                     _pendingViews.Remove(next.View);
                 return;
             }
+
+            if (!next.IsReadyToBoard)
+                return;
 
             if (!conveyorSystem.TryAddRider(next.Rider))
                 return;

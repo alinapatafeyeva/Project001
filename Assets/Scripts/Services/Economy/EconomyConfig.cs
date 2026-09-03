@@ -20,5 +20,15 @@ namespace Project001.Services.Economy
     {
         /// <summary>Coins awarded for successfully completing a level, before any rewarded-ad bonus (see CoinTransactionReason.LevelReward). Doubled by exactly one successful rewarded ad — see CoinTransactionReason.RewardedAd.</summary>
         public const int BaseLevelCoinReward = 100;
+
+        /// <summary>
+        /// Price of the Level Failed modal's "Save me!" action (see
+        /// CoinTransactionReason.RecoveryLinePurchase) — the single place
+        /// this number lives; the Save me button displays this value rather
+        /// than a hardcoded literal, so changing the price changes both the
+        /// displayed price and the amount actually charged together, by
+        /// construction.
+        /// </summary>
+        public const int RecoveryLinePrice = 1000;
     }
 }
